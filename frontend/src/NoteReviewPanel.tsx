@@ -52,7 +52,7 @@ export function NoteReviewPanel({ controller, state, model, aiEnabled, automatic
         disabled={!aiEnabled} onChange={(event) => onAutomatic(event.target.checked)} />自动检查</label>
     </div>
     <p role="status" className="text-xs text-muted-foreground">{!aiEnabled ? "AI 尚未启用；笔记仍可正常编辑和保存。" : status[state.phase]}</p>
-    {aiEnabled && automatic && <p className="text-xs text-muted-foreground">整篇笔记和当前节点上下文会发送至配置的 Codex 提供方。建议不会自动写入原文。</p>}
+    {aiEnabled && automatic && <p className="text-xs text-muted-foreground">整篇笔记和当前节点上下文会发送至配置的检查模型提供方（Codex 或 DeepSeek）。建议不会自动写入原文。</p>}
     {state.message && <p role="alert" className="text-xs text-destructive">{state.message}</p>}
     {state.warnings.map((warning) => <p key={warning} className="text-xs text-muted-foreground">{warning}</p>)}
     {!!state.suggestions.length && <ul className="note-review-list">

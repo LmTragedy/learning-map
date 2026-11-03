@@ -123,6 +123,7 @@ export function App() {
   const [relationBackStack, setRelationBackStack] = useState<{ nodeId: string; scopeKey: string }[]>([]);
   const [health, setHealth] = useState<{
     ai: { available: boolean; reason?: string };
+    deepseek?: { available: boolean; reason?: string } | null;
     parser: Record<string, unknown>;
     data_dir: string;
   }>();
@@ -141,6 +142,8 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [notice]);
   const [settings, setSettings] = useState<Settings>();
+  // null keeps the saved DeepSeek key; "" removes it.
+  const [deepseekKey, setDeepseekKey] = useState<string | null>(null);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [profile, setProfile] = useState<Profile>();
   const [versions, setVersions] = useState<
@@ -345,6 +348,7 @@ export function App() {
     const value = await run("settings", api.settings);
     if (value) {
       setSettings(value);
+      setDeepseekKey(null);
       setModal("settings");
     }
   };
@@ -380,6 +384,8 @@ export function App() {
         ai_enabled: settings.ai_enabled,
         model: settings.model,
         note_review_model: settings.note_review_model || "gpt-6-luna",
+        goal_model: settings.goal_model || "",
+        ...(deepseekKey !== null ? { deepseek_api_key: deepseekKey.trim() } : {}),
         reasoning_effort: settings.reasoning_effort || "medium",
         obsidian_vault: settings.obsidian_vault,
         parser: settings.parser,
@@ -387,6 +393,7 @@ export function App() {
     );
     if (value) {
       setSettings(value);
+      setDeepseekKey(null);
       setAiEnabled(value.ai_enabled);
       setModal(null);
       try {
@@ -1216,7 +1223,7 @@ export function App() {
                   <ShieldCheck size={18} />
                   <p>
                     AI 默认关闭。开启后，课程材料节选、对话和作答会发送到 Codex
-                    提供方处理。Codex
+                    提供方处理；检查或目标提取模型填 DeepSeek 时，笔记和材料节选会发送到 DeepSeek。Codex
                     也可能在其用户目录保存会话记录；删除课程不会清除这些记录，它们由
                     Codex 与提供方的设置管理。
                   </p>
@@ -1262,8 +1269,37 @@ export function App() {
                   <input value={settings.note_review_model || "gpt-6-luna"}
                     onChange={(event) => setSettings({ ...settings, note_review_model: event.target.value })}
                     placeholder="gpt-6-luna" />
-                  <span className="text-xs text-muted-foreground">笔记检查默认 Luna／中等推理；不改变学习对话模型。</span>
+                  <span className="text-xs text-muted-foreground">笔记检查默认 Luna／中等推理；不改变学习对话模型。填 deepseek-chat 等 DeepSeek 模型时改用 DeepSeek。</span>
                 </label>
+                <label className="field-label">
+                  课程目标提取模型（独立）
+                  <input value={settings.goal_model || ""}
+                    onChange={(event) => setSettings({ ...settings, goal_model: event.target.value })}
+                    placeholder="留空则沿用学习对话模型" />
+                  <span className="text-xs text-muted-foreground">可填 DeepSeek 模型；候选目标仍需核对引用并勾选确认。</span>
+                </label>
+                <label className="field-label">
+                  DeepSeek API key
+                  <div className="flex gap-2">
+                    <input type="password" autoComplete="off" className="flex-1"
+                      value={deepseekKey ?? ""}
+                      onChange={(event) => setDeepseekKey(event.target.value || null)}
+                      placeholder={settings.deepseek_key_set ? "已保存（留空不改）" : "sk-…"} />
+                    {settings.deepseek_key_set && deepseekKey !== "" && (
+                      <Button type="button" variant="outline" size="sm" onClick={() => setDeepseekKey("")}>清除</Button>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {deepseekKey === "" && settings.deepseek_key_set
+                      ? "保存后将删除已保存的 key。"
+                      : "只保存在本机 data/ 数据库中，页面不会再显示；用于上面填了 DeepSeek 模型的两项任务。"}
+                  </span>
+                </label>
+                {health?.deepseek && (
+                  <p className="text-xs text-muted-foreground">
+                    {health.deepseek.available ? "DeepSeek API key 已设置（连接与额度未检测）。" : health.deepseek.reason}
+                  </p>
+                )}
                 <label className="field-label">
                   Obsidian 笔记库路径
                   <input

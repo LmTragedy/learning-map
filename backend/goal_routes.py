@@ -62,7 +62,7 @@ def _extract_goals(store, learning, cid):
         "不输出奖励或完成状态。材料没有可提取目标时返回空数组。用户会核对并确认后加入看板。"
         "提取属于AI建议，不能保证语义正确。\n已有知识点：" + encoded_nodes + "\n材料：" + context
     )
-    draft = structured(learning.ai(), prompt, GoalDraft,
+    draft = structured(learning.ai(model=store.settings()["goal_model"].strip() or None), prompt, GoalDraft,
                        {"conversation": conversation_label(course, purpose="课程目标提取")},
                        system=BASE_SYSTEM)
     for candidate in draft.payload["goals"]:

@@ -277,6 +277,9 @@ export type Settings = {
   ai_enabled: boolean;
   model: string;
   note_review_model: string;
+  goal_model: string;
+  deepseek_key_set?: boolean;
+  deepseek_api_key?: string;
   reasoning_effort: "low" | "medium" | "high";
   obsidian_vault: string;
   parser: string;
