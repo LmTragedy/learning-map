@@ -235,6 +235,9 @@ def register_ai_task_routes(app, store, learning):
         label = task.get("request", {}).get("conversation")
         if not task.get("thread_id") or not label:
             raise Conflict("尚无可靠会话身份或归类标签")
+        if task["thread_id"].startswith("deepseek-"):
+            # DeepSeek keeps no conversation, so there is no Codex thread to file into a group.
+            raise Conflict("DeepSeek 任务没有 Codex 会话，无需归类")
         provider = learning.ai_factory(store.settings())
         try:
             section_id = provider.organize_thread(task["thread_id"], ConversationIdentity(**label))

@@ -100,3 +100,17 @@ def test_saved_key_is_write_only_and_used_for_requests(tmp_path, monkeypatch):
     client.post("/api/settings", json={"deepseek_api_key": ""})
     assert client.get("/api/settings").json()["deepseek_key_set"] is False
     assert client.get("/api/health").json()["deepseek"]["available"] is False
+
+
+def test_deepseek_tasks_are_not_filed_into_codex_groups(tmp_path):
+    app = create_app(tmp_path / "data", lambda _settings: None)
+    client = TestClient(app, headers={"X-Learning-Map": "1"})
+    course = client.post("/api/sample").json()
+    store = app.state.store
+    with store.connect() as connection:
+        connection.execute("INSERT INTO ai_tasks VALUES(?,?,?,?,?,?,?,?)", (
+            "deepseek-task", course["id"], "req-deepseek-0001", "goals", "course", "applied",
+            json.dumps(dict(thread_id="deepseek-abc", request=dict(conversation={"title": "t"}))), "now"))
+    response = client.post(f"/api/courses/{course['id']}/ai-tasks/deepseek-task/organize")
+    assert response.status_code == 409
+    assert "DeepSeek" in response.json()["detail"]
