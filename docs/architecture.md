@@ -1,5 +1,15 @@
 # Architecture decision — 2026-11-03
 
+## Cumulative practice and delegated reading — 2026-11-03
+
+Keep the React/FastAPI/SQLite modular monolith and existing course transaction boundary. Practice supplements are immutable attempts linked to a previous attempt in the same node, material scope and question fingerprint. The server validates that binding before generation and again when applying the result. Independent answers start a separate chain. Accepted points retain exact learner quotations and attempt identities; a later clarification must not silently discard earlier evidence. Question changes start a separate progress view. Markdown is a derived, downloadable view of the saved evidence, rather than a second independently editable source of learner state.
+
+The tutor's continuing thread receives changed practice progress, including user resolutions, even when the node's material sources have not changed. Full chat history is not resent on every turn. Sharing a native thread alone was rejected because the observed failure also occurred within one thread: the old instructions treated every supplement as an independent answer and the tutor's context update excluded assessment records.
+
+PDF indexing and text organization use application-scheduled child tasks with the explicit model `gpt-6-luna` and `medium` reasoning. Local PDF parsing/OCR remains responsible for extracting pages. Each model child owns its frozen input, parent identity, provider receipt and recovery state; the parent validates and applies the returned evidence through the course transaction. Native shell, file and delegation tools remain disabled in the provider adapter. Putting multiple model calls into the existing single receipt was rejected because it could replay the wrong response or duplicate provider work. Unknown sends must be recovered rather than automatically repeated.
+
+Verification covers supplement provenance, stale questions and scope changes, independent answers, learner resolutions, continuing tutor updates, child model routing, durable receipt recovery and restoration. Tests use isolated course databases and scripted provider boundaries; they do not establish the accuracy of a live model's assessment.
+
 ## Visuals in future Teach lessons — 2026-11-03
 
 Keep the same lesson transaction and isolated HTML. New requests use `VisualLessonDraft` with bounded declarative visuals. The application automatically attaches node-source excerpts and page references, and supplies up to six distinct original PDF/image pages to the model. The context identifies which pages were supplied; redraws may cite only those pages, within the active node and review scope. Source names, quote matches, uncertainty, visual IDs and numbering are application-owned. Source examples retain the exact extracted quote, original figures retain page pixels, and AI redraws or invented diagrams remain separate provenance values. Generated diagrams accept only bounded box/cell/text/arrow/line/point primitives. Lesson HTML, visuals and the result receipt commit together through the existing course edit.

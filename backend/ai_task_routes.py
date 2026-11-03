@@ -10,11 +10,12 @@ from .ai_history_import import bridge_disposition, import_legacy_receipt
 from .ai_legacy_history import scan_legacy_history
 from .ai_tasks import client_request_id
 from .bridge_backfill import backfill, fill_batch
-from .node_links import find_links
 from .domain import find_node, project_course
 from .goal_routes import extract_goals
 from .lessons import LessonRequest, generate_lesson
 from .lines_ai import generate_lines, retell
+from .material_indexing import build_index
+from .node_links import find_links
 from .note_review import ReviewInput
 from .recall import summarize_recall
 from .review_scope import require_review_node, scope_key, strict_scope
@@ -79,6 +80,7 @@ def register_ai_task_routes(app, store, learning):
             "lines": lambda: generate_lines(store, learning, cid, request_id=rid),
             "retell": lambda: retell(store, learning, cid, nid, inputs["text"], request_id=rid),
             "goals": lambda: goals(cid, rid),
+            "material_index": lambda: build_index(store, learning, cid, inputs["indexed"], rid),
             "note_review": lambda: app.state.note_reviewer.check(cid, nid,
                 ReviewInput.model_validate(inputs | {"request_id": rid,
                     "revision": inputs.get("revision", store.course(cid)["revision"])}), receipt_id=rid),
@@ -156,7 +158,49 @@ def register_ai_task_routes(app, store, learning):
 
     @app.post("/api/courses/{cid}/ai-tasks/{tid}/recover")
     def recover(cid: str, tid: str):
-        task = tasks.collect(owned(cid, tid))
+        task = owned(cid, tid)
+        if task.get("parent_task_id"):
+            parent = owned(cid, task["parent_task_id"])
+            if parent["state"] == "superseded":
+                raise Conflict("父任务已停用；子任务原始结果仍保留")
+            result = recover(cid, parent["id"])
+            if isinstance(result, JSONResponse):
+                return result
+            return dict(task=tasks.public(tasks.get(tid)), parent=result.get("task"),
+                        course=result.get("course"), result=tasks.get(tid).get("result"))
+        if task["state"] == "superseded":
+            raise Conflict("课程已恢复，此任务只能查看，不能重新应用")
+        if task["state"] == "applied":
+            if task["kind"] == "note_review":
+                tasks.validate_result_context(task, store.course(cid))
+            return dict(task=tasks.public(task), course=project_course(store.course(cid)),
+                        result=task.get("result") if task.get("result_type") == "value" else None)
+        child_summaries = tasks.public(task).get("children", [])
+        if task["kind"] in {"material_index", "recall"} and child_summaries and not task.get("raw_reply"):
+            current_course = store.course(cid)
+            try:
+                tasks.validate_result_context(task, current_course)
+            except (Conflict, ValueError, KeyError) as error:
+                tasks.update(tid, state="conflict", error=str(error))
+                raise
+            child_tasks = []
+            for summary in child_summaries:
+                child = tasks.get(summary["id"])
+                if child["state"] not in {"applied", "received"}:
+                    child = tasks.collect(child)
+                if child["state"] in {"applied", "received"}:
+                    tasks.validate_result_context(child, current_course)
+                child_tasks.append(child)
+            if any(child["state"] not in {"applied", "received"} for child in child_tasks):
+                latest = tasks.get(tid)
+                return JSONResponse(dict(task=tasks.public(latest), course=None), status_code=202)
+            tasks.update(tid, state="prepared", error=None)
+            result = dispatch(tasks.get(tid))
+            completed = tasks.get(tid)
+            if completed["state"] != "applied":
+                raise Conflict(completed.get("error") or "子任务结果已保留，但父任务尚未正式应用")
+            return dict(task=tasks.public(completed), course=project_course(store.course(cid)), result=result)
+        task = tasks.collect(task)
         if task.get("history_only"):
             raise Conflict("历史索引只提供原文与对象核对；缺少原始应用上下文，不会自动写入课程")
         if task["state"] == "applied":
@@ -164,8 +208,6 @@ def register_ai_task_routes(app, store, learning):
                 tasks.validate_result_context(task, store.course(cid))
             return dict(task=tasks.public(task), course=project_course(store.course(cid)),
                         result=task.get("result") if task.get("result_type") == "value" else None)
-        if task["state"] == "superseded":
-            raise Conflict("课程已恢复，此任务只能查看，不能重新应用")
         if not task.get("raw_reply"):
             return JSONResponse(dict(task=tasks.public(task), course=None), status_code=202)
         result = dispatch(task)
@@ -178,6 +220,8 @@ def register_ai_task_routes(app, store, learning):
     @app.post("/api/courses/{cid}/ai-tasks/{tid}/regenerate")
     def regenerate(cid: str, tid: str, request: RegenerateRequest):
         task = owned(cid, tid)
+        if task.get("parent_task_id"):
+            raise Conflict("子任务不能单独重新生成；请按父任务继续或重新开始")
         if tasks.public(task).get("history_only"):
             raise Conflict("历史原文索引不能作为新生成请求；原记录和已有内容均已保留")
         result = tasks.regenerate(task, dispatch, request.request_id)

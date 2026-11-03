@@ -4,6 +4,8 @@ import json
 from .bridges import project_bridges
 from .goals import project_goals
 from .lines import project_lines
+from .page_index import index_progress
+from .practice_progress import project_practice_progress
 from .relations import project_edges
 from .review_scope import project_review
 from .route import learning_route
@@ -36,12 +38,14 @@ def project_course(course):
         # Full HTML is retrieved separately so every chat does not retransmit every lesson.
         for lesson in node.get("lessons", []):
             lesson.pop("html", None)
+        node["practice_progress"] = project_practice_progress(course, node)
     # Goals in progress steer "next step" along their whole route, not just their end stations.
     doing = [node_id for goal in course.get("goals", []) if goal.get("status") == "doing" for node_id in goal.get("route_ids", [])]
     course["route"] = learning_route(course["nodes"], doing)
     project_edges(course)
     project_bridges(course)
     project_review(course)
+    course["material_index"] = index_progress(course)
     return project_lines(course)
 
 

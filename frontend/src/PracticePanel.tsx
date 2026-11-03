@@ -20,12 +20,23 @@ type Props = {
 
 export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, onRatingSubmitted, onNavigate }: Props) {
   const scope = JSON.stringify([course.id, node.id, course.review_scope.key, node.question ?? null])
+  const progress = node.practice_progress
+  const uiStateKey = JSON.stringify([scope, progress?.question_key ?? null])
   const draft = useSyncExternalStore(subscribeAnswerDrafts, () => answerDraft(scope))
   const { answer, reference, files, warning } = draft
-  const [problem, setProblem] = useState<number | null>(null)
-  const [mastery, setMastery] = useState<number | null>(null)
-  const [comment, setComment] = useState('')
-  const latest = node.attempts.at(-1)
+  const [rating, setRating] = useState<{ key: string; problem: number | null; mastery: number | null; comment: string }>({ key: '', problem: null, mastery: null, comment: '' })
+  const [independentState, setIndependentState] = useState<{ key: string; value: boolean }>({ key: '', value: false })
+  const problem = rating.key === uiStateKey ? rating.problem : null
+  const mastery = rating.key === uiStateKey ? rating.mastery : null
+  const comment = rating.key === uiStateKey ? rating.comment : ''
+  const independent = independentState.key === uiStateKey ? independentState.value : false
+  const currentQuestionAttempts = node.question
+    ? node.attempts.filter(attempt => JSON.stringify(attempt.question) === JSON.stringify(node.question))
+    : []
+  const chain = progress
+    ? node.attempts.filter(attempt => progress.attempt_ids.includes(attempt.id))
+    : currentQuestionAttempts
+  const latest = chain.at(-1)
   // Only one white button at a time: answering, unless the last attempt is waiting for its rating.
   const answerIsMain = Boolean(node.question) && latest?.rating_state !== 'pending'
 
@@ -35,14 +46,20 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
     return updated
   }
   const submitAttempt = async () => {
-    const updated = await act('attempt', () => api.attempt(course.id, node.id, answer, reference, files))
+    const updated = await act('attempt', async () => {
+      const questionKey = progress?.question_key ?? await practiceQuestionKey(node.question)
+      return api.attempt(course.id, node.id, answer, reference, files, {
+        ...(latest && !independent ? { base_attempt_id: latest.id } : {}),
+        question_key: questionKey,
+      })
+    })
     if (updated) completeAnswerDraft(scope, draft)
   }
   const submitRating = async (attempt: Attempt, skip: boolean) => {
     const updated = await act('rating', () => api.rate(course.id, node.id, attempt.id, { problem: skip ? null : problem, mastery: skip ? null : mastery, comment, skip }))
     if (!updated) return
     // Start the next attempt's rating from blank instead of carrying these scores over.
-    setProblem(null); setMastery(null); setComment('')
+    setRating({ key: uiStateKey, problem: null, mastery: null, comment: '' })
     if (!skip) onRatingSubmitted()
   }
 
@@ -65,6 +82,8 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
             <Button  onClick={askQuestion} disabled={busy || !aiEnabled}><Sparkles size={15}/>生成验收题</Button></>}
       </div>
       <div className="practice-editor">
+        {latest && <p className="muted small">默认补充同一道题的上一份作答；选择独立重答后，本次不会引用旧答案。</p>}
+        {latest && <label className="small"><input type="checkbox" checked={independent} onChange={event => setIndependentState({ key: uiStateKey, value: event.target.checked })}/> 独立重答</label>}
         <textarea rows={10} aria-label="你的作答" value={answer} onChange={event => updateAnswerDraft(scope, { answer: event.target.value })} placeholder="写出你的思路、步骤或解释" disabled={!aiEnabled}/>
         {files.length > 0 && <div className="file-chips">{files.map(file => <span key={`${file.name}-${file.size}`}>{file.name}</span>)}<small className="muted">附件不随草稿保存，刷新页面后需要重新选择。</small></div>}
         <div className="practice-editor-foot">
@@ -80,18 +99,58 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
     </div>
     <aside className="practice-side" aria-label="验收结果">
       {judging && <TaskCards kind="assessment" target={node.id} />}
+      {progress && <section className="result-card">
+        <div className="result-head"><strong>同题作答进度</strong><button className="link-button" onClick={() => downloadMarkdown(progress.markdown)}>下载进度 Markdown</button></div>
+        {progress.confirmed_points.map(point => <p key={point.id}>✓ {point.point} <span className="muted small">“{point.quote}”</span></p>)}
+        {progress.blockers.map((blocker, index) => <p key={`${index}-${blocker}`}>待补充：{blocker}</p>)}
+      </section>}
+      {chain.length > 0 && <details className="result-card" open><summary>同题历史作答（{chain.length}）</summary>{chain.map((attempt, index) => <article key={attempt.id}>
+        <h4>第 {index + 1} 次 · AI 原判：{outcomeLabel(attempt.judgment.outcome)}{attempt.resolution ? ` · 用户决定：${resolutionLabel(attempt.resolution)}` : ''}</h4>
+        <p style={{ whiteSpace: 'pre-wrap' }}>{attempt.answer || '（未附文字）'}</p>
+        {attempt.attachments.map(file => <details key={file.id}><summary>{file.name}</summary>{file.pages.map(page => <p key={page.number} className="muted small">第 {page.number} 页：{page.text}</p>)}</details>)}
+        <p className="muted small">AI 说明：{attempt.judgment.reasoning}</p>
+      </article>)}</details>}
+      {node.attempts.some(attempt => !chain.some(current => current.id === attempt.id)) && <details className="result-card"><summary>其他题目 / 旧记录（{node.attempts.filter(attempt => !chain.some(current => current.id === attempt.id)).length}）</summary>{node.attempts.filter(attempt => !chain.some(current => current.id === attempt.id)).map(attempt => <article key={attempt.id}>
+        <h4>{attempt.question.prompt}</h4><p style={{ whiteSpace: 'pre-wrap' }}>{attempt.answer || '（未附文字）'}</p><p className="muted small">AI 原判：{outcomeLabel(attempt.judgment.outcome)}{attempt.resolution ? ` · 用户决定：${resolutionLabel(attempt.resolution)}` : ''}</p>
+      </article>)}</details>}
       {latest ? <>
-        <AttemptResult attempt={latest} busy={busy} problem={problem} mastery={mastery} comment={comment} onProblem={setProblem} onMastery={setMastery} onComment={setComment} onResolve={decision => void act('resolve', () => api.resolve(course.id, node.id, latest.id, decision))} onRating={skip => void submitRating(latest, skip)}/>
+        <AttemptResult attempt={latest} busy={busy} problem={problem} mastery={mastery} comment={comment} onProblem={score => setRating({ key: uiStateKey, problem: score, mastery, comment })} onMastery={score => setRating({ key: uiStateKey, problem, mastery: score, comment })} onComment={text => setRating({ key: uiStateKey, problem, mastery, comment: text })} onResolve={decision => void act('resolve', () => api.resolve(course.id, node.id, latest.id, decision))} onRating={skip => void submitRating(latest, skip)}/>
         {latest.judgment.outcome !== 'passed' && <BridgeGaps course={course} node={node} attempt={latest} busy={busy} act={act} onNavigate={onNavigate}/>}
       </> : <p className="muted small">提交作答后，判定结果会显示在这里。</p>}
     </aside>
   </div>
 }
 
+async function practiceQuestionKey(question: LearningNode['question']): Promise<string> {
+  if (!question) return '';
+  const canonical = JSON.stringify({ kind: question.kind, prompt: question.prompt, rubric: question.rubric });
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
+  return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('');
+}
+
+function outcomeLabel(outcome: Attempt['judgment']['outcome']) {
+  return { passed: '通过', failed: '需补充', uncertain: '不确定' }[outcome]
+}
+
+function resolutionLabel(resolution: string) {
+  return ({ pass: '按通过处理', supplement: '选择补充练习', review: '通过并待复查' } as Record<string, string>)[resolution] ?? '已作出处理'
+}
+
+function downloadMarkdown(markdown: string) {
+  const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'practice-progress.md'
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 function AttemptResult({ attempt, busy, problem, mastery, comment, onProblem, onMastery, onComment, onResolve, onRating }: { attempt: Attempt; busy: boolean; problem: number | null; mastery: number | null; comment: string; onProblem: (score: number) => void; onMastery: (score: number) => void; onComment: (text: string) => void; onResolve: (decision: 'pass' | 'supplement' | 'review') => void; onRating: (skip: boolean) => void }) {
-  const outcome = { passed: '本次通过', failed: '还需要补充', uncertain: '暂时无法确定' }[attempt.judgment.outcome]
+  const outcome = attempt.resolution
+    ? resolutionLabel(attempt.resolution)
+    : { passed: '本次通过', failed: '还需要补充', uncertain: '暂时无法确定' }[attempt.judgment.outcome]
   return <div className="result-card">
-    <div className="result-head"><strong className={`outcome outcome-${attempt.judgment.outcome}`}>{outcome}</strong>{attempt.rating_state !== 'pending' && <span className="muted small">{attempt.rating_state === 'skipped' ? '已跳过评分' : '已评分'}</span>}</div>
+    <div className="result-head"><strong className={`outcome outcome-${attempt.judgment.outcome}`}>{attempt.resolution ? `用户决定：${outcome}` : outcome}</strong>{attempt.resolution && <span className="muted small">AI 原判：{outcomeLabel(attempt.judgment.outcome)}</span>}{attempt.rating_state !== 'pending' && <span className="muted small">{attempt.rating_state === 'skipped' ? '已跳过评分' : '已评分'}</span>}</div>
     <p>{attempt.judgment.reasoning}</p>
     {attempt.judgment.blockers.length > 0 && <ul>{attempt.judgment.blockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul>}
     <p className="muted small">下一步：{attempt.judgment.next_step}</p>

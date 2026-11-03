@@ -32,7 +32,16 @@ def _summarize_recall(learning, course_id, node_id):
     if len(encoded) > 120000:
         raise LearningError("节点历史超过本次整理 120,000 字符上限；未静默丢弃较早记录。")
     label = review_label(course, node, "Recall整理")
-    reply = structured(learning.ai(), _summary_prompt(node, encoded), RecallSummary, {"conversation": label})
+    prompt = _summary_prompt(node, encoded)
+    child = learning.tasks.run_child(
+        course_id,
+        "recall_summary",
+        {"prompt": prompt, "history": history, "node_title": node["title"],
+         "scope": scope_key(course)},
+        lambda: _recall_child_result(learning, prompt, label, history),
+    )
+    from .learning import StructuredReply
+    reply = StructuredReply(**child)
     summary = reply.payload
     _validate_evidence(summary, history)
     result = summary | dict(messages=history, created_at=timestamp(), history_revision=course["revision"])
@@ -47,6 +56,13 @@ def _summarize_recall(learning, course_id, node_id):
             uncertainties=summary["uncertainties"], through=history[-1]["id"], created_at=result["created_at"])
         save_task_result(connection, result)
     return result
+
+
+def _recall_child_result(learning, prompt, label, history):
+    reply = structured(learning.ai(model="gpt-6-luna", effort="medium"),
+                       prompt, RecallSummary, {"conversation": label})
+    _validate_evidence(reply.payload, history)
+    return dict(payload=reply.payload, thread_id=reply.thread_id)
 
 
 def _summary_prompt(node, encoded):

@@ -207,6 +207,22 @@ class Judgment(Input):
     next_step: str = Field(min_length=1, max_length=4000)
     # Ids of incoming knowledge bridges the answer suggests are missing; only kept when the attempt failed.
     missing_bridges: list[str] = Field(default_factory=list, max_length=8)
+    confirmed_points: list["ConfirmedPoint"] = Field(default_factory=list, max_length=30)
+    disputed_points: list["DisputedPoint"] = Field(default_factory=list, max_length=30)
+
+
+class ConfirmedPoint(Input):
+    id: str = Field(min_length=1, max_length=100)
+    point: str = Field(min_length=1, max_length=500)
+    attempt_id: str = Field(default="", max_length=80)
+    quote: str = Field(min_length=1, max_length=2000)
+
+
+class DisputedPoint(Input):
+    id: str = Field(min_length=1, max_length=100)
+    attempt_id: str = Field(min_length=1, max_length=80)
+    quote: str = Field(min_length=1, max_length=2000)
+    reason: str = Field(min_length=1, max_length=500)
 
 
 class RecallItem(Input):

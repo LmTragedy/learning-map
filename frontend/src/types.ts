@@ -55,7 +55,16 @@ export type Attempt = {
   resolution?: string;
   rating_state: "pending" | "submitted" | "skipped";
   created_at: string;
+  parent_attempt_id?: string | null;
+  question_key?: string;
 };
+export type PracticeProgress = {
+  question_key: string;
+  attempt_ids: string[];
+  confirmed_points: { id: string; point: string; attempt_id: string; quote: string }[];
+  blockers: string[];
+  markdown: string;
+} | null;
 export type Chat = {
   id: string;
   role: string;
@@ -121,6 +130,7 @@ export type LearningNode = {
   difficulty: string;
   chats: Chat[];
   attempts: Attempt[];
+  practice_progress?: PracticeProgress;
   question?: { prompt: string; kind: string; rubric: string };
   thread_id?: string;
   unlocked: boolean;
@@ -186,6 +196,8 @@ export type Course = {
   revision: number;
   created_at: string;
   materials: Material[];
+  /** Pages with text, and how many carry the full material index. */
+  material_index?: { indexed: number; total: number };
   nodes: LearningNode[];
   goals?: Goal[];
   notes?: CourseNote[];

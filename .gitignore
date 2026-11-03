@@ -5,7 +5,9 @@ data/
 test-results/
 __pycache__/
 .pytest_cache/
+.pytest-*/
 .ruff_cache/
+.claude/
 *.pyc
 .env
 *.log

@@ -14,6 +14,8 @@ _active = ContextVar("learning_map_ai_task", default=None)
 _new_action = ContextVar("learning_map_new_generation", default=False)
 _client_action = ContextVar("learning_map_client_action", default=None)
 _regeneration_parent = ContextVar("learning_map_regeneration_parent", default=None)
+CHILD_MODEL = "gpt-6-luna"
+CHILD_EFFORT = "medium"
 
 
 @dataclass(frozen=True)
@@ -23,6 +25,10 @@ class _Invocation:
     inputs: dict
     course: dict
     request_key: str
+    parent_task_id: str | None = None
+    role: str | None = None
+    model: str | None = None
+    effort: str | None = None
 
 
 @contextmanager
@@ -226,9 +232,84 @@ class TaskManager:
         task, fresh = self._reserve(_Invocation(kind, target, inputs, course, key))
         if task["state"] == "applied":
             return self.saved_result(task)
-        if not fresh:
+        has_child_receipts = (task.get("parent_task_id") is None and task.get("kind") in
+                              {"material_index", "recall"} and bool(self._child_rows(task["id"])))
+        if not fresh and has_child_receipts:
+            self.validate_result_context(task, course)
+        elif not fresh:
             self._prepare_replay(task, course)
         return self._execute(task, action)
+
+    def _child_rows(self, parent_task_id, connection=None):
+        if connection is None:
+            with self.store.connect() as opened:
+                return self._child_rows(parent_task_id, opened)
+        return [self.get(row[0], connection) for row in connection.execute(
+            "SELECT id FROM ai_tasks WHERE json_extract(body,'$.parent_task_id')=? ORDER BY rowid",
+            (parent_task_id,),
+        )]
+
+    def run_child(self, course_id, role, inputs, action):
+        """Create a frozen Luna-medium receipt; an active parent task is required."""
+        parent = _active.get()
+        if not parent or parent[0] is not self:
+            raise Conflict("Luna 子任务必须由活动中的父任务显式调度")
+        parent_task_id = parent[1]
+        invocation = self._child_invocation(course_id, role, inputs, parent_task_id)
+        task, fresh = self._reserve(invocation)
+        if task.get("parent_task_id") != parent_task_id or task.get("role") != role:
+            raise Conflict("子任务身份与冻结输入不一致")
+        if task["state"] == "applied":
+            self.validate_result_context(task, invocation.course)
+            self.update(parent_task_id, state="received")
+            return task["result"]
+        if not fresh:
+            self._prepare_replay(task, invocation.course)
+        return self._execute_child(task, parent_task_id, action)
+
+    def _child_invocation(self, course_id, role, inputs, parent_task_id):
+        frozen_inputs = json.loads(_encoded(inputs))
+        digest = _hash(dict(parent=parent_task_id, role=role, inputs=frozen_inputs,
+                            model=CHILD_MODEL, effort=CHILD_EFFORT))
+        return _Invocation("child", digest[:32], frozen_inputs, self.store.course(course_id),
+                           f"child-{digest}", parent_task_id=parent_task_id, role=role,
+                           model=CHILD_MODEL, effort=CHILD_EFFORT)
+
+    def _execute_child(self, task, parent_task_id, action):
+        child_context = (self, task["id"])
+        token = _active.set(child_context)
+        try:
+            child_result = action()
+            self._complete_child(task["id"], parent_task_id, child_result)
+            return child_result
+        except Exception as error:
+            self._record_child_failure(task["id"], error)
+            raise
+        finally:
+            try:
+                self.conversations.finish(self.get(task["id"]))
+            finally:
+                _active.reset(token)
+
+    def _complete_child(self, child_id, parent_task_id, child_result):
+        child = self.get(child_id)
+        if child["state"] != "applied":
+            if child.get("raw_reply"):
+                self.complete_value(child_id, child_result)
+            else:
+                self.update(child_id, state="invalid", error="子任务没有产生可应用的独立结果")
+        if self.get(child_id)["state"] == "applied":
+            # Parent course writes still use the standard received -> applied boundary.
+            self.update(parent_task_id, state="received")
+
+    def _record_child_failure(self, child_id, error):
+        latest = self.get(child_id)
+        state = "unknown" if latest.get("request") and not latest.get("raw_reply") else "invalid"
+        if not latest.get("request"):
+            state = "rejected"
+        elif latest.get("raw_reply"):
+            state = "received"
+        self.update(child_id, state=state, error=str(error))
 
     def _reserve(self, invocation):
         course_id = invocation.course["id"]
@@ -287,7 +368,8 @@ class TaskManager:
         task_id = identity()
         body = dict(inputs=invocation.inputs, before=invocation.course, context_hash=_hash(invocation.course),
                     created_at=timestamp(), request_id=invocation.request_key,
-                    regenerated_from=_regeneration_parent.get())
+                    regenerated_from=_regeneration_parent.get(), parent_task_id=invocation.parent_task_id,
+                    role=invocation.role, model=invocation.model, effort=invocation.effort)
         connection.execute("INSERT INTO ai_tasks VALUES(?,?,?,?,?,?,?,?)",
                            (task_id, invocation.course["id"], invocation.request_key, invocation.kind,
                             invocation.target, "prepared", _encoded(body), timestamp()))
@@ -330,8 +412,14 @@ class TaskManager:
             result = action()
             if self.get(task["id"])["state"] != "applied":
                 latest = self.get(task["id"])
-                state = "unknown" if latest.get("request") and not latest.get("raw_reply") else "invalid"
-                if not latest.get("request"):
+                children = self._child_rows(task["id"])
+                if children and all(child["state"] in {"applied", "received"} for child in children):
+                    state = "received"
+                elif any(child["state"] == "unknown" for child in children):
+                    state = "unknown"
+                else:
+                    state = "unknown" if latest.get("request") and not latest.get("raw_reply") else "invalid"
+                if not latest.get("request") and not children:
                     state = "rejected"
                 self.update(task["id"], state=state,
                             error=latest.get("error") or "操作未正式应用；原始结果仍保留")
@@ -341,9 +429,14 @@ class TaskManager:
             if latest["state"] == "applied" and isinstance(error, Conflict):
                 return self.saved_result(latest)
             state = "conflict" if isinstance(error, Conflict) else "invalid"
-            if not latest.get("raw_reply") and latest.get("request"):
+            children = self._child_rows(task["id"])
+            if children and all(child["state"] in {"applied", "received"} for child in children):
+                state = "received"
+            elif any(child["state"] == "unknown" for child in children):
                 state = "unknown"
-            elif not latest.get("request"):
+            elif not latest.get("raw_reply") and latest.get("request"):
+                state = "unknown"
+            elif not latest.get("request") and not children:
                 state = "rejected"
             self.update(task["id"], state=state, error=str(error))
             raise
@@ -433,6 +526,20 @@ class TaskManager:
         published.update(has_raw_reply=bool(task.get("raw_reply") or task.get("historical_raw")),
                          can_collect=bool(task.get("thread_id") and not task.get("raw_reply")),
                          organization=self.conversations.organization(task))
+        if task.get("parent_task_id"):
+            published["can_regenerate"] = False
+        if task.get("parent_task_id") is None:
+            with self.store.connect() as connection:
+                published["children"] = [
+                    {key: child.get(key) for key in ("id", "role", "state", "model", "effort", "error")}
+                    | {"can_collect": bool(child.get("thread_id") and not child.get("raw_reply"))}
+                    for child in self._child_rows(task["id"], connection)
+                ]
+            if task.get("kind") in {"material_index", "recall"} and not task.get("raw_reply"):
+                published["can_recover"] = task["state"] != "applied" and any(
+                    child["state"] in {"applied", "received"} or child.get("can_collect")
+                    for child in published["children"]
+                )
         if task.get("history_only"):
             published.update(can_recover=False, can_regenerate=False)
         if task["kind"] == "bridge_history":

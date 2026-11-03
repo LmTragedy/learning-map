@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import obsidian
@@ -13,7 +13,6 @@ from .ai import AIError, AIUnavailable, CodexAI
 from .ai_task_routes import register_ai_task_routes
 from .ai_tasks import client_request_id, requested_action_id
 from .bridge_backfill import register_bridge_backfill
-from .node_links import register_node_links
 from .domain import (
     find_attempt,
     find_node,
@@ -37,7 +36,10 @@ from .learning import Learning, recall_messages
 from .lesson_routes import register_lesson_routes
 from .line_routes import register_line_routes
 from .lines_ai import register_line_ai
+from .material_indexing import register_material_index
+from .node_links import register_node_links
 from .note_review import register_note_review
+from .practice_progress import question_key, validate_parent
 from .profile import accept_stage as apply_stage
 from .recall import summarize_recall
 from .relation_routes import register_relation_routes
@@ -90,6 +92,7 @@ def create_app(data_dir=None, ai_factory=None):
     # Registered before /relations/{rid} so "backfill" is not read as a relation id.
     register_bridge_backfill(app, store, learning)
     register_node_links(app, store, learning)
+    register_material_index(app, store, learning)
     register_relation_routes(app, store)
     register_goals_notes(app, store)
     register_note_review(app, learning)
@@ -264,6 +267,8 @@ def _learning_routes(app, store, learning):
         nid: str,
         answer: str = Form(""),
         reference: str = Form(""),
+        base_attempt_id: str = Form(""),
+        question_key_value: str = Form("", alias="question_key"),
         files: list[UploadFile] = File(default=[]),
     ):
         previous = learning.tasks.find_request(cid, requested_action_id())
@@ -271,7 +276,9 @@ def _learning_routes(app, store, learning):
             if previous["kind"] != "assessment" or previous["target"] != nid:
                 raise Conflict("此请求身份已用于其他操作")
             submitted_before = previous["inputs"]["submission"]
-            if submitted_before["answer"] != answer or submitted_before["reference"] != reference:
+            if (submitted_before["answer"] != answer or submitted_before["reference"] != reference
+                    or submitted_before.get("base_attempt_id", "") != base_attempt_id
+                    or (question_key_value and submitted_before.get("question_key", "") != question_key_value)):
                 raise Conflict("此验收请求身份已用于其他作答")
             _require_same_attempt_files(files, submitted_before["attachments"])
             if previous["state"] == "applied":
@@ -280,7 +287,13 @@ def _learning_routes(app, store, learning):
                 raise Conflict(f"请恢复原验收任务 {previous['id']}，未重新生成或导入附件")
         submission_id = requested_action_id() or identity()
         current = store.course(cid)
-        find_node(current, nid)
+        node = find_node(current, nid)
+        question = question_for(current, node)
+        if not question:
+            raise ValueError("请先生成或选择验收题目")
+        if question_key_value and question_key_value != question_key(question):
+            raise Conflict("题目已变化，请刷新后重新作答")
+        validate_parent(current, node, base_attempt_id, question_key_value)
         if not answer.strip() and not files:
             raise ValueError("请输入作答或上传纸上作答文件")
         if len(answer) + len(reference) > 40000:
@@ -293,6 +306,9 @@ def _learning_routes(app, store, learning):
                 answer=answer,
                 reference=reference,
                 attachments=attachments,
+                base_attempt_id=base_attempt_id,
+                parent_attempt_id=base_attempt_id or None,
+                question_key=question_key_value or question_key(question),
                 id=submission_id,
             )
             saved = learning.submit(current, nid, submitted, images)
@@ -301,6 +317,14 @@ def _learning_routes(app, store, learning):
                 discard_materials(store, cid, attachments)
             raise
         return project_course(saved)
+
+    @app.get("/api/courses/{cid}/nodes/{nid}/progress.md", response_class=PlainTextResponse)
+    def practice_progress_markdown(cid: str, nid: str):
+        node = find_node(project_course(store.course(cid)), nid)
+        progress = node.get("practice_progress")
+        if progress is None:
+            return PlainTextResponse("# 练习进度\n\n当前节点/资料范围没有与当前题目关联的作答。\n", media_type="text/markdown")
+        return PlainTextResponse(progress["markdown"], media_type="text/markdown")
 
     @app.post("/api/courses/{cid}/nodes/{nid}/attempts/{aid}/resolve")
     def resolve(cid: str, nid: str, aid: str, request: Resolve):

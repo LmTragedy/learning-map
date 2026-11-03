@@ -13,6 +13,18 @@ const baseCourse = (overrides = {}) => ({
   ...overrides,
 });
 
+test("completed child work stays separate from applying its parent to the course", () => {
+  const child = baseTask({ kind: "child", state: "applied", parent_task_id: "parent-1", role: "material_page_index" });
+  const completed = taskView(child, baseCourse());
+  assert.equal(completed.title, "Luna 子任务已完成");
+  assert.equal(completed.group, "applied");
+  assert.equal(completed.canOpen, false);
+  assert.equal(completed.canRegenerate, false);
+  const received = taskView({ ...child, state: "received", has_raw_reply: true, can_recover: true }, baseCourse());
+  assert.equal(received.canRecover, true);
+  assert.equal(received.canRegenerate, false);
+});
+
 test("maps each persisted backend state to its user-visible task meaning", () => {
   const cases = [
     ["prepared", "prepared", "active"], ["sending", "running", "active"], ["running", "running", "active"],

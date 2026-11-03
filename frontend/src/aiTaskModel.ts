@@ -13,6 +13,11 @@ export type AiTask = {
   result_ref?: { kind: string; course_id: string; available: boolean; checked_revision?: number; node_id?: string; object_id?: string } | null;
   result_object?: unknown; has_raw_reply?: boolean; can_collect?: boolean;
   organization?: { native_status: string; desktop_status: string; checked_at?: string; native_section_id?: string; desktop_section_id?: string };
+  parent_task_id?: string | null;
+  role?: string | null;
+  model?: string | null;
+  effort?: string | null;
+  children?: { id: string; role: string; state: string; model?: string; effort?: string; error?: string }[];
 };
 export type TaskView = {
   semantic: 'prepared'|'running'|'processing'|'received'|'conflict'|'unknown'|'applied'|'unverified'|'failed'|'superseded'|'offline'|'missing'|'recovering'|'history';
@@ -21,12 +26,13 @@ export type TaskView = {
   error?: string; shortLabel: string; newRequestId?: string;
 };
 export const ACTIVE_STATES = new Set(['prepared','sending','running','processing']);
-export const DISPATCH_KINDS = new Set(['bridge','links','bridge_history','assessment','chat','lesson','map','question','recall','lines','retell','goals','note_review']);
+export const DISPATCH_KINDS = new Set(['bridge','links','bridge_history','assessment','chat','lesson','map','question','recall','lines','retell','goals','note_review','material_index','child']);
 const RECOVER_KINDS = new Set([...DISPATCH_KINDS,'assessment']);
 export const taskTime = (value: string) => formatTime(value);
 export function taskName(task: AiTask, course?: Course) {
+  if (task.kind === 'child') return task.role === 'material_page_index' ? 'Luna 阅读材料' : task.role === 'recall_summary' ? 'Luna 整理学习记录' : 'Luna 文字子任务';
   const kind = task.kind === 'history' ? task.history_kind || 'history' : task.kind;
-  const verb = {lesson: task.inputs?.kind === 'supplement' ? '补一节小课' : '生成小课', chat:'回复',question:'生成验收题',assessment:'检查作答',bridge:'补充知识桥',links:'重新找前后联系',bridge_backfill:'补充知识桥',bridge_history:'历史知识桥',map:'更新地图',lines:'生成主线',recall:'整理学习内容',retell:'检查复述',goals:'提取目标',note_review:'检查笔记',history:'历史任务'}[kind] || (task.kind === 'history' ? '历史任务' : kind);
+  const verb = {lesson: task.inputs?.kind === 'supplement' ? '补一节小课' : '生成小课', chat:'回复',question:'生成验收题',assessment:'检查作答',bridge:'补充知识桥',links:'重新找前后联系',bridge_backfill:'补充知识桥',bridge_history:'历史知识桥',map:'更新地图',material_index:'建立材料索引',lines:'生成主线',recall:'整理学习内容',retell:'检查复述',goals:'提取目标',note_review:'检查笔记',history:'历史任务'}[kind] || (task.kind === 'history' ? '历史任务' : kind);
   const label = course?.nodes.find(n => n.id === task.target)?.title || course?.edges.find(e => e.id === task.target)?.explanation;
   return label ? `${verb}「${label}」` : verb;
 }
@@ -78,6 +84,14 @@ export function taskView(task: AiTask, course?: Course, options: {offline?:boole
   if (!canDispatch && !task.history_only && task.kind !== 'history' && task.state !== 'applied') base.error = `${task.error ? task.error+'。' : ''}此入口暂不支持历史取回或重新生成；原始记录保留。`;
   if(task.kind==='bridge_history'&&task.history_matched!==true)Object.assign(base,{canRecover:false,canRegenerate:false,error:'历史输出与课程输入尚未可靠匹配，原始回复保留供核对，不能应用到当前关系。'});
   if(task.state==='missing')Object.assign(base,{semantic:'missing',title:'后端没有这个任务的记录',description:'可能已被移除，或请求没有到达本地服务。',shortLabel:'后端无记录',canRecover:false,canRegenerate:false,error:'仅保留了请求身份，未取得任务 ID；无法安全重放原始输入。'});
+  if (task.kind === 'child') {
+    base.canRegenerate = false;
+    base.canOpen = false;
+    if (task.state === 'applied') Object.assign(base, {
+      semantic: 'applied', title: 'Luna 子任务已完成', group: 'applied',
+      description: `${name} · 结果已保存，供主任务汇总`, shortLabel: '子任务完成',
+    });
+  }
   if (options.offline) return {...base,semantic:'offline',title:'无法连接本地服务，状态未知',description:`上次读到：${base.title}`,canRecover:false,canRegenerate:false,canOpen:false};
   if (options.recovering) return {...base,semantic:'recovering',title:'正在取回结果…',canRecover:true,canRegenerate:false,shortLabel:'正在取回'};
   return base;

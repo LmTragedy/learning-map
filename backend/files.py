@@ -67,7 +67,7 @@ def material_by_id(course, material_id):
     candidates = list(course["materials"])
     for node in course["nodes"]:
         for attempt in node["attempts"]:
-            candidates.extend(attempt["attachments"])
+            candidates.extend(attempt.get("attachments", []))
     for material in candidates:
         if material["id"] == material_id:
             return material

@@ -25,6 +25,7 @@ export function regenerationRequestId(courseId: string, taskId: string) {
 
 const generationPaths = [
   /^\/courses\/[^/]+\/generate$/,
+  /^\/courses\/[^/]+\/material-index$/,
   /^\/courses\/[^/]+\/nodes\/[^/]+\/(?:chat|question|recall-summary|lessons|attempts)$/,
   /^\/courses\/[^/]+\/relations\/(?:[^/]+\/)?backfill$/,
   /^\/courses\/[^/]+\/nodes\/[^/]+\/personal-note\/review$/,

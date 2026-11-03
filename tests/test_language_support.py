@@ -121,11 +121,13 @@ def test_ai_operations_receive_current_scoped_history_evidence_and_sources(learn
 
     assert response.status_code == 200, response.text
     prompt = model.calls[-1][0]
-    for marker in (
-        "CURRENT_SCOPE_CHAT_SENTINEL", "CURRENT_SCOPE_ANSWER_SENTINEL",
-        "CURRENT_SCOPE_QUESTION_SENTINEL", "CURRENT_SCOPE_JUDGMENT_SENTINEL",
+    expected_markers = [
+        "CURRENT_SCOPE_CHAT_SENTINEL", "CURRENT_SCOPE_QUESTION_SENTINEL",
         "PREFERENCE_SENTINEL", "A relation stores tuples",
-    ):
+    ]
+    if operation != "grade":
+        expected_markers.extend(("CURRENT_SCOPE_ANSWER_SENTINEL", "CURRENT_SCOPE_JUDGMENT_SENTINEL"))
+    for marker in expected_markers:
         assert marker in prompt
     for marker in (
         "OTHER_SCOPE_CHAT_SENTINEL", "OTHER_SCOPE_ANSWER_SENTINEL",

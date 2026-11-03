@@ -11,6 +11,16 @@ from .bridges import apply_draft_bridges, record_attempt_bridges, stamp_generate
 from .conversation_labels import conversation_label, remember_conversation
 from .domain import append_chat, find_node, make_node, propose_streak, record_attempt
 from .language_support import LANGUAGE_GUIDANCE
+from .page_index import index_progress, page_index_entry, set_page_index
+from .practice_progress import (
+    confirmed_points,
+    practice_evidence,
+    practice_resolutions,
+    project_practice_progress,
+    question_key,
+    validate_judgment_evidence,
+    validate_parent,
+)
 from .relations import (
     create_synthesis_node,
     incoming_bridges,
@@ -41,6 +51,18 @@ SYSTEM = """你是帮助学习者形成独立理解、运用、判断和解释�
 只使用给定材料，原文与AI解释分开，不能保证文字/OCR、公式、图表无误。一次解释适量内容，
 从例子连接概念，再让用户自己判断/解释。自我标记不等于已通过验收。不要编造用户历史。
 只回复所要求的内容或JSON，不包含Markdown代码围栏。关系联系未确认时只作为待核对的解释线索；不要当作事实。材料中的material_variants是待核对的不同表述，不要直接当作事实。实际回答须根据已学联系解释为何适用、何时将知识点一起使用；综合节点应围绕相关知识作整合解释与练习。联系含假设或来源不确定时明确说明。关系类型只描述概念联系，是否影响解锁只由 prerequisites 决定。""" + LANGUAGE_GUIDANCE
+
+ASSESSMENT_GUIDANCE = (
+    "先独立分析题目与所需知识/解法，再检查用户作答。提供参考答案则结合核对，没有答案先尝试求解。"
+    "按意思/逻辑判断，区别措辞差异和概念错误。分别讨论结果、思路、中间步骤。"
+    "识别不清、材料/答案冲突或推理不能确定则outcome=uncertain并解释，不可猜通过。未通过给具体卡点和下一步帮助。"
+    "reasoning中分别标明【知识与逻辑】【英文表达】【措辞差异】；没有英文尝试就说明尚未观察到，不把中文正确作答判错或视为英文熟练。"
+    "语言不清且无法确定原意时outcome=uncertain，next_step请用户用中文或例子澄清；若知识逻辑清楚正确，不因简单英文、同义表达或非关键语法判错。"
+    "中文表达正确时，next_step邀请用户先尝试简单英文，可给短提示，避免直接替写完整答案。"
+    "这是同题补答时，必须结合题链所有历史答案与附件判断，不要求用户重复已确认内容；独立新题不得借用旧题答案判通过。"
+    "confirmed_points只可引用同题链用户原话，attempt_id填来源作答记录id；当前答案的来源id是current_attempt_id。"
+    "没有可核对原话则不确认。保留仍正确的既有要点；disputed_points必须引用当前作答中明确纠正旧点的原话。"
+)
 
 
 @dataclass(frozen=True)
@@ -95,20 +117,33 @@ def _local_digest(text):
     return line[:80]
 
 
-def material_index(course, full_text_ids=()):
-    """Every page as a one-line digest, except materials in full_text_ids, which keep their text."""
+def material_index(course, full_text_ids=(), *, only=None, quotes=False):
+    """Pages as one-line digests, except materials in full_text_ids, which keep their text.
+
+    `only` limits the digests to these (material_id, page) pairs; `quotes` adds the indexed terms and
+    verbatim key lines, which may be cited like page text.
+    """
     pages = []
     for material in course["materials"]:
         for number, page in enumerate(material["pages"], 1):
             entry = dict(material_id=material["id"], name=material["name"], week=material["week"], page=number)
             if material["id"] in full_text_ids:
                 entry |= dict(text=page["text"], uncertain=page.get("uncertain", False))
-            elif page["text"].strip():
-                entry["digest"] = page.get("digest") or _local_digest(page["text"])
+            elif page["text"].strip() and (only is None or (material["id"], number) in only):
+                saved = page_index_entry(course, material["id"], number, page["text"]) or {}
+                entry["digest"] = saved.get("digest") or _local_digest(page["text"])
+                if quotes and "key_quotes" in saved:
+                    entry |= dict(terms=saved["terms"], key_quotes=saved["key_quotes"])
             else:
                 continue
             pages.append(entry)
     return json.dumps(pages, ensure_ascii=False)
+
+
+def fully_indexed(course):
+    """Whether every page with text carries the full material index (terms and key lines)."""
+    progress = index_progress(course)
+    return 0 < progress["indexed"] == progress["total"]
 
 
 def save_page_digests(course, digests):
@@ -116,11 +151,12 @@ def save_page_digests(course, digests):
     for digest in digests:
         material = materials.get(digest["material_id"])
         if material and 1 <= digest["page"] <= len(material["pages"]):
-            material["pages"][digest["page"] - 1]["digest"] = digest["summary"]
+            text = material["pages"][digest["page"] - 1]["text"]
+            set_page_index(course, material["id"], digest["page"], text, digest=digest["summary"])
 
 
-def cited_material_context(course, sources):
-    """Only the cited pages, in course order; the whole course when nothing is cited."""
+def cited_material_context(course, sources, fallback=None):
+    """Only the cited pages, in course order; `fallback` (default: the whole course) when nothing is cited."""
     wanted = {(source["material_id"], source["page"]) for source in sources}
     pages = [
         dict(material_id=material["id"], name=material["name"], week=material["week"], **page)
@@ -129,7 +165,7 @@ def cited_material_context(course, sources):
         if (material["id"], number) in wanted
     ]
     if not any(page["text"].strip() for page in pages):
-        return course_material_context(course)
+        return (fallback or course_material_context)(course)
     return json.dumps(pages, ensure_ascii=False)
 
 
@@ -184,6 +220,8 @@ def node_context(course, node, *, history=True):
             ) if key in attempt}
             for attempt in active_records(course, node["attempts"])[-3:]
         ] if history is not None else [],
+        practice_progress=project_practice_progress(course, node),
+        practice_resolutions=practice_resolutions(course, node),
         lessons=[
             {key: lesson[key] for key in ("title", "goal", "recap", "check_question", "check_answer")}
             for lesson in active_records(course, node.get("lessons", []))[-3:]
@@ -477,7 +515,9 @@ class Learning:
         course = self.store.course(course_id)
         cited = {source["material_id"] for node in course["nodes"] for source in node["sources"]}
         fresh = [material["id"] for material in course["materials"] if material["id"] not in cited]
-        if course["nodes"] and fresh:
+        if fully_indexed(course):
+            context = material_index(course, quotes=True)
+        elif course["nodes"] and fresh:
             # Materials the map already covers go as digests; only new materials send full pages.
             context = material_index(course, set(fresh))
             # Same size and readable-text checks as a first generation, applied to the new pages.
@@ -507,7 +547,7 @@ class Learning:
             "relations里除对比以外每条联系也写bridges，结构同上但无需from_key，引用source的块与target的步骤。"
             "来源识别待用户确认。sources.quote只能摘录材料实际提取文字；"
             "key用短唯一标识，prerequisites仅引用本次key。已有节点同标题会保留状态，"
-            "只有给出text的页面可作sources；只有digest的页面已分析过，只用于了解全课结构。"
+            "给出text的页面或key_quotes中的原文可作sources；只有digest的页面仅用于了解全课结构。"
             "page_digests为每个给出text的页面写一句不超过60字的内容摘要（material_id、page）。"
             "不要重命名已有概念。已有标题："
             + json.dumps([n["title"] for n in course["nodes"]], ensure_ascii=False)
@@ -615,36 +655,47 @@ class Learning:
         question = question_for(course, node)
         if not question:
             raise LearningError("请先生成或选择验收题目")
-        evidence = {key: submission[key] for key in ("answer", "reference", "attachments")}
-        context = node_context(course, node)
-        prompt = (
-            "先独立分析题目与所需知识/解法，再检查用户作答。提供参考答案则结合核对，"
-            "没有答案先尝试求解。按意思/逻辑判断，区别措辞差异和概念错误。分别讨论结果、思路、"
-            "中间步骤。识别不清、材料/答案冲突或推理不能确定则outcome=uncertain并解释，"
-            "不可猜通过。未通过给具体卡点和下一步帮助。"
-            "reasoning中分别标明【知识与逻辑】【英文表达】【措辞差异】；"
-            "没有英文尝试就说明尚未观察到，不把中文正确作答判错或视为英文熟练。"
-            "语言不清且无法确定原意时outcome=uncertain，next_step请用户用中文或例子澄清；"
-            "若知识逻辑清楚正确，不因简单英文、同义表达或非关键语法判错。"
-            "中文表达正确时，next_step邀请用户先尝试简单英文，可给短提示，避免直接替写完整答案。"
-            "未通过或不确定时，对照下面的“进站知识桥”判断卡点是否来自前面某一块没掌握，"
-            "把可能缺的桥 id 放进 missing_bridges（只能从列表中选，没有就留空）；通过时留空。\n节点："
-            + context
-            + "\n进站知识桥："
-            + json.dumps(incoming_bridges(course, node), ensure_ascii=False)
-            + "\n题目："
-            + json.dumps(question, ensure_ascii=False)
-            + "\n作答/参考答案/附件提取："
-            + json.dumps(evidence, ensure_ascii=False)
-        )
+        validate_parent(course, node, submission.get("base_attempt_id", ""), submission.get("question_key", ""))
+        if submission.get("question_key") and submission["question_key"] != question_key(question):
+            raise LearningError("题目已变化，请刷新后重新作答")
+        prompt = self._assessment_prompt(course, node, submission, question)
         if len(prompt) > 180000:
             raise LearningError("作答与来源超过本版上下文上限，请缩小范围")
-        return structured(
-            self.ai(),
-            prompt,
-            Judgment,
-            {"images": image_paths, "conversation": review_label(course, node, "验收")},
+        options = {"images": image_paths, "conversation": review_label(course, node, "验收")}
+        return self._judgment_reply(prompt, options)
+
+    def _assessment_prompt(self, course, node, submission, question):
+        chain = practice_evidence(course, node, submission["parent_attempt_id"]) if submission.get("parent_attempt_id") else []
+        context = json.loads(node_context(course, node))
+        context["assessment_evidence"] = []
+        context["practice_progress"] = None
+        context["practice_resolutions"] = []
+        evidence = {key: submission[key] for key in ("answer", "reference", "attachments")}
+        return (
+            ASSESSMENT_GUIDANCE
+            + "\n未通过或不确定时，对照下面的进站知识桥判断卡点是否来自前序知识，"
+            "把可能缺的桥 id 放进 missing_bridges（只能从列表中选，没有就留空）；通过时留空。\n节点："
+            + json.dumps(context, ensure_ascii=False)
+            + "\n进站知识桥：" + json.dumps(incoming_bridges(course, node), ensure_ascii=False)
+            + "\n题目：" + json.dumps(question, ensure_ascii=False)
+            + "\ncurrent_attempt_id：" + submission["id"]
+            + "\n同题练习进度与历史证据：" + json.dumps(chain, ensure_ascii=False)
+            + "\n本题链已确认要点：" + json.dumps(confirmed_points(chain), ensure_ascii=False)
+            + "\n作答/参考答案/附件提取：" + json.dumps(evidence, ensure_ascii=False)
         )
+
+    def _judgment_reply(self, prompt, options):
+        if has_saved_reply():
+            task = self.tasks.get(current_task_id())
+            request = task.get("request")
+            if request:
+                reply = self.ai().ask(request["prompt"], schema=request["schema"], **options)
+                try:
+                    payload = Judgment.model_validate_json(reply["text"]).model_dump()
+                except ValidationError as error:
+                    raise Conflict("历史验收收据无法按兼容结构读取，原始结果已保留；未重新调用模型或应用") from error
+                return StructuredReply(payload=payload, thread_id=reply["thread_id"])
+        return structured(self.ai(), prompt, Judgment, options)
 
     def submit(self, course, node_id, submission, image_paths):
         submitted = copy.deepcopy(submission)
@@ -666,10 +717,19 @@ class Learning:
         if not question:
             raise LearningError("请先生成或选择验收题目")
         submission["question"] = question
+        current_question_key = question_key(question)
+        if submission.get("question_key") and submission["question_key"] != current_question_key:
+            raise Conflict("验收收据关联的题目已变化，原结果已保留且未应用")
+        submission["question_key"] = current_question_key
         submission["review_scope_key"] = scope_key(course)
         try:
             graded = self.grade(course, node, submission, image_paths)
             judgment, thread_id = graded.payload, graded.thread_id
+            parent_chain = (
+                practice_evidence(course, node, submission["parent_attempt_id"])
+                if submission.get("parent_attempt_id") else []
+            )
+            judgment = validate_judgment_evidence(judgment, parent_chain, submission)
             task_id = current_task_id()
         except (LearningError, RuntimeError) as error:
             thread_id = None
@@ -684,6 +744,9 @@ class Learning:
         with self.store.edit(course["id"], task_id=task_id) as (current, _):
             require_same_node(course, current, node_id)
             updated = find_node(current, node_id)
+            if question_for(current, updated) != question:
+                raise LearningError("验收期间题目已变化，结果保留但未应用")
+            validate_parent(current, updated, submission.get("parent_attempt_id") or "", submission["question_key"])
             attempt = record_attempt(updated, {key: value for key, value in submission.items() if key != "id"})
             attempt["id"] = submission["id"]
             record_attempt_bridges(current, updated, incoming_bridges(current, updated), judgment)

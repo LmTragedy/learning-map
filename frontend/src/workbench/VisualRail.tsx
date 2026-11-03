@@ -13,8 +13,10 @@ const COLLAPSED_KEY = "lm.visualRail.collapsed";
 export function VisualRail({ items, activeId, onSelect }: { items: VisualItem[]; activeId?: string | null; onSelect: (id: string, trigger?: HTMLElement) => void }) {
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(COLLAPSED_KEY) === "true"; } catch { return false; } });
   if (!items.length) return null;
-  const safeItems = items.map(validateVisualItem).filter((entry): entry is VisualItem => entry !== null);
-  const invalidCount = items.length - safeItems.length;
+  const validatedItems = items.map(validateVisualItem).filter((entry): entry is VisualItem => entry !== null);
+  const safeItems = validatedItems.filter((entry) => entry.provenance !== "source" || entry.kind !== "example");
+  const invalidCount = items.length - validatedItems.length;
+  if (!safeItems.length && !invalidCount) return null;
   if (!safeItems.length) return <aside className="visual-rail" aria-label="这节的例子和图"><p className="visual-diagram-error" role="status">例图数据无法显示。</p></aside>;
   const toggle = () => setCollapsed((value) => { const next = !value; try { localStorage.setItem(COLLAPSED_KEY, String(next)); } catch { /* optional preference */ } return next; });
   return <aside className={`visual-rail${collapsed ? " is-collapsed" : ""}`} aria-label="这节的例子和图" data-visual-rail>

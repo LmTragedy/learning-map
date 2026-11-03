@@ -129,6 +129,8 @@ export const api = {
   },
   generate: (id: string) =>
     request<Course>(`/courses/${id}/generate`, json("POST", {})),
+  indexMaterials: (id: string, indexed: number) =>
+    request<{ course: Course; indexed: number; total: number }>(`/courses/${id}/material-index`, json("POST", { indexed })),
   lesson: (cid: string, nid: string, lesson: { kind: "initial" | "supplement"; focus: string; request_id: string }) =>
     request<Course>(`/courses/${cid}/nodes/${nid}/lessons`,
       json("POST", lesson)),
@@ -171,11 +173,14 @@ export const api = {
     answer: string,
     reference: string,
     files: File[],
+    continuation?: { base_attempt_id?: string; question_key?: string },
   ) => {
     const body = new FormData();
     body.set("answer", answer);
     body.set("reference", reference);
     files.forEach((f) => body.append("files", f));
+    if (continuation?.base_attempt_id) body.set("base_attempt_id", continuation.base_attempt_id);
+    if (continuation?.question_key) body.set("question_key", continuation.question_key);
     return request<Course>(`/courses/${cid}/nodes/${nid}/attempts`, {
       method: "POST",
       body,

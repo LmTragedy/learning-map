@@ -42,9 +42,11 @@ import {
   Target,
   CircleCheck,
   FolderSync,
+  ListTree,
 } from "lucide-react";
 import { api, materialFileUrl } from "./api";
 import { cn } from "./lib/utils";
+import { generateWithReading, indexAllMaterials, indexProgress } from "./materialIndex";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
@@ -692,12 +694,26 @@ export function App() {
                     {course.materials.length > 0 && (
                       <DropdownMenuItem
                         disabled={busy || !aiEnabled || !health?.ai.available}
-                        onSelect={() => void run("generate", () => api.generate(course.id)).then((v) => v && refreshCourse(v))}
+                        onSelect={() => void run("generate", () => generateWithReading(course)).then((v) => v && refreshCourse(v))}
                       >
                         <Sparkles /> {course.nodes.length ? "更新地图" : "生成知识地图"}
                         {(!aiEnabled || !health?.ai.available) && <DropdownMenuShortcut>需启用 AI</DropdownMenuShortcut>}
                       </DropdownMenuItem>
                     )}
+                    {course.materials.length > 0 && (() => {
+                      // Read once, then later map, goal and link requests send this index instead of whole pages.
+                      const progress = indexProgress(course);
+                      const done = progress.indexed >= progress.total;
+                      return (
+                        <DropdownMenuItem
+                          disabled={busy || done || !aiEnabled || !health?.ai.available}
+                          onSelect={() => void run("material-index", () => indexAllMaterials(course)).then((v) => v && refreshCourse(v))}
+                        >
+                          <ListTree /> {done ? "材料索引已建立" : progress.indexed ? "继续建立材料索引" : "建立材料索引"}
+                          <DropdownMenuShortcut>{progress.indexed}/{progress.total} 页</DropdownMenuShortcut>
+                        </DropdownMenuItem>
+                      );
+                    })()}
                     <DropdownMenuItem onSelect={() => setModal("materials")}>
                       <FolderOpen /> 已导入材料 <DropdownMenuShortcut>{course.materials.length} 份</DropdownMenuShortcut>
                     </DropdownMenuItem>
@@ -722,7 +738,7 @@ export function App() {
               <TaskBanners />
               {course.materials.length > 0 && !course.nodes.length && (
                 <Callout tone="neutral" icon={<Sparkles />} title="材料已就绪"
-                  actions={<Button size="sm" onClick={() => void run("generate", () => api.generate(course.id)).then((v) => v && refreshCourse(v))}
+                  actions={<Button size="sm" onClick={() => void run("generate", () => generateWithReading(course)).then((v) => v && refreshCourse(v))}
                     disabled={busy || !aiEnabled || !health?.ai.available}><Sparkles /> 生成知识地图</Button>}>
                   {aiEnabled ? "分析课程材料并生成知识地图。" : "请先在设置中启用 AI，并确认数据发送说明。"}
                 </Callout>
@@ -1748,6 +1764,7 @@ function busyLabel(key: string) {
       {
         import: "正在导入材料…",
         generate: "正在分析并生成地图…",
+        "material-index": "正在逐批建立材料索引…",
         lesson: "正在生成小课…",
         "lesson-read": "正在保存阅读记录…",
         chat: "AI 正在整理思路…",

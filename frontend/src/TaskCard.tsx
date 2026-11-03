@@ -152,6 +152,7 @@ export function TaskCard({
         <div className="min-w-0 flex-1">
           <strong className="block font-semibold text-foreground">{view.title}</strong>
           {meta && <p className="line-clamp-2 text-[13px] leading-relaxed text-muted-foreground" title={meta}>{meta}</p>}
+          {task.children && task.children.length > 0 && <p className="text-[13px] text-muted-foreground">Luna 子任务：{task.children.filter(child => child.state === 'applied').length} / {task.children.length} 已完成 · 中等推理</p>}
         </div>
         {!confirming && (
           <div className="flex shrink-0 flex-wrap items-center gap-2 empty:hidden">
@@ -195,6 +196,8 @@ export function TaskCard({
           <dt>任务 ID</dt><dd>{displayedTask.id}</dd>
           <dt>会话 ID</dt><dd>{displayedTask.thread_id || "未取得"}</dd>
           <dt>轮次 ID</dt><dd>{displayedTask.turn_id || "未取得"}</dd>
+          {displayedTask.parent_task_id && <><dt>主任务 ID</dt><dd>{displayedTask.parent_task_id}</dd></>}
+          {displayedTask.model && <><dt>模型</dt><dd>{displayedTask.model}{displayedTask.effort === 'medium' ? ' · 中等推理' : ''}</dd></>}
           {organization && <>
             <dt>Codex 分区</dt><dd>{nativeStatusText(organization.native_status)}</dd>
             <dt>桌面侧栏</dt><dd>{desktopStatusText(organization.desktop_status)}</dd>
