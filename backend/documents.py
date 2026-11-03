@@ -45,16 +45,16 @@ def _document_result(kind: str, pages: list[dict[str, Any]], warnings: list[str]
 def _check_file(path: Path) -> Path:
     source = Path(path).expanduser().resolve(strict=True)
     if not source.is_file():
-        raise DocumentParseError("The input must be a regular file.")
+        raise DocumentParseError("输入必须是普通文件。")
     if source.stat().st_size > MAX_FILE_BYTES:
-        raise DocumentParseError("The file exceeds the 50 MB parsing limit.")
+        raise DocumentParseError("文件超过 50 MB 解析上限。")
     return source
 
 
 def _check_separate_output(source: Path, output_path: Path) -> Path:
     target = Path(output_path).expanduser().resolve()
     if target == source or (target.exists() and os.path.samefile(source, target)):
-        raise DocumentParseError("A rendered page cannot overwrite its source file.")
+        raise DocumentParseError("渲染页面不能覆盖原文件。")
     return target
 
 
@@ -73,7 +73,7 @@ _OCR_BUDGET_WARNING = (
 def _ocr_languages() -> tuple[str, list[str]]:
     languages = os.environ.get("LEARNING_MAP_OCR_LANGUAGES", "eng+chi_sim").strip()
     if not re.fullmatch(r"[a-z0-9_]+(?:\+[a-z0-9_]+)*", languages) or len(languages) > 128:
-        raise DocumentParseError("LEARNING_MAP_OCR_LANGUAGES must contain Tesseract language codes separated by '+'.")
+        raise DocumentParseError("LEARNING_MAP_OCR_LANGUAGES 必须是用 '+' 分隔的 Tesseract 语言代码。")
     return languages, [language for language in languages.split("+")
                        if not (_OCR_CACHE / f"{language}.traineddata").is_file()]
 
@@ -138,18 +138,18 @@ def _ocr(image_path: Path, deadline: float) -> tuple[str, str | None, list[str]]
 
 def _render_pdf_page(document: pdfium.PdfDocument, page_number: int, output_path: Path) -> Path:
     if page_number < 1 or page_number > len(document):
-        raise DocumentParseError(f"PDF page must be between 1 and {len(document)}.")
+        raise DocumentParseError(f"PDF 页码必须在 1 到 {len(document)} 之间。")
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     page = document[page_number - 1]
     try:
         width, height = page.get_size()
         if width <= 0 or height <= 0 or width * height * 2.25 > MAX_IMAGE_PIXELS:
-            raise DocumentParseError("Rendered page exceeds the 40 megapixel safety limit.")
+            raise DocumentParseError("渲染页面超过 4000 万像素安全上限。")
         bitmap = page.render(scale=1.5)
         image = bitmap.to_pil()
         if image.width * image.height > MAX_IMAGE_PIXELS:
-            raise DocumentParseError("Rendered page exceeds the 40 megapixel safety limit.")
+            raise DocumentParseError("渲染页面超过 4000 万像素安全上限。")
         image.save(output_path, format="PNG")
     finally:
         page.close()
@@ -166,18 +166,18 @@ def render_page(path: Path, page: int, output_path: Path) -> Path:
                 document = pdfium.PdfDocument(source)
                 try:
                     if len(document) > MAX_PDF_PAGES:
-                        raise DocumentParseError("The PDF exceeds the 200 page parsing limit.")
+                        raise DocumentParseError("PDF 超过 200 页解析上限。")
                     return _render_pdf_page(document, page, output_path)
                 finally:
                     document.close()
             except DocumentParseError:
                 raise
             except (pdfium.PdfiumError, OSError, ValueError) as exc:
-                raise DocumentParseError(f"PDF page rendering failed ({type(exc).__name__}).") from exc
+                raise DocumentParseError(f"PDF 页面渲染失败（{type(exc).__name__}）。") from exc
     if source.suffix.lower() not in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}:
-        raise DocumentParseError("Only PDF pages and raster images can be rendered.")
+        raise DocumentParseError("只能渲染 PDF 页面和位图图片。")
     if page != 1:
-        raise DocumentParseError("An image has only page 1.")
+        raise DocumentParseError("图片只有第 1 页。")
     target = output_path
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -185,13 +185,13 @@ def render_page(path: Path, page: int, output_path: Path) -> Path:
             _check_image(image)
             image.convert("RGB").save(target, format="PNG")
     except UnidentifiedImageError as exc:
-        raise DocumentParseError("The image file is invalid or unsupported.") from exc
+        raise DocumentParseError("图片文件无效或格式不受支持。") from exc
     return target
 
 
 def _check_image(image: Image.Image) -> None:
     if image.width <= 0 or image.height <= 0 or image.width * image.height > MAX_IMAGE_PIXELS:
-        raise DocumentParseError("The image exceeds the 40 megapixel safety limit.")
+        raise DocumentParseError("图片超过 4000 万像素安全上限。")
 
 
 def _parse_text(source: Path) -> dict[str, Any]:
@@ -209,7 +209,7 @@ def _parse_image(source: Path, output_dir: Path, deadline: float) -> dict[str, A
             image.verify()
         rendered = render_page(source, 1, output_dir / "page-001.png")
     except UnidentifiedImageError as exc:
-        raise DocumentParseError("The image file is invalid or unsupported.") from exc
+        raise DocumentParseError("图片文件无效或格式不受支持。") from exc
     text, error, notices = _ocr(rendered, deadline)
     page_warnings = [*notices, *([error] if error else [])]
     method = "tesseract.js" if not error else "unavailable"
@@ -220,14 +220,14 @@ def _open_pdf(source: Path) -> tuple[PdfReader, pdfium.PdfDocument]:
     try:
         reader = PdfReader(source, strict=True)
         if reader.is_encrypted:
-            raise DocumentParseError("Encrypted PDFs are not supported.")
+            raise DocumentParseError("不支持加密的 PDF。")
         if len(reader.pages) > MAX_PDF_PAGES:
-            raise DocumentParseError("The PDF exceeds the 200 page parsing limit.")
+            raise DocumentParseError("PDF 超过 200 页解析上限。")
         return reader, pdfium.PdfDocument(source)
     except DocumentParseError:
         raise
     except (PyPdfError, pdfium.PdfiumError, OSError, ValueError) as exc:
-        raise DocumentParseError(f"The PDF is invalid or unreadable ({type(exc).__name__}).") from exc
+        raise DocumentParseError(f"PDF 无效或无法读取（{type(exc).__name__}）。") from exc
 
 
 def _extract_pdf_text(pdf_page: Any, number: int) -> tuple[str, str | None]:
@@ -299,20 +299,20 @@ def _validate_docling_source(source: Path) -> int:
         try:
             reader = PdfReader(source, strict=True)
             if reader.is_encrypted:
-                raise DocumentParseError("Encrypted PDFs are not supported.")
+                raise DocumentParseError("不支持加密的 PDF。")
             if len(reader.pages) > MAX_PDF_PAGES:
-                raise DocumentParseError("The PDF exceeds the 200 page parsing limit.")
+                raise DocumentParseError("PDF 超过 200 页解析上限。")
         except DocumentParseError:
             raise
         except (PyPdfError, OSError, ValueError) as exc:
-            raise DocumentParseError(f"The PDF is invalid or unreadable ({type(exc).__name__}).") from exc
+            raise DocumentParseError(f"PDF 无效或无法读取（{type(exc).__name__}）。") from exc
         return len(reader.pages)
     try:
         with Image.open(source) as image:
             _check_image(image)
             image.verify()
     except UnidentifiedImageError as exc:
-        raise DocumentParseError("The image file is invalid or unsupported.") from exc
+        raise DocumentParseError("图片文件无效或格式不受支持。") from exc
     return 1
 
 
@@ -353,14 +353,14 @@ def _run_docling(source: Path) -> str:
                 stdout=stdout_file, stderr=subprocess.PIPE, timeout=DOCLING_TIMEOUT_SECONDS, check=False,
             )
         except subprocess.TimeoutExpired as exc:
-            raise DocumentParseError("Docling exceeded the 120 second limit; model initialization or download may be incomplete.") from exc
+            raise DocumentParseError(f"Docling 超过 {DOCLING_TIMEOUT_SECONDS} 秒未完成；模型可能尚未初始化或下载完整。") from exc
         if stdout_file.tell() > MAX_DOCLING_OUTPUT_BYTES:
-            raise DocumentParseError("Docling output exceeded the 10 million character safety limit.")
+            raise DocumentParseError("Docling 输出超过 1000 万字符安全上限。")
         if completed.returncode:
             error = completed.stderr.decode("utf-8", errors="replace").strip()
             if "No module named 'docling'" in error:
-                raise DocumentParseError("Docling is optional and is not installed. Install it with `pip install docling` in the backend environment.")
-            raise DocumentParseError(f"Docling conversion failed (process exit {completed.returncode}).")
+                raise DocumentParseError("Docling 是可选组件，尚未安装。请在后端环境中运行 `pip install docling` 安装。")
+            raise DocumentParseError(f"Docling 转换失败（进程退出码 {completed.returncode}）。")
         stdout_file.seek(0)
         return stdout_file.read(MAX_DOCLING_OUTPUT_BYTES + 1).decode("utf-8")
 
@@ -369,24 +369,24 @@ def _parse_docling_output(stdout: str, page_count: int) -> list[dict[str, Any]]:
     try:
         parsed_document = json.loads(stdout)
     except json.JSONDecodeError as exc:
-        raise DocumentParseError("Docling returned invalid structured output.") from exc
+        raise DocumentParseError("Docling 返回了无效的结构化输出。") from exc
     if not isinstance(parsed_document, dict) or not isinstance(parsed_document.get("pages"), list):
-        raise DocumentParseError("Docling returned an unexpected page structure.")
+        raise DocumentParseError("Docling 返回了意外的页面结构。")
     if "truncated" in parsed_document and not isinstance(parsed_document["truncated"], bool):
-        raise DocumentParseError("Docling returned an invalid truncation flag.")
+        raise DocumentParseError("Docling 返回了无效的截断标记。")
     records = {}
     total_characters = 0
     for page_record in parsed_document["pages"]:
         if not isinstance(page_record, dict):
-            raise DocumentParseError("Docling returned an invalid page record.")
+            raise DocumentParseError("Docling 返回了无效的页面记录。")
         number, text = page_record.get("number"), page_record.get("text")
         if isinstance(number, bool) or not isinstance(number, int) or not 1 <= number <= page_count:
-            raise DocumentParseError("Docling returned a page number outside the source document.")
+            raise DocumentParseError("Docling 返回的页码超出原文档范围。")
         if number in records or not isinstance(text, str):
-            raise DocumentParseError("Docling returned a duplicate page or invalid text field.")
+            raise DocumentParseError("Docling 返回了重复页面或无效的文字字段。")
         total_characters += len(text)
         if total_characters > MAX_EXTRACTED_TEXT_CHARS:
-            raise DocumentParseError("Docling output exceeded the 10 million character safety limit.")
+            raise DocumentParseError("Docling 输出超过 1000 万字符安全上限。")
         records[number] = text
     warnings = ["Review the original page image for formulas, tables, and visual structure."]
     if parsed_document.get("truncated"):
@@ -413,11 +413,11 @@ def parse_document(path: Path, output_dir: Path, parser: str = "basic") -> dict[
     output_dir.mkdir(parents=True, exist_ok=True)
     parser = str(parser).strip().lower()
     if parser not in {"basic", "docling"}:
-        raise DocumentParseError("Parser must be 'basic' or 'docling'.")
+        raise DocumentParseError("解析器只能是 'basic' 或 'docling'。")
     suffix = source.suffix.lower()
     if suffix in _TEXT_SUFFIXES:
         if parser == "docling":
-            raise DocumentParseError("The Docling adapter currently accepts PDF and raster image inputs only.")
+            raise DocumentParseError("Docling 适配器目前只接受 PDF 和位图图片。")
         return _parse_text(source)
     if suffix == ".pdf":
         if parser == "docling":
@@ -427,7 +427,7 @@ def parse_document(path: Path, output_dir: Path, parser: str = "basic") -> dict[
         if parser == "docling":
             return _parse_docling(source)
         return _parse_image(source, output_dir, ocr_deadline)
-    raise DocumentParseError(f"Unsupported document type: {suffix or '(no extension)'}.")
+    raise DocumentParseError(f"不支持的文件类型：{suffix or '（无扩展名）'}。")
 
 
 def parser_capabilities() -> dict[str, Any]:

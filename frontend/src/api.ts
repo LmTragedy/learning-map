@@ -15,6 +15,15 @@ import type { NoteReviewResponse } from "./noteReviewTypes";
 import { clearAiReceipt, prepareAiReceipt } from "./aiReceipts.ts";
 import type { AiTask } from './aiTaskModel';
 
+/** FastAPI sends a string detail; a list (validation errors) is joined, never shown as [object Object]. */
+function errorDetail(body: { detail?: unknown }): string {
+  const { detail } = body;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail))
+    return detail.map((item) => (typeof item === "string" ? item : String(item?.msg ?? ""))).filter(Boolean).join("；");
+  return "";
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const prepared = await prepareAiReceipt(path, init);
   if (prepared.receipt) window.dispatchEvent(new Event('lm:ai-tasks-changed'));
@@ -33,8 +42,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!response.ok) {
     let detail = `请求失败（${response.status}）`;
     try {
-      detail =
-        ((await response.json()) as { detail?: string }).detail || detail;
+      detail = errorDetail((await response.json()) as { detail?: unknown }) || detail;
     } catch {
       /* keep status message */
     }

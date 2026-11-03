@@ -65,6 +65,18 @@ def test_learning_model_cannot_be_deepseek_but_goal_and_review_models_can(tmp_pa
     assert saved.json()["goal_model"] == "deepseek-chat"
 
 
+
+def test_validation_errors_are_one_readable_sentence_without_the_submitted_key(tmp_path):
+    client = TestClient(create_app(tmp_path / "data", lambda _: None), headers={"X-Learning-Map": "1"})
+    rejected = client.post("/api/settings", json={"model": "deepseek-chat", "deepseek_api_key": "sk-secret"})
+    assert rejected.status_code == 422
+    detail = rejected.json()["detail"]
+    assert detail == "DeepSeek 只用于笔记检查和目标提取；学习对话模型请使用 Codex 模型"
+    assert "sk-secret" not in rejected.text
+    too_long = client.post("/api/settings", json={"model": "x" * 500})
+    assert too_long.status_code == 422 and isinstance(too_long.json()["detail"], str)
+    assert too_long.json()["detail"].startswith("model 不符合要求")
+
 def test_goal_extraction_is_sent_to_the_goal_model(tmp_path):
     seen = []
 

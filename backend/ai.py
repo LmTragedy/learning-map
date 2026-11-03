@@ -80,7 +80,7 @@ class _AppServerSession:
 
     def send(self, message: dict[str, Any]) -> None:
         if self.process.stdin is None:
-            raise AIUnavailable("Codex app-server stdin is unavailable.")
+            raise AIUnavailable("Codex app-server 的输入通道不可用。")
         encoded = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
         self.process.stdin.write(encoded.encode("utf-8") + b"\n")
         self.process.stdin.flush()
@@ -91,10 +91,10 @@ class _AppServerSession:
             message = self.next_message()
             if message.get("id") == request_id and ("result" in message or "error" in message):
                 if "error" in message:
-                    raise AIError(f"Codex {method} failed: {_error_message(message['error'])}")
+                    raise AIError(f"Codex {method} 失败：{_error_message(message['error'])}")
                 response = message["result"]
                 if not isinstance(response, dict):
-                    raise AIError(f"Codex {method} returned an invalid response.")
+                    raise AIError(f"Codex {method} 返回了无效响应。")
                 return response
             if "id" in message and "method" in message:
                 self.reject_server_request(message)
@@ -128,7 +128,7 @@ class _AppServerSession:
                 _observe(observer, "stream/message", message)
             params = message.get("params") or {}
             if not isinstance(params, dict):
-                raise AIError("Codex app-server sent invalid notification parameters.")
+                raise AIError("Codex app-server 发送了无效的通知参数。")
             turn = params.get("turn")
             turn = turn if isinstance(turn, dict) else {}
             candidate = _notification_turn_id(params, turn)
@@ -139,7 +139,7 @@ class _AppServerSession:
                 delta = params.get("delta")
                 item_id = params.get("itemId")
                 if not isinstance(delta, str):
-                    raise AIError("Codex returned an invalid message fragment.")
+                    raise AIError("Codex 返回了无效的消息片段。")
                 target = fragments_by_item.setdefault(item_id, []) if isinstance(item_id, str) and item_id else unkeyed_fragments
                 output_chars = self.append_delta(delta, target, output_chars)
             elif method in {"item/started", "item/completed"}:
@@ -149,26 +149,26 @@ class _AppServerSession:
                     completed_messages.append(item)
             elif method == "turn/completed":
                 if not isinstance(turn, dict):
-                    raise AIError("Codex returned an invalid completed turn.")
+                    raise AIError("Codex 返回了无效的已完成轮次。")
                 return _completed_turn_text(
                     turn, completed_messages, fragments_by_item, unkeyed_fragments
                 ), turn_id
             if message.get("id") == request_id and "error" in message:
-                raise AIError(f"Codex turn failed: {_error_message(message['error'])}")
+                raise AIError(f"Codex 本轮失败：{_error_message(message['error'])}")
 
     def next_message(self) -> dict[str, Any]:
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
-            raise AIError("Codex app-server timed out after 180 seconds.")
+            raise AIError(f"Codex app-server 超过 {_TIMEOUT_SECONDS} 秒未完成。")
         try:
             line = self.incoming.get(timeout=remaining)
         except queue.Empty as exc:
-            raise AIError("Codex app-server timed out after 180 seconds.") from exc
+            raise AIError(f"Codex app-server 超过 {_TIMEOUT_SECONDS} 秒未完成。") from exc
         if isinstance(line, BaseException):
             raise line
         message = json.loads(line.decode("utf-8"))
         if not isinstance(message, dict):
-            raise AIError("Codex app-server sent an invalid protocol message.")
+            raise AIError("Codex app-server 发送了无效的协议消息。")
         return message
 
     def reject_server_request(self, request: dict[str, Any]) -> None:
@@ -180,22 +180,22 @@ class _AppServerSession:
             })
         else:
             self.send({"id": request["id"], "result": response})
-        raise AIError("Codex requested a tool or approval; the turn was stopped.")
+        raise AIError("Codex 请求使用工具或审批，本轮已停止。")
 
     @staticmethod
     def append_delta(delta: Any, fragments: list[str], output_chars: int) -> int:
         if not isinstance(delta, str):
-            raise AIError("Codex returned an invalid message fragment.")
+            raise AIError("Codex 返回了无效的消息片段。")
         output_chars += len(delta)
         if output_chars > _MAX_OUTPUT_CHARS:
-            raise AIError("Codex response exceeded the output limit.")
+            raise AIError("Codex 回复超过输出长度上限。")
         fragments.append(delta)
         return output_chars
 
     @staticmethod
     def validate_item(item: dict[str, Any]) -> None:
         if not isinstance(item, dict) or item.get("type") not in _SAFE_ITEM_TYPES:
-            raise AIError("Codex attempted to use a tool; the turn was stopped.")
+            raise AIError("Codex 尝试使用工具，本轮已停止。")
 
 class CodexAI:
     def __init__(self, working_dir: Path, model: str = "", effort: str = "medium") -> None:
@@ -254,11 +254,11 @@ class CodexAI:
     ) -> dict[str, str]:
         """Read an existing turn by exact ID, or by a unique exact user prompt."""
         if not isinstance(thread_id, str) or not thread_id.strip():
-            raise AIError("Thread ID must not be empty.")
+            raise AIError("会话 ID 不能为空。")
         if turn_id is not None and (not isinstance(turn_id, str) or not turn_id.strip()):
-            raise AIError("Turn ID must not be empty.")
+            raise AIError("轮次 ID 不能为空。")
         if turn_id is None and (not isinstance(prompt, str) or not prompt):
-            raise AIError("An exact prompt is required when turn ID is not provided.")
+            raise AIError("未提供轮次 ID 时必须提供原始提示词。")
         executable = self._codex_executable()
         stderr_buffer = _StderrBuffer()
         return _read_turn_request(
@@ -268,7 +268,7 @@ class CodexAI:
     def organize_thread(self, thread_id: str, conversation: ConversationIdentity) -> str:
         """Set thread title and course section without resuming or generating a turn."""
         if not isinstance(thread_id, str) or not thread_id.strip():
-            raise AIError("Codex thread ID must not be empty.")
+            raise AIError("Codex 会话 ID 不能为空。")
         identity = _validated_conversation(conversation)
         stderr_buffer = _StderrBuffer()
         try:
@@ -352,7 +352,7 @@ class CodexAI:
                 })
         text, turn_id = self._start_turn(session, thread_id, request)
         if request.observer is not None and turn_id is None:
-            raise AIError("Codex completed without a turn ID required for recovery.")
+            raise AIError("Codex 已完成，但没有返回恢复所需的轮次 ID。")
         _observe(request.observer, "response/completed", {
             "text": text, "thread_id": thread_id, "turn_id": turn_id,
         })
@@ -392,7 +392,7 @@ class CodexAI:
         try:
             return session.request(request_id, method, params)
         except AIError as exc:
-            raise AIError(f"Codex thread metadata operation {method} failed: {exc}") from exc
+            raise AIError(f"Codex 会话元数据操作 {method} 失败：{exc}") from exc
 
     def _find_or_create_section(
         self, session: _AppServerSession, group: str, request_id: int
@@ -413,7 +413,7 @@ class CodexAI:
     @staticmethod
     def _validated_section_cursor(next_cursor: str, seen_cursors: set[str]) -> str:
         if not next_cursor or next_cursor in seen_cursors:
-            raise AIError("Codex threadSection/list returned an invalid pagination cursor.")
+            raise AIError("Codex threadSection/list 返回了无效的分页游标。")
         seen_cursors.add(next_cursor)
         return next_cursor
 
@@ -426,7 +426,7 @@ class CodexAI:
         section = created.get("section")
         section_id = section.get("id") if isinstance(section, dict) else None
         if not isinstance(section_id, str) or not section_id:
-            raise AIError("Codex threadSection/create returned a section without an ID.")
+            raise AIError("Codex threadSection/create 返回的分组没有 ID。")
         return section_id, request_id + 1
 
     def _list_section_page(
@@ -436,20 +436,20 @@ class CodexAI:
         page = self._metadata_request(session, request_id, "threadSection/list", params)
         sections, next_cursor = page.get("data"), page.get("nextCursor")
         if not isinstance(sections, list):
-            raise AIError("Codex threadSection/list returned invalid section data.")
+            raise AIError("Codex threadSection/list 返回了无效的分组数据。")
         if next_cursor is not None and not isinstance(next_cursor, str):
-            raise AIError("Codex threadSection/list returned an invalid pagination cursor.")
+            raise AIError("Codex threadSection/list 返回了无效的分页游标。")
         return sections, next_cursor, request_id + 1
 
     @staticmethod
     def _matching_section_id(sections: list[Any], group: str) -> str | None:
         for section in sections:
             if not isinstance(section, dict):
-                raise AIError("Codex threadSection/list returned an invalid section.")
+                raise AIError("Codex threadSection/list 返回了无效的分组。")
             if section.get("name") == group:
                 section_id = section.get("id")
                 if not isinstance(section_id, str) or not section_id:
-                    raise AIError("Codex returned a matching section without an ID.")
+                    raise AIError("Codex 返回的匹配分组没有 ID。")
                 return section_id
         return None
 
@@ -459,9 +459,9 @@ class CodexAI:
         thread = session.request(2, method, params).get("thread") or {}
         actual_thread_id = thread.get("id")
         if not isinstance(actual_thread_id, str) or not actual_thread_id:
-            raise AIError("Codex did not return a thread ID.")
+            raise AIError("Codex 没有返回会话 ID。")
         if thread_id and actual_thread_id != thread_id:
-            raise AIError("Codex resumed a different thread; no turn was sent.")
+            raise AIError("Codex 恢复了另一个会话，未发送本轮请求。")
         return actual_thread_id
 
     def _thread_params(self, thread_id: str | None) -> dict[str, Any]:
@@ -502,13 +502,13 @@ class CodexAI:
     @staticmethod
     def _validated_request(request: _AIRequest) -> _AIRequest:
         if not isinstance(request.prompt, str) or not request.prompt.strip():
-            raise AIError("AI prompt must not be empty.")
+            raise AIError("AI 提示词不能为空。")
         if request.schema is not None and not isinstance(request.schema, dict):
-            raise AIError("Structured output schema must be a JSON object.")
+            raise AIError("结构化输出的 schema 必须是 JSON 对象。")
         try:
             json.dumps(request.schema)
         except (TypeError, ValueError) as exc:
-            raise AIError("Structured output schema must contain JSON values only.") from exc
+            raise AIError("结构化输出的 schema 只能包含 JSON 值。") from exc
         conversation = (
             _validated_conversation(request.conversation)
             if request.conversation is not None
@@ -529,7 +529,7 @@ class CodexAI:
         for image in images:
             path = Path(image).expanduser().resolve()
             if not path.is_file():
-                raise AIError(f"Image input is not a file: {path.name}")
+                raise AIError(f"图片输入不是文件：{path.name}")
             paths.append(path)
         return paths
 
@@ -537,9 +537,9 @@ class CodexAI:
         try:
             self.working_dir.mkdir(parents=True, exist_ok=True)
             if not self.working_dir.is_dir() or any(self.working_dir.iterdir()):
-                raise AIError("Codex requires a dedicated empty working directory.")
+                raise AIError("Codex 需要一个专用的空工作目录。")
         except OSError as exc:
-            raise AIError("Codex working directory is unavailable.") from exc
+            raise AIError("Codex 工作目录不可用。") from exc
 
 
 def _start_process(
@@ -570,10 +570,10 @@ def _read_stdout(
         while True:
             line = process.stdout.readline(_MAX_STDOUT_LINE + 1)
             if not line:
-                incoming.put(EOFError("Codex app-server closed stdout."))
+                incoming.put(EOFError("Codex app-server 关闭了输出通道。"))
                 return
             if len(line) > _MAX_STDOUT_LINE:
-                incoming.put(AIError("Codex app-server sent an oversized protocol message."))
+                incoming.put(AIError("Codex app-server 发送的协议消息过大。"))
                 return
             incoming.put(line)
     except (OSError, ValueError) as exc:
@@ -617,7 +617,7 @@ def _observe(
         try:
             observer(event, payload)
         except Exception as exc:
-            raise AIError(f"The AI event observer failed during {event}.") from exc
+            raise AIError(f"AI 事件记录在 {event} 阶段失败。") from exc
 
 
 def _identify_turn(
@@ -628,13 +628,13 @@ def _identify_turn(
     observer: Callable[[str, dict[str, Any]], None] | None,
 ) -> str | None:
     if actual_thread_id is not None and actual_thread_id != expected_thread_id:
-        raise AIError("Codex stream notification belonged to a different thread.")
+        raise AIError("Codex 流式通知属于另一个会话。")
     if candidate is None:
         return current_turn_id
     if not isinstance(candidate, str) or not candidate:
-        raise AIError("Codex stream notification contained an invalid turn ID.")
+        raise AIError("Codex 流式通知包含无效的轮次 ID。")
     if current_turn_id is not None and candidate != current_turn_id:
-        raise AIError("Codex stream notification belonged to a different turn.")
+        raise AIError("Codex 流式通知属于另一个轮次。")
     if current_turn_id is None:
         _observe(observer, "turn/identified", {
             "thread_id": expected_thread_id,
@@ -646,9 +646,9 @@ def _identify_turn(
 def _notification_turn_id(params: dict[str, Any], turn: dict[str, Any]) -> Any:
     identifiers = [value for value in (params.get("turnId"), turn.get("id")) if value is not None]
     if any(not isinstance(value, str) or not value for value in identifiers):
-        raise AIError("Codex stream notification contained an invalid turn ID.")
+        raise AIError("Codex 流式通知包含无效的轮次 ID。")
     if len(set(identifiers)) > 1:
-        raise AIError("Codex stream notification included conflicting turn IDs.")
+        raise AIError("Codex 流式通知包含相互矛盾的轮次 ID。")
     return identifiers[0] if identifiers else None
 
 
@@ -660,7 +660,7 @@ def _completed_turn_text(
 ) -> str:
     status = turn.get("status")
     if status != "completed":
-        raise AIError(f"Codex turn {status or 'failed'}.")
+        raise AIError(f"Codex 本轮未成功（{status or 'failed'}）。")
     items = turn.get("items")
     if isinstance(items, list):
         for item in items:
@@ -680,8 +680,8 @@ def _completed_turn_text(
         if answer:
             return answer
     if len(fragments_by_item) > 1 or (fragments_by_item and unkeyed_fragments):
-        raise AIError("Codex completed with multiple assistant messages but no final message marker.")
-    raise AIError("Codex completed without an assistant message.")
+        raise AIError("Codex 已完成，返回了多条助手消息，但没有标记最终消息。")
+    raise AIError("Codex 已完成，但没有返回助手消息。")
 
 
 def _read_turn_request(
@@ -702,12 +702,12 @@ def _read_turn_request(
         })
         thread = response.get("thread") or {}
         if not isinstance(thread, dict):
-            raise AIError("Codex thread/read returned invalid thread data.")
+            raise AIError("Codex thread/read 返回了无效的会话数据。")
         if thread.get("id") != thread_id:
-            raise AIError("Codex thread/read returned a different thread.")
+            raise AIError("Codex thread/read 返回了另一个会话。")
         turns = thread.get("turns")
         if not isinstance(turns, list):
-            raise AIError("Codex thread/read did not include turns.")
+            raise AIError("Codex thread/read 没有包含轮次记录。")
         return _read_turn_result(thread_id, _select_read_turn(turns, turn_id, prompt))
     except AIError:
         raise
@@ -729,7 +729,7 @@ def _select_read_turn(
             if isinstance(turn, dict) and _turn_user_prompt(turn) == prompt
         ]
     if len(matches) != 1:
-        raise AIError("The requested turn was not identified uniquely in this thread.")
+        raise AIError("无法在该会话中唯一确定所请求的轮次。")
     return matches[0]
 
 
@@ -760,22 +760,22 @@ def _read_turn_result(thread_id: str, turn: dict[str, Any]) -> dict[str, str]:
     status = turn.get("status")
     items = turn.get("items")
     if not isinstance(actual_turn_id, str) or not actual_turn_id:
-        raise AIError("Codex returned a turn without an ID.")
+        raise AIError("Codex 返回的轮次没有 ID。")
     if not isinstance(status, str):
-        raise AIError("Codex returned a turn without a status.")
+        raise AIError("Codex 返回的轮次没有状态。")
     if not isinstance(items, list):
-        raise AIError("Codex returned a turn without complete items.")
+        raise AIError("Codex 返回的轮次内容不完整。")
     if turn.get("itemsView", "full") != "full":
-        raise AIError("Codex returned a summarized turn without complete items.")
+        raise AIError("Codex 返回的是摘要轮次，内容不完整。")
     unsafe = [
         item for item in items
         if not isinstance(item, dict) or item.get("type") not in _SAFE_ITEM_TYPES
     ]
     if unsafe:
-        raise AIError("The requested turn contains tool activity and cannot be recovered safely.")
+        raise AIError("所请求的轮次含有工具调用，无法安全恢复。")
     final_text = _final_assistant_text(items)
     if status == "completed" and not final_text:
-        raise AIError("The completed turn has no recoverable final assistant message.")
+        raise AIError("已完成的轮次中没有可恢复的最终助手消息。")
     return {
         "status": status,
         "thread_id": thread_id,
@@ -798,19 +798,19 @@ def _final_assistant_text(items: list[Any]) -> str:
 
 def _validated_conversation(conversation: ConversationIdentity) -> ConversationIdentity:
     if not isinstance(conversation, ConversationIdentity):
-        raise AIError("Conversation identity must contain a course group and thread title.")
+        raise AIError("会话身份必须包含课程分组和会话标题。")
     if not isinstance(conversation.title, str) or not conversation.title.strip():
-        raise AIError("Conversation title must not be empty.")
+        raise AIError("会话标题不能为空。")
     if len(conversation.title) > 500:
-        raise AIError("Conversation title must be at most 500 characters.")
+        raise AIError("会话标题最多 500 个字符。")
     if not isinstance(conversation.group, str) or not conversation.group.strip():
-        raise AIError("Conversation group must not be empty.")
+        raise AIError("会话分组不能为空。")
     if len(conversation.group) > 250:
-        raise AIError("Conversation group must be at most 250 characters.")
+        raise AIError("会话分组最多 250 个字符。")
     if conversation.native_section_id is not None and (
             not isinstance(conversation.native_section_id, str) or not conversation.native_section_id
             or len(conversation.native_section_id) > 100):
-        raise AIError("Native section ID must be a non-empty string of at most 100 characters.")
+        raise AIError("原生分组 ID 必须是 1 到 100 个字符的字符串。")
     return conversation
 
 
@@ -839,7 +839,7 @@ def _terminate_process(process: subprocess.Popen[bytes]) -> None:
         try:
             process.wait(timeout=2)
         except subprocess.TimeoutExpired as exc:
-            raise AIUnavailable("Codex app-server did not stop after termination.") from exc
+            raise AIUnavailable("Codex app-server 在终止后没有退出。") from exc
 
 
 def _close_process_streams(process: subprocess.Popen[bytes]) -> None:

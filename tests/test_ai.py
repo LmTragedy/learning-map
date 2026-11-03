@@ -159,7 +159,7 @@ def test_resume_returning_another_thread_rejects_before_sending_a_turn(tmp_path:
     with (
         patch("backend.codex_installation.shutil.which", return_value="codex.exe"),
         patch("backend.ai.subprocess.Popen", return_value=server),
-        pytest.raises(AIError, match="resumed a different thread"),
+        pytest.raises(AIError, match="恢复了另一个会话"),
     ):
         CodexAI(tmp_path).ask("Continue this topic.", thread_id="thread-existing")
     sent = [json.loads(line) for line in server.stdin.getvalue().splitlines()]
@@ -171,7 +171,7 @@ def test_ask_stops_if_app_server_emits_tool_item(tmp_path: Path) -> None:
     with (
         patch("backend.codex_installation.shutil.which", return_value="codex.exe"),
         patch("backend.ai.subprocess.Popen", return_value=server),
-        pytest.raises(AIError, match="attempted to use a tool"),
+        pytest.raises(AIError, match="尝试使用工具"),
     ):
         CodexAI(tmp_path).ask("Answer without using tools.")
     assert server.returncode == 0
@@ -188,7 +188,7 @@ def test_ask_cancels_approval_request_before_aborting(tmp_path: Path) -> None:
     with (
         patch("backend.codex_installation.shutil.which", return_value="codex.exe"),
         patch("backend.ai.subprocess.Popen", return_value=server),
-        pytest.raises(AIError, match="tool or approval"),
+        pytest.raises(AIError, match="请求使用工具或审批"),
     ):
         CodexAI(tmp_path).ask("Answer without using tools.")
 
@@ -201,7 +201,7 @@ def test_ask_rejects_noncompleted_turn(tmp_path: Path) -> None:
     with (
         patch("backend.codex_installation.shutil.which", return_value="codex.exe"),
         patch("backend.ai.subprocess.Popen", return_value=FakeAppServer(_messages(status="failed"))),
-        pytest.raises(AIError, match="turn failed"),
+        pytest.raises(AIError, match="本轮未成功"),
     ):
         CodexAI(tmp_path).ask("Explain this material.")
 
@@ -211,7 +211,7 @@ def test_ask_rejects_nonempty_working_directory_before_launch(tmp_path: Path) ->
     with (
         patch("backend.codex_installation.shutil.which", return_value="codex.exe"),
         patch("backend.ai.subprocess.Popen") as launch,
-        pytest.raises(AIError, match="dedicated empty"),
+        pytest.raises(AIError, match="专用的空工作目录"),
     ):
         CodexAI(tmp_path).ask("Explain this material.")
     launch.assert_not_called()
@@ -330,7 +330,7 @@ def test_ask_fails_clearly_when_thread_metadata_update_fails(tmp_path: Path) -> 
     with (
         patch("backend.codex_installation.shutil.which", return_value="codex.exe"),
         patch("backend.ai.subprocess.Popen", return_value=server),
-        pytest.raises(AIError, match="thread metadata operation thread/name/set failed"),
+        pytest.raises(AIError, match="会话元数据操作 thread/name/set 失败"),
     ):
         CodexAI(tmp_path).ask(
             "Explain this material.",
@@ -344,10 +344,10 @@ def test_ask_fails_clearly_when_thread_metadata_update_fails(tmp_path: Path) -> 
 @pytest.mark.parametrize(
     ("title", "group", "message"),
     [
-        (" ", "COMP4418", "title must not be empty"),
-        ("x" * 501, "COMP4418", "title must be at most 500"),
-        ("Bayes nets", " ", "group must not be empty"),
-        ("Bayes nets", "x" * 251, "group must be at most 250"),
+        (" ", "COMP4418", "标题不能为空"),
+        ("x" * 501, "COMP4418", "标题最多 500"),
+        ("Bayes nets", " ", "分组不能为空"),
+        ("Bayes nets", "x" * 251, "分组最多 250"),
     ],
 )
 def test_ask_validates_conversation_metadata_before_launch(
