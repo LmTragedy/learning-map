@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ArrowRight, ArrowUpRight, CornerDownRight, Sparkles } from "lucide-react";
+import { ArrowRight, ArrowUpRight, CornerDownRight, NotebookPen, Sparkles } from "lucide-react";
+import { appendBlock, mainNoteTitle } from "./noteFormatting";
 import { api } from "./api";
 import { Button } from "./components/ui/button";
 import { cn } from "./lib/utils";
@@ -34,13 +35,15 @@ const done = (node: LearningNode) => node.status === "passed" || node.status ===
  * still used much later. Clicking anything shows its wording; earlier pieces carry their self-check.
  * This is the only place a node's knowledge bridges are listed.
  */
-export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, canOpen, onNavigate, onOpenBridge, onOpenSource }: {
+export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, canOpen, onNavigate, onOpenBridge, onOpenSource, notice, onNotice }: {
   course: Course; node: LearningNode; busy: boolean; aiEnabled: boolean; reviewStrict: boolean;
   act: (key: string, fn: () => Promise<Course>) => Promise<Course | undefined>;
   canOpen: (node: LearningNode) => boolean;
   onNavigate: (node: LearningNode, edge?: Edge) => void;
   onOpenBridge: (edge: Edge) => void;
   onOpenSource: (source: Source) => void;
+  notice: string;
+  onNotice: (text: string) => void;
 }) {
   const { contrasts } = nodeBridges(course, node);
   const edges = course.edges.filter((edge) => !edge.synthesis_link && edge.kind !== "对比");
@@ -78,6 +81,16 @@ export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, ca
   const check = (item: ResolvedBridge) => (result: "known" | "unsure", answer: string) =>
     void act("bridge-check", () => api.checkBridge(course.id, item.edge.id, item.bridge.id, result, answer));
 
+  const byId = new Map(course.nodes.map((entry) => [entry.id, entry]));
+  const prevNode = node.handoff?.prev ? byId.get(node.handoff.prev) : undefined;
+  /** "I don't get this": add a to-do to the earlier node's main note, to fill in when going back there. */
+  const sendBack = async (target: LearningNode, what: string, how = "") => {
+    const saved = byId.get(target.id)?.personal_note || "";
+    const block = `- [ ] 没弄懂：${what}（学「${node.title}」时发现）${how ? `\n  > ${how.replace(/\s+/g, " ")}` : ""}`;
+    const result = await act("note-send-back", () => api.savePersonalNote(course.id, target.id, appendBlock(saved, block), saved));
+    // Saving bumps the course revision, which remounts this view; the notice lives in the panel.
+    if (result) onNotice(`已记到「${mainNoteTitle(target)}」的笔记，回去复习时可以对着补。`);
+  };
   const isOn = (item: ResolvedBridge) => selected?.kind !== "step" && selected?.item.bridge.id === item.bridge.id;
   const week = (other: LearningNode) => other.week && other.week !== node.week ? other.week : "";
   const chip = (item: ResolvedBridge, side: "in" | "out") => {
@@ -137,6 +150,7 @@ export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, ca
       {aiEnabled && !reviewStrict && <Button size="sm" variant="ghost" disabled={busy} onClick={find}><Sparkles /> {empty ? "让 AI 找前后联系" : "让 AI 重新找"}</Button>}
     </div>
     <TaskCards kind="links" target={node.id} limit={1} />
+    {notice && <p role="status" className="t-meta">{notice}</p>}
     {(node.plain || node.formal) && <div className="nl-self">
       {node.plain && <p className="nl-plain">{node.plain}</p>}
       {node.formal && <p className="nl-formal">{node.formal}</p>}
@@ -162,7 +176,11 @@ export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, ca
         <span><i className="is-strong" />直接用到</span><span><i className="is-weak" />建议 / 对比着看</span><span>小字是沿必需联系继续往前、往后追到的知识点</span>
       </div>
       {selected && <Detail key={selected.kind === "step" ? selected.step.id : selected.item.bridge.id} selected={selected} busy={busy}
-        canOpen={canOpen} onNavigate={onNavigate} onOpenBridge={onOpenBridge} onOpenSource={onOpenSource} onCheck={check} />}
+        canOpen={canOpen} onNavigate={onNavigate} onOpenBridge={onOpenBridge} onOpenSource={onOpenSource} onCheck={check}
+        backTo={selected.kind === "step"
+          ? (() => { const uses = rows[selected.index]?.uses.map((item) => item.source) || []; return uses.length ? uses : prevNode ? [prevNode] : []; })()
+          : (selected.kind === "bridge" ? selected.side === "in" : selected.direction === "before") ? [selected.item.source] : []}
+        onSendBack={(target, what, how) => void sendBack(target, what, how)} />}
     </>}
 
     {(others.length > 0 || contrasts.length > 0) && <details className="nl-more">
@@ -244,16 +262,29 @@ function Handoff({ course, node, canOpen, onNavigate, onShow }: {
   </div>;
 }
 
-function Detail({ selected, busy, canOpen, onNavigate, onOpenBridge, onOpenSource, onCheck }: {
+function Detail({ selected, busy, canOpen, onNavigate, onOpenBridge, onOpenSource, onCheck, backTo, onSendBack }: {
   selected: Selected; busy: boolean; canOpen: (node: LearningNode) => boolean;
   onNavigate: (node: LearningNode, edge?: Edge) => void; onOpenBridge: (edge: Edge) => void;
   onOpenSource: (source: Source) => void;
   onCheck: (item: ResolvedBridge) => (result: "known" | "unsure", answer: string) => void;
+  /** Earlier nodes this piece rests on; "不会" adds a to-do to their notes. */
+  backTo: LearningNode[];
+  onSendBack: (target: LearningNode, what: string, how?: string) => void;
 }) {
+  const what = selected.kind === "step" ? `第 ${selected.index + 1} 步「${selected.step.title}」`
+    : selected.item.piece ? `「${selected.item.piece.title}」` : `「${selected.item.source.title}」在这里怎么用`;
+  const how = selected.kind === "step" ? selected.step.formal : selected.item.bridge.how;
+  const back = backTo.length > 0 && <div className="mt-2 flex flex-wrap items-center gap-2">
+    <span className="t-meta">这里不会？</span>
+    {backTo.map((target) => <Button key={target.id} size="sm" variant="outline" disabled={busy}
+      title={`在「${target.title}」的主笔记末尾加一条待办，回去复习时补上`}
+      onClick={() => onSendBack(target, what, how)}><NotebookPen /> 记到「{target.title}」的笔记</Button>)}
+  </div>;
   if (selected.kind === "step") {
     return <div className="nl-detail">
       <strong className="nl-detail-title">第 {selected.index + 1} 步 · {selected.step.title}</strong>
       <Words formal={selected.step.formal} />
+      {back}
     </div>;
   }
   const { item } = selected;
@@ -279,6 +310,7 @@ function Detail({ selected, busy, canOpen, onNavigate, onOpenBridge, onOpenSourc
       {item.bridge.origin !== "user" && <span className="t-meta">{item.bridge.sources?.length ? `AI 写的 · 有 ${item.bridge.sources.length} 处材料原文` : "AI 写的 · 材料里没找到原文依据"}</span>}
       <Button size="sm" variant="ghost" onClick={() => onOpenBridge(item.edge)}>看这条联系的详情</Button>
     </div>
+    {back}
   </div>;
 }
 

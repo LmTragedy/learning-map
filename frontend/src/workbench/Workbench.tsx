@@ -9,11 +9,12 @@ import { SourceTabs } from "./SourceTabs";
 import type { SourceTab } from "./SourceTabs";
 import { useSplitRatio } from "./useSplitRatio";
 import { TaskEntry } from '../aiTasks';
+import { SelectionToNote } from "../SelectionToNote";
 import type { MaterialView, SourceKind } from "./useWorkbenchState";
 import "./workbench.css";
 
-/** The two study modes. `downloadUrl` is the lesson being read, when there is one. */
-export type StudyViews = { lesson: ReactNode; practice: ReactNode; downloadUrl?: string };
+/** The two study modes. `downloadUrl` and `lessonTitle` describe the lesson being read, when there is one. */
+export type StudyViews = { lesson: ReactNode; practice: ReactNode; downloadUrl?: string; lessonTitle?: string };
 
 const SIDE_BY_SIDE_KEY = "learning-map:workbench-side-by-side";
 
@@ -78,8 +79,14 @@ export function Workbench({ course, node, material, study, active, noteOpen, ren
   const materialShown = paired || shown === "material";
   const mode = (kind: "lesson" | "practice", label: string, Icon: typeof BookOpen) =>
     <button role="tab" aria-selected={studyShown === kind} onClick={() => onActivate(kind)}><Icon size={14} aria-hidden />{label}</button>;
-  const studyView = studyShown === "practice" ? study!.practice : study?.lesson;
-  const materialView = material && <MaterialViewer course={course} view={material} textMode={textMode} onPage={onMaterial} onExcerpt={onExcerpt} onAsk={onAsk} />;
+  // Selected text in any pane can go straight into the note, labelled with where it came from.
+  const studyLabel = studyShown === "practice" ? `练习验收 · ${node.title}` : study?.lessonTitle ? `小课「${study.lessonTitle}」` : `小课 · ${node.title}`;
+  const studyView = studyShown && <SelectionToNote label={studyLabel} onExcerpt={onExcerpt} onAsk={onAsk}>
+    {studyShown === "practice" ? study!.practice : study?.lesson}
+  </SelectionToNote>;
+  const materialView = material && <SelectionToNote label={`${materialName || "材料"} 第 ${material.page} 页`} onExcerpt={onExcerpt} onAsk={onAsk}>
+    <MaterialViewer course={course} view={material} textMode={textMode} onPage={onMaterial} />
+  </SelectionToNote>;
 
   return <section className="workbench" aria-label="学习工作台">
     <header className="wb-bar">
@@ -97,7 +104,7 @@ export function Workbench({ course, node, material, study, active, noteOpen, ren
           title={sideBySide ? "改为一次看一个" : "材料和小课左右并排"}><Columns2 /> 并排</Button>}
         {materialShown && <div className="wb-seg" role="group" aria-label="材料显示方式">
           <button aria-pressed={!textMode} onClick={() => setTextMode(false)}>原文</button>
-          <button aria-pressed={textMode} onClick={() => setTextMode(true)} title="可选中文字摘入笔记">文字</button>
+          <button aria-pressed={textMode} onClick={() => setTextMode(true)} title="可选中文字加入笔记">文字</button>
         </div>}
         {studyShown === "lesson" && study?.downloadUrl && <Button asChild size="icon-sm" variant="ghost">
           <a href={`${study.downloadUrl}?download=true`} download title="下载 HTML 小课" aria-label="下载 HTML 小课"><Download /></a>

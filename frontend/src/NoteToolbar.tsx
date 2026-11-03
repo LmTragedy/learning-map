@@ -1,8 +1,8 @@
 import type { EditorView } from "@codemirror/view";
-import { Bold, Code, Heading1, Heading2, Heading3, Highlighter, Italic, Link, List, ListChecks, ListOrdered, Minus, Palette, Quote, Strikethrough, Type } from "lucide-react";
+import { Bold, Code, SquareCode, Sigma, Table, Lightbulb, TriangleAlert, BookMarked, PencilLine, Plus, Radical, Heading1, Heading2, Heading3, Highlighter, Italic, Link, List, ListChecks, ListOrdered, Minus, Palette, Quote, Strikethrough, Type } from "lucide-react";
 import type { ReactNode } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
-import { colorSelection, highlightSelection, insertDivider, insertLink, NOTE_COLORS, setBlock, toggleInline } from "./noteFormatting";
+import { colorSelection, highlightSelection, insertCallout, insertCodeBlock, insertDivider, insertInlineMath, insertMathBlock, insertTable, insertLink, NOTE_COLORS, setBlock, toggleInline } from "./noteFormatting";
 
 function Tool({ label, onRun, children }: { label: string; onRun: () => void; children: ReactNode }) {
   // mousedown keeps the editor selection, so the command applies to the selected text.
@@ -24,6 +24,35 @@ export function ColorMenu({ view, compact }: { view: EditorView; compact?: boole
           onMouseDown={(event) => { event.preventDefault(); colorSelection(view, color.value); }} />)}
         <button type="button" className="note-tool text-xs" title="清除颜色" onMouseDown={(event) => { event.preventDefault(); colorSelection(view, null); }}>清除</button>
       </div>
+    </PopoverContent>
+  </Popover>;
+}
+
+/** Blocks that need more than a line marker: code, formulas, tables and callouts. */
+function InsertMenu({ view }: { view: EditorView }) {
+  const items: { label: string; hint: string; icon: ReactNode; run: () => void }[] = [
+    { label: "代码块", hint: "Ctrl+Alt+C", icon: <SquareCode size={15} />, run: () => insertCodeBlock(view) },
+    { label: "公式块", hint: "$$ LaTeX $$", icon: <Sigma size={15} />, run: () => insertMathBlock(view) },
+    { label: "行内公式", hint: "$x^2$", icon: <Radical size={15} />, run: () => insertInlineMath(view) },
+    { label: "表格", hint: "3 列", icon: <Table size={15} />, run: () => insertTable(view) },
+    { label: "提示框", hint: "💡", icon: <Lightbulb size={15} />, run: () => insertCallout(view) },
+    { label: "注意框", hint: "⚠️", icon: <TriangleAlert size={15} />, run: () => insertCallout(view, "⚠️", "注意") },
+    { label: "定义框", hint: "📘", icon: <BookMarked size={15} />, run: () => insertCallout(view, "📘", "定义") },
+    { label: "例子框", hint: "✏️", icon: <PencilLine size={15} />, run: () => insertCallout(view, "✏️", "例子") },
+    { label: "待办清单", hint: "☐", icon: <ListChecks size={15} />, run: () => setBlock(view, "todo") },
+    { label: "分隔线", hint: "---", icon: <Minus size={15} />, run: () => insertDivider(view) },
+  ];
+  return <Popover>
+    <PopoverTrigger asChild>
+      <button type="button" className="note-tool note-tool-insert" title="插入代码块、公式、表格、提示框…" aria-label="插入块" onMouseDown={(event) => event.preventDefault()}>
+        <Plus size={16} /><span>插入</span>
+      </button>
+    </PopoverTrigger>
+    <PopoverContent align="start" className="note-insert-menu w-56 p-1.5" onOpenAutoFocus={(event) => event.preventDefault()}>
+      {items.map((item) => <button key={item.label} type="button" className="note-insert-item"
+        onMouseDown={(event) => { event.preventDefault(); item.run(); }}>
+        {item.icon}<span>{item.label}</span><kbd>{item.hint}</kbd>
+      </button>)}
     </PopoverContent>
   </Popover>;
 }
@@ -56,7 +85,8 @@ export function NoteToolbar({ view }: { view: EditorView | null }) {
     <Tool label="有序列表" onRun={() => setBlock(view, "number")}><ListOrdered size={16} /></Tool>
     <Tool label="待办清单" onRun={() => setBlock(view, "todo")}><ListChecks size={16} /></Tool>
     <Tool label="引用" onRun={() => setBlock(view, "quote")}><Quote size={16} /></Tool>
-    <Tool label="分隔线" onRun={() => insertDivider(view)}><Minus size={16} /></Tool>
-    <span className="ml-auto text-xs text-muted-foreground max-[700px]:hidden">输入 / 唤出菜单 · 选中文字可设置格式</span>
+    <span className="note-tool-sep" />
+    <InsertMenu view={view} />
+    <span className="note-toolbar-hint">输入 / 唤出菜单</span>
   </div>;
 }

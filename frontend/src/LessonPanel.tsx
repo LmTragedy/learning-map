@@ -26,11 +26,12 @@ export function LessonStudy({ course, node, lessonId, busy, aiEnabled, act, onSe
   const ledger = useCourseTasks();
   const pending = ledger.tasks.filter(t=>t.kind==='lesson'&&t.target===node.id&&(t.state!=='applied'||Date.parse(t.updated_at)>=ledger.openedAt&&ledger.clock-Date.parse(t.updated_at)<4000));
   const ask = focus.trim();
-  const generate = async (kind: "initial" | "supplement") => {
-    const key = `${kind}:${ask}`;
+  const gaps = node.lesson_gaps ?? [];
+  const generate = async (kind: "initial" | "supplement", focusText = ask) => {
+    const key = `${kind}:${focusText}`;
     if (pendingRequest.current?.key !== key) pendingRequest.current = { key, id: crypto.randomUUID() };
     const saved = await act("lesson", () => api.lesson(course.id, node.id, {
-      kind, focus: ask, request_id: pendingRequest.current!.id,
+      kind, focus: focusText, request_id: pendingRequest.current!.id,
     }));
     if (saved) {
       const generated = saved.nodes.find((entry) => entry.id === node.id)?.lessons?.at(-1);
@@ -63,10 +64,18 @@ export function LessonStudy({ course, node, lessonId, busy, aiEnabled, act, onSe
       </button>
     </div>
     {!!pending.length && <div className="lesson-thinking"><TaskCards kind="lesson" target={node.id} /></div>}
+    {gaps.length > 0 && !pending.length && <div className="lesson-gaps" role="note">
+      <span>已保存的小课还没讲到这些知识块：<b>{gaps.join("、")}</b>{lessons.length === 1 ? "（可能是小课写在知识块整理出来之前）" : ""}</span>
+      <Button size="sm" variant="outline" disabled={busy || !aiEnabled}
+        onClick={() => void generate("supplement", `逐个讲清楚这些还没讲到的知识块：${gaps.join("、")}。每块给出中文和英文术语、意思、条件和一个具体例子。`)}>
+        <Sparkles /> 补一节讲这些
+      </Button>
+    </div>}
     <div className="lesson-visual-layout">
       <div className="lesson-frame-area">
-        {/* Source links in the lesson open the original page in a new tab; scripts stay blocked. */}
-        <iframe key={lesson.id} src={lessonHtmlUrl(course.id, node.id, lesson.id)} title={lesson.title} sandbox="allow-popups allow-popups-to-escape-sandbox" referrerPolicy="no-referrer" />
+        {/* Source links in the lesson open the original page in a new tab; scripts stay blocked.
+            Same origin without scripts only lets the workbench read selected text for the note. */}
+        <iframe key={lesson.id} src={lessonHtmlUrl(course.id, node.id, lesson.id)} title={lesson.title} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" referrerPolicy="no-referrer" />
       </div>
     </div>
     <form className="lesson-dock" onSubmit={(event) => { event.preventDefault(); void generate("supplement"); }}>

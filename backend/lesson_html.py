@@ -8,8 +8,9 @@ from urllib.parse import quote
 LESSON_CSP = (
     "default-src 'none'; style-src 'unsafe-inline'; script-src 'none'; "
     "img-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'; "
-    # Popups only, so source links can open the original page in a new tab; scripts stay off.
-    "sandbox allow-popups allow-popups-to-escape-sandbox"
+    # Popups, so source links can open the original page in a new tab; same origin so the app can
+    # read selected text for notes. Scripts stay off, so the page itself gains no capabilities.
+    "sandbox allow-same-origin allow-popups allow-popups-to-escape-sandbox"
 )
 _TAGS = frozenset(
     "article section header footer h1 h2 h3 h4 p div span strong em b i "
