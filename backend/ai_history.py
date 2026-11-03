@@ -8,8 +8,8 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from .bridge_backfill import BackfillDraft
-from .learning import LearningError, course_material_context
+from .bridge_backfill import BackfillDraft, backfill_sources
+from .learning import LearningError, cited_material_context, course_material_context
 
 _MAX_FILE_BYTES = 32 * 1024 * 1024
 _MAX_LINE_BYTES = 4 * 1024 * 1024
@@ -266,7 +266,8 @@ def _validate_prompt(prompt: str | None, course: dict[str, Any]) -> dict[str, An
     relation_ids, endpoints, relation_errors = _validate_relation_items(relations, edge_map)
     node_ids, node_errors = _validate_node_items(nodes, node_map, endpoints)
     result["relation_ids"], result["node_ids"] = relation_ids, node_ids
-    result["errors"].extend(relation_errors + node_errors + _validate_materials(materials, course))
+    result["errors"].extend(relation_errors + node_errors
+                            + _validate_materials(materials, course, relation_ids, node_ids))
     return result
 
 
@@ -319,10 +320,14 @@ def _validate_node_items(
     return valid_ids, errors
 
 
-def _validate_materials(materials: str, course: dict[str, Any]) -> list[str]:
+def _validate_materials(
+    materials: str, course: dict[str, Any], relation_ids: list[str], node_ids: list[str]
+) -> list[str]:
     try:
-        expected_materials = course_material_context(course)
-        if materials != expected_materials:
+        # Earlier prompts carried the whole course; current ones carry only the cited pages.
+        batch = [edge for edge in course.get("edges", []) if edge.get("id") in relation_ids]
+        cited = cited_material_context(course, backfill_sources(course, batch, node_ids))
+        if materials != cited and materials != course_material_context(course):
             return ["materials JSON differs from current course material context"]
     except (LearningError, KeyError, TypeError, ValueError):
         return ["current course material context could not be verified"]

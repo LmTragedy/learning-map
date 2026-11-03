@@ -193,8 +193,8 @@ def test_node_context_filters_scope_before_taking_recent_conversation_and_attemp
 
     saved = store.course(course["id"])
     context = json.loads(node_context(saved, find_node(saved, course["nodes"][0]["id"])))
-    assert len(context["actual_conversations"]) == 30
-    assert context["actual_conversations"][0]["content"] == "CURRENT_CHAT_05"
+    assert len(context["actual_conversations"]) == 6
+    assert context["actual_conversations"][0]["content"] == "CURRENT_CHAT_29"
     assert context["actual_conversations"][-1]["content"] == "CURRENT_CHAT_34"
     assert all("EXCLUDED_CHAT_" not in entry["content"] for entry in context["actual_conversations"])
     assert len(context["assessment_evidence"]) == 3

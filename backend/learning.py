@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -89,9 +90,66 @@ def course_material_context(course):
     return content
 
 
-def node_context(course, node):
+def _local_digest(text):
+    line = next((line.strip() for line in text.splitlines() if len(line.strip()) >= 4), text.strip())
+    return line[:80]
+
+
+def material_index(course, full_text_ids=()):
+    """Every page as a one-line digest, except materials in full_text_ids, which keep their text."""
+    pages = []
+    for material in course["materials"]:
+        for number, page in enumerate(material["pages"], 1):
+            entry = dict(material_id=material["id"], name=material["name"], week=material["week"], page=number)
+            if material["id"] in full_text_ids:
+                entry |= dict(text=page["text"], uncertain=page.get("uncertain", False))
+            elif page["text"].strip():
+                entry["digest"] = page.get("digest") or _local_digest(page["text"])
+            else:
+                continue
+            pages.append(entry)
+    return json.dumps(pages, ensure_ascii=False)
+
+
+def save_page_digests(course, digests):
+    materials = {material["id"]: material for material in course["materials"]}
+    for digest in digests:
+        material = materials.get(digest["material_id"])
+        if material and 1 <= digest["page"] <= len(material["pages"]):
+            material["pages"][digest["page"] - 1]["digest"] = digest["summary"]
+
+
+def cited_material_context(course, sources):
+    """Only the cited pages, in course order; the whole course when nothing is cited."""
+    wanted = {(source["material_id"], source["page"]) for source in sources}
+    pages = [
+        dict(material_id=material["id"], name=material["name"], week=material["week"], **page)
+        for material in course["materials"]
+        for number, page in enumerate(material["pages"], 1)
+        if (material["id"], number) in wanted
+    ]
+    if not any(page["text"].strip() for page in pages):
+        return course_material_context(course)
+    return json.dumps(pages, ensure_ascii=False)
+
+
+# Older turns reach the model through the learning memory, not by resending the transcript.
+RECENT_TURNS = 6
+
+
+def node_memory(course, node):
+    """The latest Recall summary saved for this node and scope, marked as AI-organized."""
+    memory = node.get("memories", {}).get(scope_key(course))
+    if not memory:
+        return None
+    return dict(note="AI 归纳自实际对话，仅作接续线索，可能不完整", items=memory["items"],
+                uncertainties=memory["uncertainties"], through=memory["through"])
+
+
+def node_context(course, node, *, history=True):
+    """Sources plus, when history is wanted, the learning memory, recent turns and assessments."""
     require_review_node(course, node)
-    history = active_records(course, node["chats"])[-30:]
+    history = active_records(course, node["chats"])[-RECENT_TURNS:] if history else None
     if len(json.dumps(history, ensure_ascii=False)) > 60000:
         raise LearningError("最近对话超过本版上下文上限；请用 Recall 找回内容后缩小问题")
     materials = {material["id"]: material for material in course["materials"]}
@@ -118,13 +176,14 @@ def node_context(course, node):
         relations=relations_for_node(course, node),
         synthesis=synthesis_context(course, node),
         teaching_preference=course["preferences"],
-        actual_conversations=history,
+        learning_memory=node_memory(course, node) if history is not None else None,
+        actual_conversations=history or [],
         assessment_evidence=[
             {key: attempt[key] for key in (
                 "id", "answer", "question", "judgment", "resolution", "rating_state",
             ) if key in attempt}
             for attempt in active_records(course, node["attempts"])[-3:]
-        ],
+        ] if history is not None else [],
         lessons=[
             {key: lesson[key] for key in ("title", "goal", "recap", "check_question", "check_answer")}
             for lesson in active_records(course, node.get("lessons", []))[-3:]
@@ -134,6 +193,10 @@ def node_context(course, node):
     if len(encoded) > 100000:
         raise LearningError("本节点来源超过本版上下文上限，请先缩小节点来源范围")
     return encoded
+
+
+def context_digest(course, node):
+    return hashlib.sha256(node_context(course, node, history=False).encode()).hexdigest()
 
 
 def _source_context(materials, sources):
@@ -412,7 +475,15 @@ class Learning:
 
     def _generate(self, course_id):
         course = self.store.course(course_id)
-        context = course_material_context(course)
+        cited = {source["material_id"] for node in course["nodes"] for source in node["sources"]}
+        fresh = [material["id"] for material in course["materials"] if material["id"] not in cited]
+        if course["nodes"] and fresh:
+            # Materials the map already covers go as digests; only new materials send full pages.
+            context = material_index(course, set(fresh))
+            # Same size and readable-text checks as a first generation, applied to the new pages.
+            course_material_context(dict(course, materials=[m for m in course["materials"] if m["id"] in fresh]))
+        else:
+            context = course_material_context(course)
         with self.store.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             latest = self.store.course(course_id, connection)
@@ -436,6 +507,8 @@ class Learning:
             "relations里除对比以外每条联系也写bridges，结构同上但无需from_key，引用source的块与target的步骤。"
             "来源识别待用户确认。sources.quote只能摘录材料实际提取文字；"
             "key用短唯一标识，prerequisites仅引用本次key。已有节点同标题会保留状态，"
+            "只有给出text的页面可作sources；只有digest的页面已分析过，只用于了解全课结构。"
+            "page_digests为每个给出text的页面写一句不超过60字的内容摘要（material_id、page）。"
             "不要重命名已有概念。已有标题："
             + json.dumps([n["title"] for n in course["nodes"]], ensure_ascii=False)
             + "\n材料："
@@ -446,6 +519,7 @@ class Learning:
         with self.store.edit(course_id, task_id=current_task_id()) as (current, _):
             require_same_materials(course, current)
             append_map(current, draft.payload)
+            save_page_digests(current, draft.payload.get("page_digests", []))
             remember_conversation(current, draft.thread_id, label)
         return self.store.course(course_id)
 
@@ -467,9 +541,9 @@ class Learning:
         require_review_node(course, node)
         if wants_recall(message):
             reply = recall_text(dict(chats=active_records(course, node["chats"])))
-            thread_id = thread_for(course, node)
+            thread_id, digest = thread_for(course, node), None
         else:
-            reply, thread_id = self._chat_reply(course, node, message)
+            reply, thread_id, digest = self._chat_reply(course, node, message)
         with self.store.edit(course_id, task_id=current_task_id()) as (current, _):
             require_same_node(course, current, node_id)
             updated = find_node(current, node_id)
@@ -483,19 +557,24 @@ class Learning:
                 updated["thread_id"] = thread_id
             if thread_id:
                 remember_conversation(current, thread_id, review_label(current, updated), node_id)
+                if digest:
+                    updated.setdefault("context_digests", {})[thread_id] = digest
         return self.store.course(course_id)
 
     def _chat_reply(self, course, node, message):
-        reply = self.ai().ask(
-            SYSTEM
-            + "\n当前节点/来源："
-            + node_context(course, node)
-            + "\n用户："
-            + message,
-            thread_id=thread_for(course, node),
-            conversation=review_label(course, node),
-        )
-        return reply["text"], reply["thread_id"]
+        """A resumed thread already holds earlier turns; send only what changed since then."""
+        fresh = SYSTEM + "\n当前节点/来源：" + node_context(course, node) + "\n用户：" + message
+        thread_id, digest = thread_for(course, node), context_digest(course, node)
+        options = dict(thread_id=thread_id, conversation=review_label(course, node))
+        if not thread_id:
+            reply = self.ai().ask(fresh, **options)
+        else:
+            if node.get("context_digests", {}).get(thread_id) == digest:
+                update = "\n（节点与来源同本对话上一轮，未变化。）"
+            else:
+                update = "\n当前节点/来源（已更新）：" + node_context(course, node, history=False)
+            reply = self.ai().ask(SYSTEM + update + "\n用户：" + message, fresh_prompt=fresh, **options)
+        return reply["text"], reply["thread_id"], digest
 
     def question(self, course_id, node_id, request_id=None):
         return self.tasks.run(

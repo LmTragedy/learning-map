@@ -281,6 +281,9 @@ def test_recall_summary_uses_actual_evidence_and_preserves_chat_and_progress(ses
     assert summary["messages"] == before["nodes"][0]["chats"]
     assert summary["history_revision"] == before["revision"]
     after = store.course(course["id"])
+    memory = after["nodes"][0].pop("memories")["course"]
+    assert memory["items"] == [{key: item[key] for key in ("category", "content")} for item in summary["items"]]
+    assert memory["through"] == before["nodes"][0]["chats"][-1]["id"]
     assert after["nodes"] == before["nodes"] and after["ratings"] == before["ratings"]
     assert after["codex_threads"][0]["title"] == course["title"] + "｜关系与键｜Recall整理"
     assert after["codex_threads"][0]["group"] == "学习 · " + course["title"]

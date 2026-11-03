@@ -281,7 +281,7 @@ def test_disabled_or_failed_provider_preserves_note_and_allows_normal_save(revie
     assert store.course(course["id"])["nodes"][0]["personal_note"] == "my draft"
 
 
-def test_note_settings_are_independent_and_changed_drafts_share_review_conversation(review_session):
+def test_note_settings_are_independent_and_changed_drafts_start_fresh_conversations(review_session):
     client, store, model, course, url = review_session
     response = client.post("/api/settings", json={"note_review_model": "gpt-6-luna"})
     assert response.json()["model"] == "gpt-6.1-terra"
@@ -291,12 +291,12 @@ def test_note_settings_are_independent_and_changed_drafts_share_review_conversat
     assert len(model.options) == 1  # Reopening the same completed check does not generate another turn.
     assert "笔记检查" in model.options[0]["conversation"].title
     review(client, url, course, "second draft").raise_for_status()
-    assert model.options[-1]["thread_id"] == "note-review-thread"
+    assert "thread_id" not in model.options[-1]  # Each check is self-contained; no earlier drafts re-billed.
     with store.edit(course["id"]) as (current, _):
         current["nodes"][0]["personal_note"] = "restored or edited note"
     newer = store.course(course["id"])
     review(client, url, newer, "third draft").raise_for_status()
-    assert model.options[-1]["thread_id"] == "note-review-thread"
+    assert "thread_id" not in model.options[-1]
 
 
 def test_strict_pdf_review_never_cites_or_receives_other_material_sources(review_session):

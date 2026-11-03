@@ -51,7 +51,7 @@ def review_identity(course, node_id, note_id):
         note = next((entry for entry in course.get("notes", []) if entry["id"] == note_id), None)
         if note is None or node_id not in note["node_ids"]:
             raise KeyError("这份笔记不存在或未绑定当前知识点。")
-    return dict(epoch=course.get("ai_epoch"), scope=scope_key(course), context=json.loads(node_context(course, node)))
+    return dict(epoch=course.get("ai_epoch"), scope=scope_key(course), context=json.loads(node_context(course, node, history=False)))
 
 
 def validate_review_request(request, course, settings):
@@ -160,7 +160,7 @@ class NoteReviewer:
             note = next((entry for entry in course.get("notes", []) if entry["id"] == request.note_id), None)
             if note is None or nid not in note["node_ids"]:
                 raise KeyError("这份笔记不存在或未绑定当前知识点。")
-        context = json.loads(node_context(course, node))
+        context = json.loads(node_context(course, node, history=False))
         settings = store.settings()
         validate_review_request(request, course, settings)
         model = settings["note_review_model"].strip()

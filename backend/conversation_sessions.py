@@ -10,6 +10,8 @@ from .store import Conflict, timestamp
 NODE_CHANNELS = {"chat": "learning", "lesson": "learning", "question": "assessment",
                  "assessment": "assessment", "note_review": "note_review", "recall": "recall"}
 COURSE_CHANNELS = {"bridge": "bridges", "bridge_history": "bridges", "links": "bridges"}
+# Only the tutor conversation relies on earlier turns; every other prompt carries its own context.
+PERSISTENT_CHANNELS = {"learning"}
 
 
 def _digest(identity):
@@ -48,7 +50,8 @@ class ConversationDirectory:
             node = next((node for node in task["before"]["nodes"] if node["id"] == task["target"]), None)
             legacy_thread = thread_for(task["before"], node) if node else None
         logical_key = _digest(logical)
-        provider_key = [type(provider).__module__, type(provider).__qualname__, task.get("model", "")]
+        # The model is not part of the identity: resuming with a newly chosen model keeps the conversation.
+        provider_key = [type(provider).__module__, type(provider).__qualname__]
         key = _digest([logical, provider_key])
         with self.store.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -61,13 +64,19 @@ class ConversationDirectory:
             thread_id = self._available_thread(connection, row, task["id"])
             connection.execute("UPDATE ai_conversations SET owner_task=?,thread_id=?,updated_at=? WHERE id=?",
                                (task["id"], thread_id, timestamp(), key))
+        if logical["channel"] not in PERSISTENT_CHANNELS:
+            # One-shot prompts are self-contained; resuming would re-bill every earlier prompt.
+            thread_id = None
         return dict(key=key, thread_id=thread_id, identity=logical, provider=provider_key)
 
     @staticmethod
     def _legacy_thread(connection, logical_key, logical, legacy_thread):
-        known = connection.execute("SELECT 1 FROM ai_conversations WHERE logical_key=? LIMIT 1",
-                                   (logical_key,)).fetchone()
-        return legacy_thread if logical["channel"] == "learning" and not known else None
+        if logical["channel"] != "learning":
+            return None
+        # Rows from before the model left the key carry the conversation forward.
+        known = connection.execute("SELECT thread_id FROM ai_conversations WHERE logical_key=? "
+                                   "ORDER BY updated_at DESC LIMIT 1", (logical_key,)).fetchone()
+        return known["thread_id"] if known else legacy_thread
 
     @staticmethod
     def _available_thread(connection, row, task_id):

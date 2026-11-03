@@ -141,7 +141,8 @@ def test_strict_chat_threads_history_and_recall_are_separate_and_reusable(review
     model.replies.append("全课程")
     client.post(node_url + "/chat", json={"message": "全课程继续"})
     prompt, options = model.calls[-1]
-    assert "EXCLUDED_CHAT_SENTINEL" in prompt and "EXCLUDED_PDF_SENTINEL" in prompt
+    # The resumed thread already holds earlier turns; only the changed sources are resent.
+    assert "EXCLUDED_CHAT_SENTINEL" not in prompt and "EXCLUDED_PDF_SENTINEL" in prompt
     assert options["thread_id"] == "original-course-thread"
     raw = store.course(course["id"])
     assert raw["nodes"][0]["thread_id"] == "original-course-thread"

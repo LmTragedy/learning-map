@@ -137,9 +137,17 @@ class MapRelation(Input):
         return self
 
 
+class PageDigest(Input):
+    material_id: str = Field(min_length=1, max_length=80)
+    page: StrictInt = Field(ge=1)
+    summary: str = Field(min_length=1, max_length=200)
+
+
 class MapDraft(Input):
     nodes: list[MapNode] = Field(min_length=1, max_length=60)
     relations: list[MapRelation] = Field(default_factory=list, max_length=180)
+    # One line per page with text; later map and goal prompts send these instead of whole pages.
+    page_digests: list[PageDigest] = Field(default_factory=list, max_length=400)
 
     @model_validator(mode="after")
     def unique_keys(self):

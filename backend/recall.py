@@ -41,6 +41,10 @@ def _summarize_recall(learning, course_id, node_id):
         if current_node["chats"] != original_history or scope_key(current) != scope_key(course):
             raise Conflict("整理期间对话或复习范围已变化，请刷新后重新整理。")
         remember_conversation(current, reply.thread_id, label, node_id)
+        # The newest summary becomes the learning memory a fresh tutor thread starts from.
+        current_node.setdefault("memories", {})[scope_key(current)] = dict(
+            items=[{key: item[key] for key in ("category", "content")} for item in summary["items"]],
+            uncertainties=summary["uncertainties"], through=history[-1]["id"], created_at=result["created_at"])
         save_task_result(connection, result)
     return result
 

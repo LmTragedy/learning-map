@@ -14,7 +14,7 @@ from backend.app import create_app
 
 class ConversationModel:
     def __init__(self):
-        self.sent = []
+        self.sent, self.prompts = [], []
         self.entered, self.release = threading.Event(), threading.Event()
         self.block = False
 
@@ -23,6 +23,7 @@ class ConversationModel:
 
     def ask(self, prompt, **options):
         thread_id = options.get("thread_id") or "thread-" + uuid4().hex
+        self.prompts.append(prompt)
         self.sent.append(dict(options, actual_thread=thread_id))
         self.entered.set()
         if self.block and not self.release.wait(5):
@@ -75,7 +76,7 @@ def test_main_learning_thread_is_shared_by_lessons_and_followups_after_restart(c
     assert all(task["result_ref"]["available"] for task in tasks)
 
 
-def test_assessment_channel_and_model_changes_have_separate_persistent_identities(conversation_app):
+def test_assessment_is_separate_and_a_model_change_keeps_the_learning_conversation(conversation_app):
     client, _, model, course = conversation_app
     course = send(client, course)
     learning_thread = model.sent[-1]["actual_thread"]
@@ -83,10 +84,28 @@ def test_assessment_channel_and_model_changes_have_separate_persistent_identitie
     assert model.sent[-1]["actual_thread"] != learning_thread
     client.post("/api/settings", json={"model": "model-b"}).raise_for_status()
     course = send(client, course)
-    assert "thread_id" not in model.sent[-1]
+    assert model.sent[-1]["thread_id"] == learning_thread
     client.post("/api/settings", json={"model": "model-a"}).raise_for_status()
     send(client, course)
     assert model.sent[-1]["thread_id"] == learning_thread
+
+
+def test_conversation_recorded_under_a_model_specific_key_is_carried_forward(conversation_app):
+    client, store, model, course = conversation_app
+    course = send(client, course)
+    learning_thread = model.sent[-1]["actual_thread"]
+    with store.connect() as connection:
+        connection.execute("UPDATE ai_conversations SET id='legacy-model-key'")
+    send(client, course)
+    assert model.sent[-1]["thread_id"] == learning_thread
+
+
+def test_resumed_chat_sends_only_the_new_message_when_sources_are_unchanged(conversation_app):
+    client, _, model, course = conversation_app
+    course = send(client, course, message="FIRST_TURN_SENTINEL")
+    send(client, course, message="Second question.")
+    assert "FIRST_TURN_SENTINEL" in model.prompts[0]
+    assert "FIRST_TURN_SENTINEL" not in model.prompts[1] and "未变化" in model.prompts[1]
 
 
 def test_scope_explicit_reset_and_restore_never_reuse_another_conversation(conversation_app):
@@ -274,3 +293,11 @@ def test_thread_is_durable_before_failure_and_collect_never_applies_or_sends_aga
     recovered.raise_for_status()
     assert recovered.json()["task"]["state"] == "applied"
     assert recovered.json()["course"]["nodes"][0]["chats"][-1]["content"] == "The original answer."
+
+
+def test_one_shot_actions_start_a_fresh_thread_every_time(conversation_app):
+    client, _, model, course = conversation_app
+    course = send(client, course, "question")
+    send(client, course, "question")
+    assert all("thread_id" not in entry for entry in model.sent)
+    assert model.sent[0]["actual_thread"] != model.sent[1]["actual_thread"]

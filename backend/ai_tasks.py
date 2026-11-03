@@ -85,9 +85,11 @@ class ReceiptAI:
         self.provider, self.manager, self.task_id = provider, manager, task_id
 
     def ask(self, prompt, **options):
+        # A conversation turn may offer a self-contained prompt for when no thread can be resumed.
+        fresh_prompt = options.pop("fresh_prompt", None) or prompt
         task = self.manager.get(self.task_id)
         if task.get("raw_reply"):
-            if (task.get("request", {}).get("prompt") != prompt
+            if (task.get("request", {}).get("prompt") not in (prompt, fresh_prompt)
                     or task.get("request", {}).get("schema") != options.get("schema")):
                 raise Conflict("恢复输入与原请求不一致；原始结果已保留")
             return task["raw_reply"]
@@ -98,10 +100,12 @@ class ReceiptAI:
             options["thread_id"] = session["thread_id"]
         else:
             options.pop("thread_id", None)
+            prompt = fresh_prompt
         label = options.get("conversation")
         if label:
             options["conversation"] = replace(label, native_section_id=self.manager.conversations.native_section(task["course_id"]))
-        request = dict(prompt=prompt, schema=options.get("schema"), thread_id=options.get("thread_id"))
+        request = dict(prompt=prompt, schema=options.get("schema"), thread_id=options.get("thread_id"),
+                       prompt_chars=len(prompt))
         if label:
             request["conversation"] = dict(title=label.title, group=label.group)
         self.manager.update(self.task_id, state="sending", request=request,

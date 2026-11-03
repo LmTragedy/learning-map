@@ -16,7 +16,7 @@ from .bridges import (
 )
 from .conversation_labels import conversation_label, remember_conversation
 from .domain import project_course
-from .learning import LearningError, _validate_sources, course_material_context, structured
+from .learning import LearningError, _validate_sources, cited_material_context, structured
 from .review_scope import strict_scope
 from .schemas import Input
 from .store import Conflict, identity
@@ -55,6 +55,13 @@ def _node_brief(node):
         pieces=[dict(kind=piece["kind"], title=piece["title"]) for piece in node.get("pieces", [])],
         steps=[step["title"] for step in node.get("steps", [])],
     )
+
+
+def backfill_sources(course, batch, endpoint_ids):
+    """Pages cited by the batch's endpoint nodes and relations; the prompt carries only these."""
+    nodes = {node["id"]: node for node in course["nodes"]}
+    return ([source for node_id in endpoint_ids for source in nodes[node_id].get("sources", [])]
+            + [source for edge in batch for source in edge.get("sources", [])])
 
 
 def _validate_draft_sources(course, draft):
@@ -137,7 +144,7 @@ def fill_batch(store, learning, course, batch):
         + "\n联系："
         + json.dumps(items, ensure_ascii=False)
         + "\n材料："
-        + course_material_context(course)
+        + cited_material_context(course, backfill_sources(course, batch, endpoint_ids))
     )
     label = conversation_label(course, purpose="补充知识桥")
     reply = structured(learning.ai(), prompt, BackfillDraft, {"conversation": label})

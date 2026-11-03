@@ -113,6 +113,7 @@ function RecallSummaryView({ summary, label }: { summary: RecallSummary; label?:
       )}
       <p className="recall-mastery-note">
         这份整理只用于接续学习思路，不代表你已经掌握这些内容。
+        它已保存为本节点的学习记忆：之后新开的学习对话、出题和小课会带上它和最近几条对话，再次整理会替换它。
       </p>
     </section>
   );
