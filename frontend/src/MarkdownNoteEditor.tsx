@@ -5,13 +5,24 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { HIGHLIGHT, NOTE_COLORS } from "./noteFormatting";
-import { normalizeMath, rehypeKatexPlugin, remarkMathPlugin } from "./mathMarkdown";
-import { Button } from "./components/ui/button";
+import { normalizeMath, rehypeKatexPlugin, remarkCjkStrongPlugin, remarkMathPlugin } from "./mathMarkdown";
 import { LiveMarkdownEditor } from "./LiveMarkdownEditor";
 import type { ReviewHooks } from "./LiveMarkdownEditor";
 import type { NoteEditorActions } from "./noteReviewTypes";
 
 type View = "live" | "source" | "read";
+const CALLOUTS: Record<string, string> = { "💡": "tip", "⚠️": "warn", "📘": "def", "✏️": "example" };
+type HastLike = { type: string; value?: string; children?: HastLike[] };
+/** The icon a quote's first text starts with, if any. */
+function calloutIcon(node: HastLike | undefined): string | undefined {
+  const stack = node ? [node] : [];
+  while (stack.length) {
+    const next = stack.shift()!;
+    if (next.type === "text" && next.value?.trim()) return Object.keys(CALLOUTS).find((icon) => next.value!.trim().startsWith(icon));
+    stack.unshift(...(next.children ?? []));
+  }
+  return undefined;
+}
 const views: { key: View; label: string }[] = [
   { key: "live", label: "编辑" },
   { key: "read", label: "阅读" },
@@ -40,9 +51,9 @@ export default function MarkdownNoteEditor({ content, onChange, onReady, onTab, 
   const preview = useDeferredValue(content);
   return <div className="node-note-editor">
     <div className="node-note-editor-toolbar">
-      <div role="group" aria-label="笔记显示方式" className="ml-auto flex flex-wrap gap-1">
-        {views.map(({ key, label }) => <Button key={key} size="sm" variant="ghost"
-          aria-pressed={view === key} onClick={() => setView(key)}>{label}</Button>)}
+      <div role="group" aria-label="笔记显示方式" className="note-view-switch">
+        {views.map(({ key, label }) => <button key={key} type="button"
+          aria-pressed={view === key} onClick={() => setView(key)}>{label}</button>)}
       </div>
     </div>
     <div className="node-note-panes" data-view={view}>
@@ -55,10 +66,15 @@ export default function MarkdownNoteEditor({ content, onChange, onReady, onTab, 
         },
       })} onTab={onTab} reviewHooks={reviewHooks} /></div>
       {view === "read" && <article aria-label="笔记阅读预览" className="node-note-preview">
-        {preview ? <Markdown remarkPlugins={[remarkGfm, remarkMathPlugin]} rehypePlugins={[rehypeRaw, [rehypeSanitize, schema], rehypeKatexPlugin]} components={{
+        {preview ? <Markdown remarkPlugins={[remarkGfm, remarkMathPlugin, remarkCjkStrongPlugin]} rehypePlugins={[rehypeRaw, [rehypeSanitize, schema], rehypeKatexPlugin]} components={{
           // Notes remain local: a preview never fetches an embedded image.
           img: ({ alt }) => <span className="text-muted-foreground">[图片：{alt || "未显示"}]</span>,
           a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>,
+          // A quote opening with one of the callout icons reads as a coloured box, as in the editor.
+          blockquote: ({ node, children }) => {
+            const kind = CALLOUTS[calloutIcon(node) ?? ""];
+            return <blockquote className={kind ? `note-callout is-${kind}` : undefined}>{children}</blockquote>;
+          },
         }}>{normalizeMath(preview)}</Markdown> : <p className="text-muted-foreground">这里会显示笔记的阅读效果。</p>}
       </article>}
     </div>

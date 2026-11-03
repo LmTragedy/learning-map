@@ -2,6 +2,16 @@ import { syntaxTree } from "@codemirror/language";
 import { Decoration, ViewPlugin, WidgetType } from "@codemirror/view";
 import type { DecorationSet, EditorView, ViewUpdate } from "@codemirror/view";
 import type { Range } from "@codemirror/state";
+import { noteBlocks, renderMath } from "./noteBlocks";
+
+class InlineMath extends WidgetType {
+  constructor(readonly tex: string) { super(); }
+  eq(other: InlineMath) { return other.tex === this.tex; }
+  toDOM() { const math = renderMath(this.tex, false); math.className = "cm-note-inlinemath"; return math; }
+}
+
+// $x$ but not $$, an escaped \$, or a price like "$5 and $6" with spaces just inside the dollars.
+const INLINE_MATH = /(?<![\\$])\$(?![\s$])([^$\n]+?)(?<!\s)\$(?!\$)/g;
 
 class Bullet extends WidgetType {
   toDOM() {
@@ -31,6 +41,10 @@ class TaskBox extends WidgetType {
 }
 
 const INLINE_STYLE = /<(span) style="color:(#[0-9a-fA-F]{6})">(.*?)<\/span>|<(mark) style="background:(#[0-9a-fA-F]{8})">(.*?)<\/mark>/g;
+const CALLOUTS: Record<string, string> = { "💡": "tip", "⚠️": "warn", "📘": "def", "✏️": "example" };
+const CALLOUT = /^\s*>\s*(💡|⚠️|📘|✏️)/u;
+// Markdown will not close ** after a full-width bracket when a CJK character follows (e.g. **关系（relation）**就是).
+const LOOSE_STRONG = /\*\*(?=\S)([^*\n]+?)(?<=\S)\*\*/g;
 const TASK = /^(\s*[-*+]\s+)\[([ xX])\]\s/;
 
 /** Colours, highlights and to-do boxes: Markdown has no syntax for them, so notes keep small HTML tags. */
@@ -53,6 +67,24 @@ function extras(view: EditorView, ranges: Range<Decoration>[], editing: (from: n
           ranges.push(Decoration.replace({}).range(start, start + openLength));
           ranges.push(Decoration.replace({}).range(start + openLength + inner.length, start + openLength + inner.length + closeLength));
         }
+      }
+      for (const match of line.text.matchAll(LOOSE_STRONG)) {
+        const start = line.from + match.index!;
+        let parsed = false;
+        for (let node: ReturnType<ReturnType<typeof syntaxTree>["resolveInner"]> | null = syntaxTree(view.state).resolveInner(start + 2, 1); node; node = node.parent)
+          if (node.name === "StrongEmphasis" || node.name === "InlineCode" || node.name === "FencedCode") { parsed = true; break; }
+        if (parsed) continue;
+        ranges.push(Decoration.mark({ class: "cm-note-strong" }).range(start + 2, start + match[0].length - 2));
+        if (!active) {
+          ranges.push(Decoration.replace({}).range(start, start + 2));
+          ranges.push(Decoration.replace({}).range(start + match[0].length - 2, start + match[0].length));
+        }
+      }
+      if (!active) for (const match of line.text.matchAll(INLINE_MATH)) {
+        // Inline code keeps its dollars: an odd number of backticks before the match means it is inside code.
+        if ((line.text.slice(0, match.index).match(/`/g)?.length ?? 0) % 2) continue;
+        const start = line.from + match.index!;
+        ranges.push(Decoration.replace({ widget: new InlineMath(match[1]) }).range(start, start + match[0].length));
       }
       const task = TASK.exec(line.text);
       if (task && !active) {
@@ -80,9 +112,13 @@ function decorations(view: EditorView) {
       const heading = /^(?:ATX|Setext)Heading([1-6])$/.exec(node.name);
       if (heading) ranges.push(Decoration.line({ class: `cm-note-heading${heading[1]}` }).range(view.state.doc.lineAt(node.from).from));
       if (node.name === "Blockquote") {
-        // Every line of a multi-line quote keeps the quote bar.
-        for (let line = view.state.doc.lineAt(node.from).number; line <= view.state.doc.lineAt(node.to).number; line++) {
-          ranges.push(Decoration.line({ class: "cm-note-quote" }).range(view.state.doc.line(line).from));
+        // Every line of a multi-line quote keeps the quote bar; a quote opening with an icon is a callout box.
+        const first = view.state.doc.lineAt(node.from).number, last = view.state.doc.lineAt(node.to).number;
+        const callout = CALLOUT.exec(view.state.doc.line(first).text)?.[1];
+        for (let line = first; line <= last; line++) {
+          const edge = line === first ? " is-first" : "";
+          const end = line === last ? " is-last" : "";
+          ranges.push(Decoration.line({ class: callout ? `cm-note-callout is-${CALLOUTS[callout]}${edge}${end}` : "cm-note-quote" }).range(view.state.doc.line(line).from));
         }
       }
       if (node.name === "FencedCode") {
@@ -126,7 +162,7 @@ function decorations(view: EditorView) {
 }
 
 // Decorations change presentation only; Markdown characters stay in the document.
-export const liveMarkdown = ViewPlugin.fromClass(class {
+const inlineMarks = ViewPlugin.fromClass(class {
   decorations: DecorationSet;
   constructor(view: EditorView) { this.decorations = decorations(view); }
   update(update: ViewUpdate) {
@@ -134,3 +170,5 @@ export const liveMarkdown = ViewPlugin.fromClass(class {
       || syntaxTree(update.startState) !== syntaxTree(update.state)) this.decorations = decorations(update.view);
   }
 }, { decorations: (plugin) => plugin.decorations });
+
+export const liveMarkdown = [inlineMarks, noteBlocks];
