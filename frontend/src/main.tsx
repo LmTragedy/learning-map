@@ -1,9 +1,9 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
-import "@fontsource-variable/geist";
+import "@fontsource-variable/nunito";
 import "@fontsource-variable/geist-mono";
-import "@fontsource-variable/noto-sans-sc";
+import "lxgw-wenkai-screen-webfont/lxgwwenkaigbscreen.css";
 import "./index.css";
 
 // A rebuild deletes the old hashed chunks, so a tab opened before it fails to load lazy parts

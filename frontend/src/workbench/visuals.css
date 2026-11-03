@@ -71,7 +71,7 @@
 .visual-ocr-warning { color:#fcd679; font-size:var(--fs-sm); }
 .visual-image-error,.visual-diagram-error,.visual-empty { display:flex; align-items:center; justify-content:center; color:var(--muted-foreground,var(--muted-foreground)); font-size:var(--fs-sm); }
 .visual-diagram-error { width:100%; min-height:80px; }
-.visual-diagram { display:block; width:100%; height:auto; max-height:100%; overflow:visible; font-family:var(--font-sans,"Noto Sans SC Variable","Geist Variable",sans-serif); font-size:var(--fs-md); }
+.visual-diagram { display:block; width:100%; height:auto; max-height:100%; overflow:visible; font-family:var(--font-sans,"Nunito Variable","LXGW WenKai Screen",sans-serif); font-size:var(--fs-md); }
 .visual-diagram .visual-shape > rect { fill:transparent; stroke:#8a8a94; stroke-width:1.5; }
 .visual-diagram .visual-shape.is-changed > rect { fill:rgba(251,191,36,.10); stroke:var(--state-new); stroke-width:2; }
 .visual-diagram .visual-shape > line { stroke:#8a8a94; stroke-width:1.5; }

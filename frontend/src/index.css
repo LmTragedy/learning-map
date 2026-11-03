@@ -46,7 +46,7 @@
 }
 
 @theme inline {
-  --font-sans: "Noto Sans SC Variable", "Geist Variable", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --font-sans: "Nunito Variable", "LXGW WenKai Screen", "PingFang SC", "Microsoft YaHei UI", sans-serif;
   /* Chinese at 12px gray blurs into the ground; the smallest UI text is 13px. */
   --text-xs: 0.8125rem;
   --text-xs--line-height: 1.5;
