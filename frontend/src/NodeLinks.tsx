@@ -77,6 +77,10 @@ export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, ca
   };
   const selected = resolve(picked);
   const empty = !shownIn.length && !shownOut.length;
+  const findLabel = empty ? "让 AI 找前后联系" : "让 AI 重新找";
+  // Only point at the find button when it is actually on screen.
+  const fillHint = aiEnabled && !reviewStrict ? `点上方「${findLabel}」会一起写好。`
+    : reviewStrict ? "退出所选资料复习后，可以让 AI 补上。" : "在设置中打开 AI 后可以自动补上。";
   const find = () => void act("find-links", () => api.findLinks(course.id, node.id, course.revision));
   const check = (item: ResolvedBridge) => (result: "known" | "unsure", answer: string) =>
     void act("bridge-check", () => api.checkBridge(course.id, item.edge.id, item.bridge.id, result, answer));
@@ -147,7 +151,7 @@ export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, ca
   return <section className="node-links" aria-label="前后联系">
     <div className="nl-head">
       <h3 className="t-label">前后联系{gaps > 0 && <span className="nl-gaps"> · {gaps} 块前置有缺口</span>}</h3>
-      {aiEnabled && !reviewStrict && <Button size="sm" variant="ghost" disabled={busy} onClick={find}><Sparkles /> {empty ? "让 AI 找前后联系" : "让 AI 重新找"}</Button>}
+      {aiEnabled && !reviewStrict && <Button size="sm" variant="ghost" disabled={busy} onClick={find}><Sparkles /> {findLabel}</Button>}
     </div>
     <TaskCards kind="links" target={node.id} limit={1} />
     {notice && <p role="status" className="t-meta">{notice}</p>}
@@ -156,7 +160,7 @@ export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, ca
       {node.formal && <p className="nl-formal">{node.formal}</p>}
     </div>}
 
-    <Handoff course={course} node={node} canOpen={canOpen} onNavigate={onNavigate}
+    <Handoff course={course} node={node} canOpen={canOpen} onNavigate={onNavigate} fillHint={fillHint}
       onShow={(item, side) => isStrong(item) ? setPicked({ kind: "bridge", id: item.bridge.id, side }) : onOpenBridge(item.edge)} />
 
     {empty ? <p className="nl-empty">
@@ -175,7 +179,7 @@ export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, ca
       <div className="nl-legend">
         <span><i className="is-strong" />直接用到</span><span><i className="is-weak" />建议 / 对比着看</span><span>小字是沿必需联系继续往前、往后追到的知识点</span>
       </div>
-      {selected && <Detail key={selected.kind === "step" ? selected.step.id : selected.item.bridge.id} selected={selected} busy={busy}
+      {selected && <Detail key={selected.kind === "step" ? selected.step.id : selected.item.bridge.id} selected={selected} busy={busy} fillHint={fillHint}
         canOpen={canOpen} onNavigate={onNavigate} onOpenBridge={onOpenBridge} onOpenSource={onOpenSource} onCheck={check}
         backTo={selected.kind === "step"
           ? (() => { const uses = rows[selected.index]?.uses.map((item) => item.source) || []; return uses.length ? uses : prevNode ? [prevNode] : []; })()
@@ -210,8 +214,8 @@ export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, ca
  * connects. A bridge between the two means it is really used (直接用到); otherwise they are only
  * next to each other in the order (顺序衔接) and the AI's transition says why.
  */
-function Handoff({ course, node, canOpen, onNavigate, onShow }: {
-  course: Course; node: LearningNode; canOpen: (node: LearningNode) => boolean;
+function Handoff({ course, node, canOpen, onNavigate, onShow, fillHint }: {
+  course: Course; fillHint: string; node: LearningNode; canOpen: (node: LearningNode) => boolean;
   onNavigate: (node: LearningNode, edge?: Edge) => void;
   onShow: (item: ResolvedBridge, side: "in" | "out") => void;
 }) {
@@ -238,7 +242,7 @@ function Handoff({ course, node, canOpen, onNavigate, onShow }: {
           {other.week && other.week !== node.week && <span className="nl-hand-week">{other.week}</span>}
           <span className={cn("nl-hand-tag", item ? "is-use" : "is-seq")}>{item ? "直接用到" : "顺序衔接"}</span>
         </div>
-        <p className={cn("nl-hand-say", !text && "is-empty")}>{text || "还没写衔接。点上方「让 AI 重新找」会一起写好。"}</p>
+        <p className={cn("nl-hand-say", !text && "is-empty")}>{text || `还没写衔接。${fillHint}`}</p>
         <p className="nl-hand-more">
           {item && <>{STRENGTH_LABEL[item.bridge.strength]}{state === "known" ? " · 你已测过会" : state ? " · 有缺口" : ""}
             <button type="button" onClick={() => onShow(item, item.target.id === node.id ? "in" : "out")}>看这条联系</button></>}
@@ -262,8 +266,8 @@ function Handoff({ course, node, canOpen, onNavigate, onShow }: {
   </div>;
 }
 
-function Detail({ selected, busy, canOpen, onNavigate, onOpenBridge, onOpenSource, onCheck, backTo, onSendBack }: {
-  selected: Selected; busy: boolean; canOpen: (node: LearningNode) => boolean;
+function Detail({ selected, busy, fillHint, canOpen, onNavigate, onOpenBridge, onOpenSource, onCheck, backTo, onSendBack }: {
+  selected: Selected; fillHint: string; busy: boolean; canOpen: (node: LearningNode) => boolean;
   onNavigate: (node: LearningNode, edge?: Edge) => void; onOpenBridge: (edge: Edge) => void;
   onOpenSource: (source: Source) => void;
   onCheck: (item: ResolvedBridge) => (result: "known" | "unsure", answer: string) => void;
@@ -283,7 +287,7 @@ function Detail({ selected, busy, canOpen, onNavigate, onOpenBridge, onOpenSourc
   if (selected.kind === "step") {
     return <div className="nl-detail">
       <strong className="nl-detail-title">第 {selected.index + 1} 步 · {selected.step.title}</strong>
-      <Words formal={selected.step.formal} />
+      <Words formal={selected.step.formal} fillHint={fillHint} />
       {back}
     </div>;
   }
@@ -304,7 +308,7 @@ function Detail({ selected, busy, canOpen, onNavigate, onOpenBridge, onOpenSourc
       {canOpen(other) && <Button size="sm" variant="ghost" onClick={() => onNavigate(other, item.edge)}>{incoming ? "去复习它" : "打开"} <ArrowUpRight /></Button>}
     </div>
     <p className="nl-how">{line}</p>
-    <Words plain={other.plain} formal={other.formal} />
+    <Words plain={other.plain} formal={other.formal} fillHint={fillHint} />
     {selected.kind === "bridge" && incoming && <BridgeCheck item={item} busy={busy} onCheck={onCheck(item)} onOpenSource={onOpenSource} />}
     <div className="mt-2 flex flex-wrap items-center gap-2">
       {item.bridge.origin !== "user" && <span className="t-meta">{item.bridge.sources?.length ? `AI 写的 · 有 ${item.bridge.sources.length} 处材料原文` : "AI 写的 · 材料里没找到原文依据"}</span>}
@@ -314,8 +318,8 @@ function Detail({ selected, busy, canOpen, onNavigate, onOpenBridge, onOpenSourc
   </div>;
 }
 
-function Words({ plain, formal }: { plain?: string; formal?: string }) {
-  if (!plain && !formal) return <p className="t-meta mt-2">还没有大白话和正式说法；点上方「让 AI 重新找」会一起写好。</p>;
+function Words({ plain, formal, fillHint }: { plain?: string; formal?: string; fillHint: string }) {
+  if (!plain && !formal) return <p className="t-meta mt-2">还没有大白话和正式说法；{fillHint}</p>;
   return <>
     {plain && <><div className="nl-k">大白话</div><p>{plain}</p></>}
     {formal && <><div className="nl-k">正式说法</div><p className="nl-formal">{formal}</p></>}

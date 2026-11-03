@@ -22,6 +22,7 @@ import {
   BotOff,
   CalendarDays,
   ChevronDown,
+  ChevronUp,
   Ellipsis,
   GraduationCap,
   History,
@@ -53,6 +54,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
 import { CourseMap } from "./CourseMap";
 import { recommendedNode } from "./learningNavigation";
+import { isNodeVisible } from "./nodeVisibility";
 import { isRelationVisible } from "./relationVisibility";
 import { NodePanel } from "./NodePanel";
 import { GoalBoard } from "./GoalBoard";
@@ -667,9 +669,9 @@ export function App() {
                 <div className="mt-0.5 flex items-center gap-3 overflow-hidden whitespace-nowrap text-xs text-muted-foreground [&_svg]:size-3">
                   <span className="flex items-center gap-1 max-[781px]:hidden"><FileText aria-hidden /> {course.materials.length} 份材料</span>
                   <span className="flex items-center gap-1 max-[1100px]:hidden"><Layers aria-hidden /> {course.nodes.length} 个知识点</span>
-                  {course.route && <span className="flex items-center gap-1.5 text-foreground">
-                    <span className="h-1 w-14 overflow-hidden rounded-full bg-track"><span className="block h-full bg-st-passed" style={{ width: `${(course.progress?.ratio ?? (course.route.total ? course.route.completed_count / course.route.total : 0)) * 100}%` }} /></span>
-                    {course.progress?.pieces.total ? `${course.progress.pieces.known}/${course.progress.pieces.total} 知识块已掌握` : `${course.route.completed_count}/${course.route.total} 站已掌握`}
+                  {course.route && <span className="flex min-w-0 items-center gap-1.5 text-foreground">
+                    <span className="h-1 w-14 shrink-0 overflow-hidden rounded-full bg-track"><span className="block h-full bg-st-passed" style={{ width: `${(course.progress?.ratio ?? (course.route.total ? course.route.completed_count / course.route.total : 0)) * 100}%` }} /></span>
+                    <span className="truncate">{course.progress?.pieces.total ? `${course.progress.pieces.known}/${course.progress.pieces.total} 知识块已掌握` : `${course.route.completed_count}/${course.route.total} 站已掌握`}</span>
                   </span>}
                 </div>
               </div>
@@ -839,7 +841,7 @@ export function App() {
                         <Search size={14} className="shrink-0" aria-hidden />
                         <input
                           id="node-search"
-                          className="!m-0 min-w-0 flex-1 !border-0 !bg-transparent !p-0 text-[13px] text-foreground !shadow-none outline-none placeholder:text-muted-foreground"
+                          className="!m-0 min-w-0 flex-1 text-ellipsis !border-0 !bg-transparent !p-0 text-[13px] text-foreground !shadow-none outline-none placeholder:text-muted-foreground"
                           list="map-targets"
                           aria-label="搜索并直达知识点"
                           placeholder="搜索或直达知识点"
@@ -907,9 +909,14 @@ export function App() {
               >
                 {/* Drag the left edge to resize; arrow keys nudge it, double-click returns to the default width. */}
                 <div className="panel-resizer is-left max-[781px]:hidden" aria-label="调整右栏宽度" {...dock.handle} />
-                <button className="mx-auto flex h-11 w-full shrink-0 cursor-pointer items-center justify-center text-muted-foreground min-[781px]:hidden"
+                <button className="relative mx-auto flex h-11 w-full shrink-0 cursor-pointer items-center justify-center gap-1.5 px-4 pt-1.5 text-sm text-muted-foreground min-[781px]:hidden"
                   onClick={() => setSheetOpen((v) => !v)} aria-label={sheetOpen ? "收起节点详情" : "展开节点详情"}>
-                  <span className="h-1 w-10 rounded-full bg-zinc-700" />
+                  <span className="absolute left-1/2 top-1.5 h-1 w-10 -translate-x-1/2 rounded-full bg-zinc-700" aria-hidden />
+                  {/* Collapsed, the sheet still says which knowledge point it holds. */}
+                  {!sheetOpen && <>
+                    <span className="truncate font-medium text-foreground">{selectedNode && isNodeVisible(selectedNode, { reviewActive: reviewEnabled, directEntryId: directNodeId, directWeek }) ? selectedNode.title : selectedNode ? "未解锁的知识点" : "选择一个知识点"}</span>
+                    <ChevronUp size={14} className="shrink-0" aria-hidden />
+                  </>}
                 </button>
                 {selectedNode ? (
                   <GoalActionsContext.Provider value={{

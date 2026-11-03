@@ -202,7 +202,8 @@ export function NodePanel({
   const [summaryOpen, setSummaryOpen] = useState(false);
   const bench = useWorkbenchState(initialNote, initialNoteId);
   const { noteOpen, noteId, material, pendingAppend, appendToNote, openMaterial } = bench;
-  const noteCount = 1 + (course.notes || []).filter((entry) => entry.node_ids.includes(node.id)).length;
+  // Same count as 课程笔记: an empty main note is not a note yet.
+  const noteCount = (node.personal_note?.trim() ? 1 : 0) + (course.notes || []).filter((entry) => entry.node_ids.includes(node.id)).length;
   const chatField = useRef<HTMLTextAreaElement>(null);
   const studyLesson = node.lessons?.find((lesson) => lesson.id === bench.lessonId) ?? node.lessons?.at(-1);
   // The panel shows the chat while studying and the overview otherwise; a manual pick holds
@@ -305,9 +306,9 @@ export function NodePanel({
             <Clock3 />
           </Button>
           <Button variant="ghost" size="icon-sm" className="relative" aria-pressed={noteOpen} onClick={bench.openNote}
-            title={`笔记 · ${noteCount} 份${node.personal_note?.trim() ? "" : "（主笔记为空）"}`} aria-label={`笔记，${noteCount} 份`}>
+            title={noteCount ? `笔记 · ${noteCount} 份` : "笔记 · 还没写，点击开始"} aria-label={noteCount ? `笔记，${noteCount} 份` : "笔记，还没写"}>
             <NotebookPen />
-            <span className="absolute right-0 top-0 min-w-3.5 rounded-full bg-control px-1 text-[11px] leading-3.5 tabular-nums text-foreground/80" aria-hidden>{noteCount}</span>
+            {noteCount > 0 && <span className="absolute right-0 top-0 min-w-3.5 rounded-full bg-control px-1 text-[11px] leading-3.5 tabular-nums text-foreground/80" aria-hidden>{noteCount}</span>}
           </Button>
         </div>
       </div>

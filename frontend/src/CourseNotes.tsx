@@ -74,6 +74,6 @@ export function CourseNotes({ course, onOpen, onExitReview }: {
         </button>)}
         {outside && <div className="text-xs text-muted-foreground">此节点不在本次复习范围。<Button size="sm" variant="ghost" onClick={onExitReview}>退出复习后访问</Button></div>}
       </section>;
-    }) : <p>{needle ? "没有匹配的笔记。" : "本课程还没有笔记。在知识点详情点「笔记」开始写。"}</p>}
+    }) : <p>{needle ? "没有匹配的笔记。" : "本课程还没有笔记。在知识点详情右上角点笔记图标开始写。"}</p>}
   </div>;
 }
