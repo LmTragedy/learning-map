@@ -28,7 +28,7 @@ function RouteTrack({ course, entry, nodeId }: { course: Course; entry: NodeGoal
       : <div className="h-1.5 overflow-hidden rounded-full bg-track" aria-hidden>
         <span className="block h-full bg-st-passed" style={{ width: `${completed / path.length * 100}%` }} />
       </div>}
-    <div className="flex justify-between gap-2 text-[11px] tabular-nums text-muted-foreground">
+    <div className="flex justify-between gap-2 text-xs tabular-nums text-muted-foreground">
       <span className="truncate">{first?.unlocked ? first.title : "起点"}</span>
       <span className="shrink-0">已掌握 {completed}/{path.length}</span>
       <span className="truncate text-right">{last?.unlocked ? last.title : "终点"}</span>
@@ -69,7 +69,7 @@ function GoalCard({ course, node, entry, busy, onOpenGoal }: {
     <div className="flex items-start gap-2">
       <Target size={15} className="mt-0.5 shrink-0 text-st-passed" aria-hidden />
       <strong className="min-w-0 flex-1 text-sm font-semibold">{goal.title}</strong>
-      <span className={cn("shrink-0 rounded-full px-2 py-px text-[11px]", STATUS_STYLE[goal.status])}>{STATUS[goal.status]}</span>
+      <span className={cn("shrink-0 rounded-full px-2 py-px text-xs", STATUS_STYLE[goal.status])}>{STATUS[goal.status]}</span>
     </div>
     <RouteTrack course={course} entry={entry} nodeId={node.id} />
     <p className="text-[13px]">
@@ -147,13 +147,13 @@ export function NodeGoals({ course, node, busy, act, onOpenGoal }: {
     <GoalChanges course={course} onOpenGoal={onOpenGoal} />
     <GoalCard key={primary.goal.id} course={course} node={node} entry={primary} busy={busy} onOpenGoal={onOpenGoal} />
     {!!rest.length && <div className="flex flex-col gap-1">
-      <span className="text-[11px] text-muted-foreground">另有 {rest.length} 个目标经过这里</span>
+      <span className="text-xs text-muted-foreground">另有 {rest.length} 个目标经过这里</span>
       {rest.map((entry) => <button key={entry.goal.id} onClick={() => setExpanded(entry.goal.id)}
         className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-left text-xs hover:bg-accent/40">
         <Target size={13} className="shrink-0 text-st-passed" aria-hidden />
         <span className="min-w-0 flex-1 truncate">{entry.goal.title}</span>
         <span className="shrink-0 text-muted-foreground">{entry.roles.includes("endpoint") ? "终点" : entry.step ? `第 ${entry.step}/${entry.path.length} 步` : "小目标"}</span>
-        <span className={cn("shrink-0 rounded-full px-1.5 py-px text-[10px]", STATUS_STYLE[entry.goal.status])}>{STATUS[entry.goal.status]}</span>
+        <span className={cn("shrink-0 rounded-full px-1.5 py-px text-xs", STATUS_STYLE[entry.goal.status])}>{STATUS[entry.goal.status]}</span>
       </button>)}
     </div>}
     {addToGoal && <div className="flex">{addToGoal}</div>}

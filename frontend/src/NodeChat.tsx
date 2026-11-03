@@ -27,12 +27,12 @@ export function NodeChat({ node, busy, aiEnabled, message, fieldRef, context, on
     fieldRef.current?.focus();
   };
   return <div className="flex min-h-0 flex-1 flex-col">
-    {context && <div className="flex items-center gap-2 border-b border-border px-5 py-2.5 text-xs text-muted-foreground [&_b]:font-medium [&_b]:text-foreground/85 [&_svg]:size-3.5 [&_svg]:shrink-0">{context}</div>}
+    {context && <div className="flex items-center gap-2 border-b border-border px-5 py-2.5 text-xs text-muted-foreground [&_b]:font-medium [&_b]:text-foreground [&_svg]:size-3.5 [&_svg]:shrink-0">{context}</div>}
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4" aria-live="polite">
       {node.chats.length ? node.chats.map((chat) => chat.role === "assistant"
         ? <div key={chat.id} className="flex max-w-[95%] flex-col gap-1">
           <span className="text-xs text-muted-foreground">AI 导师</span>
-          <p className="whitespace-pre-wrap text-sm leading-[1.75] text-foreground/90 [overflow-wrap:anywhere]">{chat.content}</p>
+          <p className="whitespace-pre-wrap text-sm leading-[1.75] text-foreground [overflow-wrap:anywhere]">{chat.content}</p>
           <button className="cursor-pointer self-start text-xs text-muted-foreground hover:text-foreground" onClick={() => onSaveToNote(chat.content)}>＋ 存入笔记</button>
         </div>
         : <p key={chat.id} className="max-w-[88%] self-end whitespace-pre-wrap rounded-xl rounded-br-sm bg-secondary px-3 py-2 text-sm leading-[1.7] [overflow-wrap:anywhere]">{chat.content}</p>,

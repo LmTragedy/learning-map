@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { ArrowRight, BookOpen, ChevronDown, Info, ListOrdered, Lock, NotebookPen, Sparkles, X } from "lucide-react";
+import { ArrowRight, BookOpen, ChevronDown, Info, ListOrdered, Lock, Network, NotebookPen, PanelRight, Sparkles, X } from "lucide-react";
 import { cn } from "./lib/utils";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
 import { MapView } from "./MapView";
+import type { PanelLayout, PanelName } from "./panelLayout";
+import { useResizableWidth } from "./useResizableWidth";
 import { lineColor } from "./lines";
 import { isRelationVisible } from "./relationVisibility";
 import { statusIcon, statusLabel } from "./status";
@@ -28,37 +30,55 @@ type MapProps = {
   onOpenLine?: (lineId: string) => void;
 };
 
-const LIST_KEY = "learning-map:route-list";
+const PANELS: { name: PanelName; label: string; Icon: typeof ListOrdered; hint: string }[] = [
+  { name: "list", label: "列表", Icon: ListOrdered, hint: "按学习顺序列出的知识点，和图同步" },
+  { name: "map", label: "地图", Icon: Network, hint: "知识关系图" },
+  { name: "dock", label: "详情", Icon: PanelRight, hint: "右栏：选中知识点的概览与对话" },
+];
+
+/** Show or hide each module of the course screen; the last of list and map cannot be hidden. */
+function LayoutToggles({ layout }: { layout: PanelLayout }) {
+  return <div className="flex items-center gap-0.5 rounded-lg border border-border p-0.5" role="group" aria-label="显示的模块">
+    {PANELS.map(({ name, label, Icon, hint }) => {
+      const locked = layout[name] && !layout.canHide(name);
+      return <Button key={name} size="sm" variant="ghost" aria-pressed={layout[name]} aria-disabled={locked || undefined}
+        className={cn("h-7 px-2.5 text-muted-foreground", layout[name] && "bg-accent text-foreground", locked && "cursor-default", name === "dock" && "max-[780px]:hidden")}
+        title={locked ? `${hint}（至少保留列表或地图之一）` : `${layout[name] ? "隐藏" : "显示"}${label}：${hint}`}
+        onClick={() => layout.toggle(name)}>
+        <Icon />{label}
+      </Button>;
+    })}
+  </div>;
+}
 
 /**
  * The full relationship graph is the centre; the ordered study list sits beside it and stays in
  * sync: picking a row centres the graph on it, picking a dot scrolls the list to its row.
+ * Either can be hidden, and the list can be dragged wider.
  */
-export function CourseMap({ toolbar, ...props }: MapProps & { toolbar?: ReactNode }) {
-  const [listOpen, setListOpen] = useState(() => {
-    try { return localStorage.getItem(LIST_KEY) !== "closed"; } catch { return true; }
-  });
-  const toggleList = (open: boolean) => {
-    setListOpen(open);
-    try { localStorage.setItem(LIST_KEY, open ? "open" : "closed"); } catch { /* per-viewer convenience only */ }
-  };
+export function CourseMap({ toolbar, layout, ...props }: MapProps & { toolbar?: ReactNode; layout: PanelLayout }) {
+  const listWidth = useResizableWidth({ key: "learning-map:list-width", min: 220, max: 560, maxShare: 0.32, edge: "right" });
   const filtered = props.directWeek
     ? props.course.nodes.filter((node) => node.week === props.directWeek) : props.course.nodes;
   const visibleIds = new Set(filtered.map((node) => node.id));
   const visibleEdges = props.course.edges.filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target)
     && isRelationVisible(props.course, edge, Boolean(props.reviewStrict)));
+  const listShown = layout.list && props.course.nodes.length > 0;
   return <>
-    <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-3">
-      <Button variant={listOpen ? "secondary" : "outline"} size="sm" aria-pressed={listOpen} onClick={() => toggleList(!listOpen)}
-        title="图旁边按学习顺序列出的知识点，和图同步">
-        <ListOrdered /> 按顺序看
-      </Button>
-      <div className="flex-1" />
+    {/* One flush plane: this row, the list, the graph and the node dock share their rules and their 48px header line. */}
+    <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2">
+      <LayoutToggles layout={layout} />
       {toolbar}
     </div>
-    <div className="relative mx-4 mb-4 flex min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-background max-[780px]:mx-2 max-[780px]:mb-2">
-      {listOpen && props.course.nodes.length > 0 && <RouteList {...props} onClose={() => toggleList(false)} />}
-      <div className="graph-frame flex min-w-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 overflow-hidden bg-background">
+      {listShown && <div className={cn("route-list-panel relative flex shrink-0 flex-col border-r border-border",
+          layout.map ? "w-[300px] max-[1279px]:w-[256px]" : "min-w-0 flex-1 border-r-0",
+          layout.map && listWidth.width && "min-[781px]:!w-[var(--list-w)]")}
+        style={listWidth.width ? { "--list-w": `${listWidth.width}px` } as CSSProperties : undefined}>
+        <RouteList {...props} wide={!layout.map} onClose={layout.canHide("list") ? () => layout.toggle("list") : undefined} />
+        {layout.map && <div className="panel-resizer is-right max-[780px]:hidden" aria-label="调整列表宽度" {...listWidth.handle} />}
+      </div>}
+      <div className={cn("graph-frame flex min-w-0 flex-1 flex-col", !layout.map && "hidden")}>
         <MapView {...props} course={{ ...props.course, nodes: filtered }}
           legend={<LegendPopover count={filtered.length} edges={visibleEdges} hasLines={Boolean(props.course.lines?.length)} />} />
       </div>
@@ -101,7 +121,7 @@ const stateText = {
 
 type Group = { id: string; title: string; color?: string; subtitle?: string; lineId?: string; node_ids: string[] };
 
-function RouteList({ course, selected, directEntryId, directWeek, onSelect, reviewActive, focusIds, onOpenLine, onClose }: MapProps & { onClose: () => void }) {
+function RouteList({ course, selected, directEntryId, directWeek, onSelect, reviewActive, focusIds, onOpenLine, onClose, wide }: MapProps & { onClose?: () => void; wide: boolean }) {
   const listRef = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const route = course.route;
@@ -139,11 +159,11 @@ function RouteList({ course, selected, directEntryId, directWeek, onSelect, revi
   }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <aside ref={listRef} aria-label="按顺序看"
-    className="route-list flex w-[300px] shrink-0 max-[1279px]:w-[256px] flex-col gap-2 overflow-y-auto border-r border-border bg-sidebar/60 p-2.5 max-[780px]:absolute max-[780px]:inset-y-0 max-[780px]:left-0 max-[780px]:z-20 max-[780px]:w-[86%] max-[780px]:shadow-2xl">
+    className={cn("route-list flex min-h-0 w-full flex-1 flex-col gap-2 overflow-y-auto bg-sidebar/60 p-2.5", wide && "mx-auto max-w-3xl bg-transparent p-4")}>
     <div className="flex items-center gap-2 px-1">
       <strong className="t-label flex-1">{lines.length ? `${lines.length} 条主线` : "学习顺序"}</strong>
       <span className="t-meta tabular-nums">{course.progress ? `知识块 ${course.progress.pieces.known}/${course.progress.pieces.total}` : route ? `${route.completed_count}/${route.total}` : ""}</span>
-      <Button size="icon-sm" variant="ghost" aria-label="收起列表" onClick={onClose}><X /></Button>
+      {onClose && <Button size="icon-sm" variant="ghost" aria-label="隐藏列表" title="隐藏列表" onClick={onClose}><X /></Button>}
     </div>
     {next && <button onClick={() => onSelect(next)}
       className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent/40">

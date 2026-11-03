@@ -35,7 +35,7 @@
   font-size: 12px; line-height: 1.3; color: #d4d4d8; pointer-events: none; text-shadow: 0 0 4px #09090b, 0 0 2px #09090b;
   opacity: 0; transition: opacity .15s; }
 .labels-all .gdot-label, .labels-key .gdot-label { opacity: 1; }
-.labels-key .gdot-label { color: #a1a1aa; }
+.labels-key .gdot-label { color: #c4c4cc; }
 .has-focus .gdot.role-dim .gdot-label { opacity: 0; }
 .gdot.role-focus .gdot-label, .gdot.role-up .gdot-label, .gdot.role-down .gdot-label, .gdot.is-selected .gdot-label { opacity: 1; color: #fafafa; }
 .gdot.role-focus .gdot-label, .gdot.is-selected .gdot-label { font-weight: 600; }
@@ -60,3 +60,15 @@
 .route-line { position: relative; }
 .route-line::before { content: ""; position: absolute; left: 18px; top: 8px; bottom: 8px; width: 2px; border-radius: 2px; background: var(--line); opacity: .45; }
 .route-line li button { position: relative; }
+
+/* Side panel resize edges (useResizableWidth): .is-left sits on a right dock's left edge, .is-right on a left list's right edge. */
+.panel-resizer { position: absolute; z-index: 20; top: 0; bottom: 0; width: 8px; cursor: col-resize; touch-action: none; }
+.panel-resizer.is-left { left: 0; }
+.panel-resizer.is-right { right: -4px; }
+.panel-resizer::after { content: ""; position: absolute; top: 0; bottom: 0; width: 2px; background: transparent; transition: background .15s; }
+.panel-resizer.is-left::after { left: 0; }
+.panel-resizer.is-right::after { left: 3px; }
+.panel-resizer:hover::after, .panel-resizer:focus-visible::after { background: var(--ring, #d4d4d8); }
+.panel-resizer:focus-visible { outline: none; }
+.is-resizing-panel { cursor: col-resize; user-select: none; }
+.is-resizing-panel iframe, .is-resizing-panel .react-flow { pointer-events: none; }

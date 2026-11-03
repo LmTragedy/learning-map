@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { LucideIcon } from "lucide-react";
-import { ArrowRight, BookOpen, Check, ChevronRight, CircleHelp, Clock3, ExternalLink, FileText, Info, Layers, NotebookPen, RefreshCw, Shapes, Split, Target, Waypoints } from "lucide-react";
+import { ArrowRight, BookOpen, Check, ChevronRight, CircleHelp, Clock3, ExternalLink, FileText, Info, Layers, NotebookPen, PanelRightClose, RefreshCw, Shapes, Split, Target, Waypoints } from "lucide-react";
 import { api, lessonHtmlUrl, materialFileUrl } from "./api";
 import { cn } from "./lib/utils";
 import { Badge } from "./components/ui/badge";
@@ -70,7 +70,7 @@ function NextStep({ node, onLesson, onPractice }: {
         ? { title: `读小课 ${unread + 1}：${lessons[unread].title}`, meta: read ? `已读 ${read} / ${lessons.length} 节` : "还没读", action: "继续小课", run: () => onLesson(lessons[unread].id) }
         : { title: "做一道验收题", meta: `${lessons.length} 节小课都读过了`, action: "去验收", run: onPractice };
   return <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3.5">
-    <span className="flex items-center gap-1.5 font-mono text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+    <span className="flex items-center gap-1.5 font-mono text-xs font-medium uppercase tracking-wider text-muted-foreground">
       <span className={cn("size-1.5 rounded-full", passed ? "bg-st-passed" : "bg-st-new")} aria-hidden />{passed ? "已通过" : "下一步"}
     </span>
     <div className="min-w-0">
@@ -90,7 +90,7 @@ function Related({ icon: Icon, label, value, attention, title, defaultOpen, chil
   icon: LucideIcon; label: string; value?: string; attention?: boolean; title?: string; defaultOpen?: boolean; children: ReactNode;
 }) {
   return <details className="group border-t border-border first-of-type:border-t-0" open={defaultOpen}>
-    <summary className="flex h-10 cursor-pointer list-none items-center gap-3 text-sm text-foreground/85 hover:text-foreground [&::-webkit-details-marker]:hidden" title={title}>
+    <summary className="flex h-10 cursor-pointer list-none items-center gap-3 text-sm text-foreground hover:text-foreground [&::-webkit-details-marker]:hidden" title={title}>
       <Icon size={15} className="shrink-0 text-muted-foreground" aria-hidden />
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {value && <span className="flex shrink-0 items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
@@ -111,6 +111,7 @@ export function NodePanel({
   run,
   onRefresh,
   onRecall,
+  onHide,
   onRatingSubmitted,
   reviewActive,
   reviewStrict,
@@ -140,6 +141,8 @@ export function NodePanel({
   run: <T>(key: string, action: () => Promise<T>) => Promise<T | undefined>;
   onRefresh: (course: Course) => void;
   onRecall: () => void;
+  /** Hides the right dock; it comes back from the layout toggles. */
+  onHide?: () => void;
   onRatingSubmitted: () => void;
   reviewActive: boolean;
   reviewStrict: boolean;
@@ -212,7 +215,7 @@ export function NodePanel({
   const statusKey = (!node.unlocked && !reviewActive && node.status === "new" ? "locked" : node.status) as keyof typeof statusIcon;
   const StatusIcon = statusIcon[statusKey] ?? statusIcon.new;
   const note = (text: string) => <p className="rounded-lg bg-muted/50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">{text}</p>;
-  const body = "text-sm leading-[1.75] text-foreground/85";
+  const body = "text-sm leading-[1.75] text-foreground";
   // One scope notice at a time, most specific first.
   const scopeNotice = reviewStrict
     ? "本次范围的结果单独记录，不改变整门课程的掌握与解锁；“自我掌握”仍适用于整个节点。"
@@ -246,7 +249,7 @@ export function NodePanel({
           onAsk={askInChat} />,
         contentContainer,
       )}
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+      <div className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border px-4 py-2">
         <div className="grid flex-1 grid-cols-2 gap-0.5 rounded-lg bg-muted p-[3px]" role="tablist" aria-label="右栏视图">
           {(["overview", "chat"] as const).map((entry) => <button key={entry} role="tab" aria-selected={view === entry} onClick={() => showView(entry)}
             className={cn("flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground",
@@ -263,6 +266,9 @@ export function NodePanel({
             <NotebookPen />
             <span className="absolute right-0 top-0 min-w-3.5 rounded-full bg-control px-1 text-[10px] leading-3.5 tabular-nums text-foreground/80" aria-hidden>{noteCount}</span>
           </Button>
+          {onHide && <Button variant="ghost" size="icon-sm" className="max-[780px]:hidden" onClick={onHide} title="隐藏右栏（可在上方“详情”重新打开）" aria-label="隐藏右栏">
+            <PanelRightClose />
+          </Button>}
         </div>
       </div>
       {view === "chat" ? <NodeChat node={node} busy={busy} aiEnabled={aiEnabled} message={message} fieldRef={chatField}
@@ -318,7 +324,7 @@ export function NodePanel({
           <div className="flex items-center gap-3 rounded-xl border border-st-new/30 bg-st-new/5 p-3" key={suggestion.id}>
             <div className="min-w-0 flex-1">
               <div className="text-xs font-medium text-st-new">难度调整建议</div>
-              <p className="text-sm text-foreground/85">{suggestionText(suggestion)}</p>
+              <p className="text-sm text-foreground">{suggestionText(suggestion)}</p>
             </div>
             <Button variant="outline" size="sm" disabled={busy}
               onClick={() => void run("suggestion", () => api.acceptSuggestion(course.id, suggestion.id)).then((updated) => updated && onRefresh(updated))}>

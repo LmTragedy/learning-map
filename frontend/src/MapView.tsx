@@ -36,7 +36,8 @@ type LinkData = { label: string; title: string; color: string; weak: boolean; on
 type EdgeTip = { id: string; x: number; y: number };
 
 /** Node names stop growing past 100% zoom, so zooming in makes room instead of crowding. */
-const labelScale = (zoom: number) => Math.min(1, 1 / zoom);
+// Labels keep a readable size on screen at any zoom (capped so a far-out view does not drown in text).
+const labelScale = (zoom: number) => Math.min(2.5, 1 / zoom);
 
 const toneLabel: Record<Tone, string> = {
   passed: "验收通过", mastered: "自我掌握", studied: "学过", available: "可学习", locked: "未解锁",

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   AlertCircle,
   Archive,
@@ -54,6 +54,8 @@ import { GoalActionsContext } from "./goalActions";
 import { goalProgressDiff, goalsForNode, type GoalChange } from "./goalContext";
 import { needsBridges } from "./bridges";
 import { LinesPanel } from "./LinesPanel";
+import { usePanelLayout } from "./panelLayout";
+import { useResizableWidth } from "./useResizableWidth";
 import { CourseNotes } from "./CourseNotes";
 import { hasUnsavedNotes } from "./noteDrafts";
 import { hasVolatileAnswerDrafts } from "./answerDrafts";
@@ -141,6 +143,8 @@ export function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const layout = usePanelLayout();
+  const dock = useResizableWidth({ key: "learning-map:dock-width", min: 320, max: 860, maxShare: 0.4, edge: "left" });
   const [contentContainer, setContentContainer] = useState<HTMLDivElement | null>(null);
 
   const loadCourses = useCallback(async (active?: string) => {
@@ -618,7 +622,7 @@ export function App() {
                   <span className="flex items-center gap-1"><History aria-hidden /> 版本 {course.revision}</span>
                   <span className="flex items-center gap-1"><FileText aria-hidden /> {course.materials.length} 份材料</span>
                   <span className="flex items-center gap-1 max-[1100px]:hidden"><Layers aria-hidden /> {course.nodes.length} 个知识点</span>
-                  {course.route && <span className="flex items-center gap-1.5 text-foreground/80">
+                  {course.route && <span className="flex items-center gap-1.5 text-foreground">
                     <span className="h-1 w-14 overflow-hidden rounded-full bg-track"><span className="block h-full bg-st-passed" style={{ width: `${(course.progress?.ratio ?? (course.route.total ? course.route.completed_count / course.route.total : 0)) * 100}%` }} /></span>
                     {course.progress?.pieces.total ? `${course.progress.pieces.known}/${course.progress.pieces.total} 知识块已掌握` : `${course.route.completed_count}/${course.route.total} 站已掌握`}
                   </span>}
@@ -712,6 +716,7 @@ export function App() {
                   </div>
                 )}
                 <CourseMap
+                  layout={layout}
                   key={`${course.id}-${reviewUiKey}`}
                   course={displayCourse || course}
                   prerequisiteNodes={course.nodes}
@@ -728,7 +733,7 @@ export function App() {
                       <Button size="sm" variant="outline" onClick={() => { setLineFocus(""); setModal("lines"); }}>课程全貌</Button>
                       {selectedNode && <Button size="sm" variant="ghost" disabled={busy || reviewStrict} onClick={() => void lineAct("goal-endpoint", () => api.addGoal(course.id, {
                         title: `学会 ${selectedNode.title}`, description: "以图上的这个知识点为终点", kind: "personal", status: "doing", node_ids: [selectedNode.id], subtasks: [],
-                      })).then((updated) => { const goal = updated?.goals?.at(-1); if (goal) setMapGoal(goal.id); })} aria-label="设为目标终点" title="把选中的知识点设为一个目标的终点"><Target /><span className="max-[1199px]:hidden">设为目标终点</span></Button>}
+                      })).then((updated) => { const goal = updated?.goals?.at(-1); if (goal) setMapGoal(goal.id); })} aria-label="设为目标终点" title="把选中的知识点设为一个目标的终点"><Target /><span className="max-[1599px]:hidden">设为目标终点</span></Button>}
 
                       {!!course.goals?.length && <label className="relative flex items-center max-[780px]:hidden">
                         <Target size={14} className="pointer-events-none absolute left-2.5 text-muted-foreground" aria-hidden />
@@ -758,7 +763,7 @@ export function App() {
                         </select>
                         <ChevronDown size={14} className="pointer-events-none absolute right-2 text-muted-foreground" aria-hidden />
                       </label>}
-                      <label className="flex h-8 w-56 min-w-0 items-center gap-2 rounded-md border border-input bg-field px-2.5 text-muted-foreground shadow-[inset_0_1px_2px_rgba(0,0,0,.45)] hover:border-zinc-600 focus-within:border-zinc-500 focus-within:ring-[3px] focus-within:ring-ring/20 max-[1100px]:w-44 max-[780px]:flex-1">
+                      <label className="flex h-8 w-56 min-w-0 items-center max-[1599px]:w-48 gap-2 rounded-md border border-input bg-field px-2.5 text-muted-foreground shadow-[inset_0_1px_2px_rgba(0,0,0,.45)] hover:border-zinc-600 focus-within:border-zinc-500 focus-within:ring-[3px] focus-within:ring-ring/20 max-[1100px]:w-44 max-[780px]:flex-1">
                         <Search size={14} className="shrink-0" aria-hidden />
                         <input
                           id="node-search"
@@ -819,12 +824,18 @@ export function App() {
               </section>
               <div
                 className={cn(
-                  "node-dock flex w-[380px] shrink-0 flex-col overflow-hidden border-l border-border bg-sidebar max-[1180px]:w-[340px]",
+                  "node-dock relative flex w-[clamp(380px,22vw,460px)] shrink-0 flex-col overflow-hidden border-l border-border bg-sidebar max-[1180px]:w-[340px]",
+                  dock.width && "min-[781px]:!w-[var(--dock-w)]",
+                  // Hidden, not unmounted: the node panel also drives the workbench through a portal.
+                  !layout.dock && "min-[781px]:hidden",
                   "max-[781px]:fixed max-[781px]:inset-x-0 max-[781px]:bottom-14 max-[781px]:z-30 max-[781px]:h-[62dvh] max-[781px]:w-auto max-[781px]:rounded-t-2xl max-[781px]:border-l-0 max-[781px]:border-t max-[781px]:shadow-2xl max-[781px]:transition-transform",
                   !sheetOpen && "max-[781px]:translate-y-[calc(100%-44px)]",
                   sheetOpen && "open",
                 )}
+                style={dock.width ? { "--dock-w": `${dock.width}px` } as CSSProperties : undefined}
               >
+                {/* Drag the left edge to resize; arrow keys nudge it, double-click returns to the default width. */}
+                <div className="panel-resizer is-left max-[781px]:hidden" aria-label="调整右栏宽度" {...dock.handle} />
                 <button className="mx-auto flex h-11 w-full shrink-0 cursor-pointer items-center justify-center text-muted-foreground min-[781px]:hidden"
                   onClick={() => setSheetOpen((v) => !v)} aria-label={sheetOpen ? "收起节点详情" : "展开节点详情"}>
                   <span className="h-1 w-10 rounded-full bg-zinc-700" />
@@ -866,6 +877,7 @@ export function App() {
                     run={run}
                     onRefresh={refreshCourse}
                     onRecall={() => void showRecall()}
+                    onHide={() => layout.toggle("dock")}
                     onRatingSubmitted={() => void onRatingSubmitted()}
                   />
                   </GoalActionsContext.Provider>

@@ -21,7 +21,7 @@
   --secondary: #2a2a2f;
   --secondary-foreground: #fafafa;
   --sh-muted: #222226;
-  --muted-foreground: #a8a8b2;
+  --muted-foreground: #b8b8c2;
   --sh-accent: #27272a;
   --accent-foreground: #fafafa;
   --destructive: #f87171;
@@ -47,6 +47,9 @@
 
 @theme inline {
   --font-sans: "Noto Sans SC Variable", "Geist Variable", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  /* Chinese at 12px gray blurs into the ground; the smallest UI text is 13px. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.5;
   --font-mono: "Geist Mono Variable", ui-monospace, "Cascadia Code", monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -97,7 +100,7 @@
   :root {
     --bg: var(--background); --surface: var(--sidebar); --raised: #1a1a1e; --hover: #2a2a2f;
     --border: #34343b; --border-strong: #46464e;
-    --text: #fafafa; --text-2: #d4d4d8; --muted: #a8a8b2;
+    --text: #fafafa; --text-2: #dcdce0; --muted: #b8b8c2;
     --accent: #fafafa; --accent-hover: #ffffff; --accent-ink: #18181b; --accent-soft: rgba(250, 250, 250, 0.08);
     --danger: #f87171; --danger-soft: rgba(248, 113, 113, 0.1);
     --amber: #fbbf24; --amber-text: #fcd34d; --amber-soft: rgba(251, 191, 36, 0.1);
@@ -201,9 +204,9 @@
 }
 
 /* Type scale: one style per level, used everywhere instead of ad-hoc sizes.
-   page 20/700 > section 17/600 > item 14/600 > body 14/400 > label 12/600 > meta 12/400; buttons stay 13/500. */
+   page 20/700 > section 17/600 > item 14/600 > body 14/400 > label 13/600 > meta 13/400; buttons stay 13/500. */
 .t-page { font-size: 20px; font-weight: 700; line-height: 1.35; letter-spacing: -0.01em; }
 .t-section { font-size: 17px; font-weight: 600; line-height: 1.4; }
 .t-item { font-size: 14px; font-weight: 600; line-height: 1.5; }
-.t-label { font-size: 12px; font-weight: 600; line-height: 1.5; letter-spacing: 0.04em; color: var(--muted-foreground); }
-.t-meta { font-size: 12px; font-weight: 400; line-height: 1.5; color: var(--muted-foreground); }
+.t-label { font-size: 13px; font-weight: 600; line-height: 1.5; letter-spacing: 0.04em; color: var(--muted-foreground); }
+.t-meta { font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--muted-foreground); }
