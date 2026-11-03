@@ -8,7 +8,7 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { autocompletion } from "@codemirror/autocomplete";
 import { liveMarkdown } from "./liveMarkdown";
-import { setBlock, slashCommands, toggleInline } from "./noteFormatting";
+import { indentInCode, insertCodeBlock, setBlock, slashCommands, toggleInline } from "./noteFormatting";
 import { InlineTools, NoteToolbar } from "./NoteToolbar";
 import type { NoteEditorActions } from "./noteReviewTypes";
 import { acceptReviewSuggestion, pickReviewMark, reviewIds, reviewMarks, reviewMarksExtension, reviewRange, setReviewMarks } from "./reviewMarks";
@@ -54,7 +54,7 @@ export function LiveMarkdownEditor({ content, onChange, live, onReady, onTab, re
       state: EditorState.create({ doc: initial.current, extensions: [
         markdown({ base: markdownLanguage }), history(), keymap.of([...defaultKeymap, ...historyKeymap]),
         Prec.highest(keymap.of([
-          { key: "Tab", run: (view) => !view.composing && (review.current.onTab?.() ?? false) },
+          { key: "Tab", run: (view) => !view.composing && ((review.current.onTab?.() ?? false) || indentInCode(view)) },
           { key: "Escape", run: (view) => {
             if (!view.state.field(reviewMarks).picked) return false;
             view.dispatch({ effects: pickReviewMark.of(null) }); return true;
@@ -68,6 +68,7 @@ export function LiveMarkdownEditor({ content, onChange, live, onReady, onTab, re
           { key: "Mod-Alt-2", run: (view) => { setBlock(view, "h2"); return true; } },
           { key: "Mod-Alt-3", run: (view) => { setBlock(view, "h3"); return true; } },
           { key: "Mod-Alt-0", run: (view) => { setBlock(view, "p"); return true; } },
+          { key: "Mod-Alt-c", run: (view) => { insertCodeBlock(view); return true; } },
         ]),
         autocompletion({ override: [slashCommands], icons: false, activateOnTyping: true }),
         syntaxHighlighting(styles), EditorView.lineWrapping,

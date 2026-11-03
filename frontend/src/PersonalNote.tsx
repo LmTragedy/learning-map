@@ -9,7 +9,7 @@ import type { NoteDraft } from "./noteDrafts";
 import { appendBlock, mainNoteTitle } from "./noteFormatting";
 import type { Course, CourseNote, LearningNode } from "./types";
 import { useNoteReview } from "./useNoteReview";
-import { NoteReviewPanel, SuggestionCard } from "./NoteReviewPanel";
+import { NoteReviewDot, SuggestionCard } from "./NoteReviewPanel";
 import type { NoteEditorActions } from "./noteReviewTypes";
 
 const MarkdownNoteEditor = lazy(() => import("./MarkdownNoteEditor"));
@@ -207,6 +207,12 @@ export function PersonalNote({ course, node, noteId = "", busy, run, onRefresh, 
     return () => window.clearTimeout(timer);
   }, [draft.content, dirty, conflict]);
 
+  const reviewDot = <NoteReviewDot controller={controller} state={review} model={reviewModel}
+    aiEnabled={aiEnabled} automatic={automatic} onAutomatic={setAutomatic} action={reviewAction}
+    onLocate={(id) => {
+      const suggestion = controller.current(id);
+      if (suggestion && !editor.current?.locate(suggestion)) controller.prune([id]);
+    }} onUndo={undoSuggestion} canUndo={lastAccepted !== null && lastAccepted === draft.content} />;
   const recoverable = storage.drafts.filter((entry) => entry.id !== draft.id);
   const status = savingNote ? "正在保存…" : conflict ? "版本待核对" : dirty ? "有改动 · 即将自动保存" : "已保存";
   const boundNodes = extra ? extra.node_ids.map((id) => course.nodes.find((entry) => entry.id === id)).filter((entry): entry is LearningNode => !!entry) : [node];
@@ -222,6 +228,7 @@ export function PersonalNote({ course, node, noteId = "", busy, run, onRefresh, 
       </nav>
       <div className="flex shrink-0 items-center gap-2">
         <span role="status" className="text-xs text-muted-foreground">{status}</span>
+        {reviewDot}
         <Button size="sm" variant="outline" onClick={onClose} aria-label="关闭笔记" title="Esc"><X /> 关闭</Button>
       </div>
     </header>}
@@ -230,8 +237,9 @@ export function PersonalNote({ course, node, noteId = "", busy, run, onRefresh, 
       {nodeNotes.map((entry) => <Button key={entry.id || "main"} size="sm" role="tab" aria-selected={entry.id === noteId}
         variant="ghost" aria-pressed={entry.id === noteId} onClick={() => onOpenNote(entry.id)}>{entry.title}</Button>)}
       <Button size="sm" variant="ghost" disabled={busy} onClick={() => void createNote()}><Plus /> 新建笔记</Button>
-      {embedded && <span role="status" className="t-meta ml-auto">{status}</span>}
+      {embedded && <span className="ml-auto flex items-center gap-1"><span role="status" className="t-meta">{status}</span>{reviewDot}</span>}
     </div>
+    <div className="note-paper">
     <div className="flex flex-col gap-2">
       <input className="node-note-title-input" aria-label="笔记名称" maxLength={200} value={title}
         placeholder={extra ? "笔记名称" : node.title}
@@ -274,13 +282,7 @@ export function PersonalNote({ course, node, noteId = "", busy, run, onRefresh, 
       update({ ...draftRef.current, content, updatedAt: new Date().toISOString() });
     }} />
     </Suspense>
-    <NoteReviewPanel controller={controller} state={review} model={reviewModel}
-      aiEnabled={aiEnabled} automatic={automatic} onAutomatic={setAutomatic}
-      onLocate={(id) => {
-        const suggestion = controller.current(id);
-        if (suggestion && !editor.current?.locate(suggestion)) controller.prune([id]);
-      }} onUndo={undoSuggestion} canUndo={lastAccepted !== null && lastAccepted === draft.content} />
-    {reviewAction && <p role="status" className="text-xs text-muted-foreground">{reviewAction}</p>}
+    </div>
     {!!recoverable.length && <details className="text-xs">
       <summary className="cursor-pointer">找回本机草稿（{recoverable.length}）</summary>
       {recoverable.map((entry) => <div key={entry.id} className="mt-2 flex flex-col gap-1 rounded-lg border border-border p-2">
@@ -296,13 +298,13 @@ export function PersonalNote({ course, node, noteId = "", busy, run, onRefresh, 
     </div>
     <footer className="node-note-footer">
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" disabled={busy || savingNote || !dirty || conflict} onClick={() => void save()}>立即保存</Button>
+        <Button size="sm" variant="ghost" title="停止输入约 1.5 秒后自动保存；每次保存前都会备份课程版本，不会自动写入 Obsidian。"
+          disabled={busy || savingNote || !dirty || conflict} onClick={() => void save()}>立即保存 · Ctrl+S</Button>
         <Button size="sm" variant="ghost" disabled={busy || savingNote} onClick={() => void refreshSaved()}>读取最新已保存版本</Button>
         {extra && (confirmDelete
           ? <span className="flex items-center gap-1 text-xs">删除后可在版本历史中找回。<Button size="sm" variant="destructive" disabled={busy} onClick={() => void deleteNote()}>确认删除</Button><Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>取消</Button></span>
           : <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setConfirmDelete(true)}><Trash2 /> 删除这份笔记</Button>)}
       </div>
-      <p className="text-xs text-muted-foreground">停止输入约 1.5 秒后自动保存，Ctrl+S 立即保存。每次保存前都会备份课程版本。不会自动写入 Obsidian。</p>
     </footer>
   </section>;
 }

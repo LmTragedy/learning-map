@@ -53,7 +53,6 @@
 
 .wb-text { position: relative; flex: 1; overflow: auto; padding: 24px 28px 64px; }
 .wb-text pre { max-width: 72ch; margin: 0 auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-sans); font-size: var(--fs-md); line-height: 1.8; }
-.wb-excerpt { position: sticky; bottom: 56px; display: flex; gap: 8px; width: fit-content; margin: 12px auto 0; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--popover); box-shadow: 0 6px 20px rgb(0 0 0 / .35); }
 
 /* Back to the map, then the two study modes. */
 .wb-back { display: flex; align-items: center; gap: 4px; align-self: center; height: 30px; padding: 0 10px 0 6px; border: 0; border-radius: 8px; font-size: var(--fs-sm); color: var(--muted-foreground); background: none; cursor: var(--cursor-pointer); white-space: nowrap; }
@@ -139,3 +138,10 @@
   .practice-main, .practice-side { overflow: visible; }
   .practice-side { border-left: 0; border-top: 1px solid var(--border); }
 }
+
+/* Floating bar over selected text: add it to the note or ask the AI. */
+.selection-note { position: relative; display: flex; min-width: 0; min-height: 0; }
+.selection-note > :not(.selection-note-bar) { flex: 1; min-width: 0; }
+.selection-note-bar { position: absolute; z-index: 20; display: flex; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 9px; background: var(--popover); box-shadow: 0 6px 20px rgb(0 0 0 / .35); }
+.selection-note-bar button { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 6px; font-size: var(--fs-xs); white-space: nowrap; color: var(--foreground); cursor: var(--cursor-pointer, pointer); }
+.selection-note-bar button:hover { background: var(--accent-soft, var(--muted)); }

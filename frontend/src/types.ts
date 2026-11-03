@@ -138,6 +138,8 @@ export type LearningNode = {
   thread_id?: string;
   unlocked: boolean;
   lessons?: Lesson[];
+  /** Knowledge-piece titles that none of the saved lessons mentions (computed by the server). */
+  lesson_gaps?: string[];
   review_archived?: { chats: number; attempts: number; lessons: number };
 };
 export type Lesson = {
