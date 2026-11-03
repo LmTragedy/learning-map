@@ -14,7 +14,7 @@ async function until(condition) {
 
 test("writing pauses coalesce edits and send the whole latest note, including earlier text", async (t) => {
   const calls = [];
-  const controller = new NoteReviewController(async (context, id) => { calls.push(context.content); return reply(context, id); }, 35, 500);
+  const controller = new NoteReviewController(async (context, id) => { calls.push(context.content); return reply(context, id); }, 35, 500, 0);
   t.after(() => controller.dispose());
   controller.update({ ...base, content: "earlier statement\nlast" });
   await delay(5);
@@ -25,7 +25,7 @@ test("writing pauses coalesce edits and send the whole latest note, including ea
 
 test("editing during a request discards old suggestions and then checks the newest snapshot", async (t) => {
   const pending = [];
-  const controller = new NoteReviewController((context, id) => new Promise(resolve => pending.push({ context, id, resolve })), 5, 500);
+  const controller = new NoteReviewController((context, id) => new Promise(resolve => pending.push({ context, id, resolve })), 5, 500, 0);
   t.after(() => controller.dispose());
   controller.update({ ...base, content: "old sentence" });
   await until(() => pending.length === 1);
@@ -45,7 +45,7 @@ for (const failure of ["error", "unresponsive"]) test(`${failure} pauses checks 
     if (calls > 1) return reply(context, id);
     if (failure === "error") throw new Error("provider unavailable");
     return new Promise(() => {});
-  }, 5, 30);
+  }, 5, 30, 0);
   t.after(() => controller.dispose());
   controller.update({ ...base, content: "original" });
   await until(() => calls === 1);
@@ -61,7 +61,7 @@ for (const failure of ["error", "unresponsive"]) test(`${failure} pauses checks 
 });
 
 test("rejecting one suggestion preserves text and deactivates Tab acceptance", async (t) => {
-  const controller = new NoteReviewController(async (context, id) => reply(context, id, [suggestion(context.content)]), 5, 500);
+  const controller = new NoteReviewController(async (context, id) => reply(context, id, [suggestion(context.content)]), 5, 500, 0);
   t.after(() => controller.dispose());
   controller.update({ ...base, content: "my wording" });
   await until(() => controller.snapshot().phase === "ready");
@@ -75,7 +75,7 @@ test("rejecting one suggestion preserves text and deactivates Tab acceptance", a
 
 test("disabled or unavailable AI sends no requests; remount and context change reject old results", async () => {
   const pending = [];
-  const controller = new NoteReviewController((context, id) => new Promise(resolve => pending.push({ context, id, resolve })), 5, 500);
+  const controller = new NoteReviewController((context, id) => new Promise(resolve => pending.push({ context, id, resolve })), 5, 500, 0);
   try {
     controller.update({ ...base, enabled: false, content: "text" });
     await delay(10); assert.equal(pending.length, 0);
@@ -105,7 +105,7 @@ test("acceptance rejects changed snapshots and invalid positions, including UTF-
 
 test("switching between named notes with identical text cannot reuse the previous note's suggestions", async (t) => {
   const pending = [];
-  const controller = new NoteReviewController((context, id) => new Promise(resolve => pending.push({ context, id, resolve })), 5, 500);
+  const controller = new NoteReviewController((context, id) => new Promise(resolve => pending.push({ context, id, resolve })), 5, 500, 0);
   t.after(() => controller.dispose());
   controller.update({ ...base, noteId: "first", content: "shared sentence" });
   await until(() => pending.length === 1);
@@ -120,7 +120,7 @@ test("switching between named notes with identical text cannot reuse the previou
 
 test("an autosave bumping the revision neither resets suggestions nor fails a check in flight", async (t) => {
   const pending = [];
-  const controller = new NoteReviewController((context, id) => new Promise(resolve => pending.push({ context, id, resolve })), 5, 500);
+  const controller = new NoteReviewController((context, id) => new Promise(resolve => pending.push({ context, id, resolve })), 5, 500, 0);
   t.after(() => controller.dispose());
   controller.update({ ...base, content: "my wording" });
   await until(() => pending.length === 1);
@@ -135,7 +135,7 @@ test("an autosave bumping the revision neither resets suggestions nor fails a ch
 
 test("edits keep earlier suggestions until the editor prunes the ones it touched", async (t) => {
   const two = [{ ...suggestion("first"), id: "a" }, { ...suggestion("second", 6), id: "b" }];
-  const controller = new NoteReviewController(async (context, id) => reply(context, id, context.content === "first second" ? two : []), 5, 500);
+  const controller = new NoteReviewController(async (context, id) => reply(context, id, context.content === "first second" ? two : []), 5, 500, 0);
   t.after(() => controller.dispose());
   controller.update({ ...base, content: "first second" });
   await until(() => controller.snapshot().phase === "ready");
@@ -154,7 +154,7 @@ for (const [label, change] of [
   ["model", { model: "gpt-6-astra" }],
 ]) test(`switching ${label} with identical text rejects the old asynchronous result`, async (t) => {
   const pending = [];
-  const controller = new NoteReviewController((context, id) => new Promise(resolve => pending.push({ context, id, resolve })), 5, 500);
+  const controller = new NoteReviewController((context, id) => new Promise(resolve => pending.push({ context, id, resolve })), 5, 500, 0);
   t.after(() => controller.dispose());
   controller.update({ ...base, content: "shared sentence" });
   await until(() => pending.length === 1);
@@ -169,7 +169,7 @@ for (const [label, change] of [
 
 test("unrelated edits keep existing suggestions and reject stale response offsets", async (t) => {
   const pending = [];
-  const controller = new NoteReviewController((context, id) => new Promise(resolve => pending.push({ context, id, resolve })), 5, 500);
+  const controller = new NoteReviewController((context, id) => new Promise(resolve => pending.push({ context, id, resolve })), 5, 500, 0);
   t.after(() => controller.dispose());
   controller.update({ ...base, content: "first second" });
   await until(() => pending.length === 1);
@@ -188,7 +188,7 @@ test("unrelated edits keep existing suggestions and reject stale response offset
 });
 
 test("disabling AI after a successful check clears existing suggestions", async (t) => {
-  const controller = new NoteReviewController(async (context, id) => reply(context, id, [suggestion(context.content)]), 5, 500);
+  const controller = new NoteReviewController(async (context, id) => reply(context, id, [suggestion(context.content)]), 5, 500, 0);
   t.after(() => controller.dispose());
   controller.update({ ...base, content: "my wording" });
   await until(() => controller.snapshot().phase === "ready");
@@ -196,4 +196,21 @@ test("disabling AI after a successful check clears existing suggestions", async 
   controller.update({ ...base, enabled: false, content: "my wording" });
   assert.equal(controller.snapshot().phase, "off");
   assert.equal(controller.snapshot().suggestions.length, 0);
+});
+
+test("automatic checks are spaced by the cooldown while an explicit retry runs at once", async (t) => {
+  const calls = [];
+  const controller = new NoteReviewController(async (context, id) => { calls.push(context.content); return reply(context, id); }, 5, 500, 120);
+  t.after(() => controller.dispose());
+  controller.update({ ...base, content: "first" });
+  await until(() => calls.length === 1);
+  controller.update({ ...base, content: "second" });
+  await delay(40);
+  assert.deepEqual(calls, ["first"]);
+  await until(() => calls.length === 2);
+  assert.deepEqual(calls, ["first", "second"]);
+  controller.update({ ...base, content: "third" });
+  controller.retry();
+  await until(() => calls.length === 3);
+  assert.equal(calls[2], "third");
 });

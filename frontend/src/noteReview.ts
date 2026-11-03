@@ -30,13 +30,17 @@ export class NoteReviewController {
   private paused = false;
   private disposed = false;
   private lastEdit = 0;
+  private lastStart = -Infinity;
   private dismissed = new Set<string>();
   private request: ReviewRequest;
   private delay: number;
   private timeout: number;
+  private cooldown: number;
 
-  constructor(request: ReviewRequest, delay = 1800, timeout = 60000) {
-    this.request = request; this.delay = delay; this.timeout = timeout;
+  // Each automatic check is a paid model call over the whole note, so wait for a real pause in writing
+  // and space automatic checks apart. An explicit retry ("立即检查") skips both waits.
+  constructor(request: ReviewRequest, delay = 8000, timeout = 60000, cooldown = 30000) {
+    this.request = request; this.delay = delay; this.timeout = timeout; this.cooldown = cooldown;
   }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   snapshot = () => this.state;
@@ -79,7 +83,7 @@ export class NoteReviewController {
     if (!this.context || this.phase(this.context) !== "waiting" || this.checked === this.generation) return;
     clearTimeout(this.timer);
     this.timer = setTimeout(() => { if (!this.pending) void this.check(); },
-      immediate ? 0 : Math.max(0, this.delay - (Date.now() - this.lastEdit)));
+      immediate ? 0 : Math.max(0, this.delay - (Date.now() - this.lastEdit), this.cooldown - (Date.now() - this.lastStart)));
   }
 
   retry() {
@@ -97,6 +101,7 @@ export class NoteReviewController {
     const requestId = crypto.randomUUID();
     const abort = new AbortController();
     this.pending = abort;
+    this.lastStart = Date.now();
     let timedOut = false;
     this.publish({ phase: "checking", message: "" });
     // A hung provider must not keep the UI in checking state or block saving.
