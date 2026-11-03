@@ -33,7 +33,7 @@ test("validates visual provenance metadata and refuses malformed embedded diagra
 test("labels AI redraws cautiously and exposes unmatched source references", async () => {
   const server = await createServer({ configFile: fileURLToPath(new URL("../vite.config.ts", import.meta.url)), server: { middlewareMode: true }, appType: "custom" });
   try {
-    const { provenanceText } = await server.ssrLoadModule("/src/workbench/ProvenanceBadge.tsx");
+    const { provenanceText } = await server.ssrLoadModule("/src/workbench/provenance.ts");
     assert.equal(provenanceText({ provenance: "redraw", source: { page: 12, matched: true } }), "AI 重绘 · 依据第 12 页 · 可能与原图有出入");
     assert.equal(provenanceText({ provenance: "redraw", source: { page: 12, matched: false } }), "AI 重绘 · 页码第 12 页，出处未核对 · 可能与原图有出入");
     assert.equal(provenanceText({ provenance: "source", source: { page: 12, matched: true, material_name: "讲义" } }), "原文 · 讲义 第 12 页");

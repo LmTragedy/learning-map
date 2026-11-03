@@ -361,7 +361,7 @@ export function NodePanel({
           </div>
         ) : (
           <>
-            {(!aiEnabled || scopeNotice) && note(!aiEnabled ? "AI 辅助已关闭。打开设置并确认数据发送说明后，可使用对话、出题和验收。" : scopeNotice)}
+            {(!aiEnabled || scopeNotice) && note(!aiEnabled ? "AI 未开启：对话、出题和验收暂不可用，可在设置中开启。" : scopeNotice)}
             <NextStep node={node} onLesson={bench.openLesson} onPractice={bench.openPractice} />
           </>
         )}

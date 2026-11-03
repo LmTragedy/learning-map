@@ -36,19 +36,21 @@ const PANELS: { name: PanelName; label: string; Icon: typeof ListOrdered; hint: 
   { name: "dock", label: "详情", Icon: PanelRight, hint: "右栏：选中知识点的概览与对话" },
 ];
 
-/** Show or hide each module of the course screen; the last of list and map cannot be hidden. */
+/** Show or hide each module of the course screen; the last of list and map cannot be hidden. On a phone, list and map are one choice. */
 function LayoutToggles({ layout }: { layout: PanelLayout }) {
   // Pressing the one module that must stay explains why, in text, instead of silently doing nothing.
   const [why, setWhy] = useState("");
   useEffect(() => { if (!why) return; const timer = window.setTimeout(() => setWhy(""), 3000); return () => window.clearTimeout(timer); }, [why]);
-  return <><div className="flex items-center gap-0.5 rounded-lg border border-border p-0.5" role="group" aria-label="显示的模块">
+  return <><div className="flex items-center gap-0.5 rounded-lg bg-muted p-[3px]" role="group" aria-label="显示的模块">
     {PANELS.map(({ name, label, Icon, hint }) => {
-      const locked = layout[name] && !layout.canHide(name);
-      return <Button key={name} size="sm" variant="ghost" aria-pressed={layout[name]} aria-disabled={locked || undefined}
-        className={cn("h-7 px-2.5 text-muted-foreground", locked && "cursor-default", name === "dock" && "max-[781px]:hidden")}
-        title={locked ? `${hint}（至少保留列表或地图之一）` : `${layout[name] ? "隐藏" : "显示"}${label}：${hint}`}
-        onClick={() => locked ? setWhy("列表和地图至少保留一个") : layout.toggle(name)}>
-        <Icon />{label}
+      if (layout.narrow && name === "dock") return null;
+      const on = layout[name];
+      const locked = !layout.narrow && on && !layout.canHide(name);
+      return <Button key={name} size="sm" variant="ghost" aria-pressed={on} aria-disabled={locked || undefined} aria-label={label}
+        className={cn("h-7 gap-1.5 px-2.5 text-muted-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm", locked && "cursor-default")}
+        title={layout.narrow ? hint : locked ? `${hint}（至少保留列表或地图之一）` : `${on ? "隐藏" : "显示"}${label}：${hint}`}
+        onClick={() => layout.narrow ? layout.setPhonePane(name as "list" | "map") : locked ? setWhy("列表和地图至少保留一个") : layout.toggle(name)}>
+        <Icon /><span className="max-[1439px]:min-[781px]:hidden">{label}</span>
       </Button>;
     })}
   </div>{why && <span role="status" className="text-xs text-muted-foreground">{why}</span>}</>;
@@ -69,7 +71,7 @@ export function CourseMap({ toolbar, layout, ...props }: MapProps & { toolbar?: 
   const listShown = layout.list && props.course.nodes.length > 0;
   return <>
     {/* One flush plane: this row, the list, the graph and the node dock share their rules and their 48px header line. */}
-    <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2">
+    <div className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border px-4 py-2 max-[781px]:flex-wrap max-[781px]:px-3">
       <LayoutToggles layout={layout} />
       {toolbar}
     </div>
@@ -162,7 +164,7 @@ function RouteList({ course, selected, directEntryId, directWeek, onSelect, revi
   }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <aside ref={listRef} aria-label="按顺序看"
-    className={cn("route-list flex min-h-0 w-full flex-1 flex-col gap-2 overflow-y-auto bg-sidebar/60 p-2.5", wide && "mx-auto max-w-3xl bg-transparent p-4")}>
+    className={cn("route-list flex min-h-0 w-full flex-1 flex-col gap-3 overflow-y-auto bg-sidebar/60 px-3 py-3", wide && "mx-auto max-w-3xl bg-transparent p-4")}>
     <div className="flex items-center gap-2 px-1">
       {/* Course progress lives in the page header; the list does not repeat it. */}
       <strong className="t-label flex-1">{lines.length ? `${lines.length} 条主线` : "学习顺序"}</strong>
@@ -184,8 +186,8 @@ function RouteList({ course, selected, directEntryId, directWeek, onSelect, revi
       const done = nodes.filter((node) => node.progress ? node.progress.done : node.status === "passed" || node.status === "mastered").length;
       const open = !(collapsed[group.id] ?? false);
       const hidden = nodes.filter((node) => !available(node)).length;
-      return <section key={group.id} className="rounded-lg border border-border bg-card">
-        <div className="flex items-center gap-1.5 px-2.5 py-2">
+      return <section key={group.id}>
+        <div className="flex items-center gap-1.5 px-1 py-1">
           <button className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left" aria-expanded={open}
             onClick={() => setCollapsed((current) => ({ ...current, [group.id]: open }))}>
             <ChevronDown size={14} className={cn("shrink-0 text-muted-foreground transition-transform", !open && "-rotate-90")} aria-hidden />
@@ -198,12 +200,12 @@ function RouteList({ course, selected, directEntryId, directWeek, onSelect, revi
           <span className="t-meta shrink-0 tabular-nums">{done}/{nodes.length}</span>
           {group.lineId && onOpenLine && <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onOpenLine(group.lineId!)}>串讲</Button>}
         </div>
-        {open && <ol className={cn("flex list-none flex-col border-t border-border py-1", group.color && "route-line")} style={group.color ? { "--line": group.color } as CSSProperties : undefined}>
+        {open && <ol className={cn("mt-0.5 flex list-none flex-col gap-px", group.color && "route-line")} style={group.color ? { "--line": group.color } as CSSProperties : undefined}>
           {nodes.map((node) => available(node)
             ? <RouteRow key={node.id} node={node} selected={selected?.id === node.id} transfer={transfers.has(node.id)} hasNote={noted.has(node.id)}
                 dimmed={Boolean(focusIds && !focusIds.includes(node.id))} onSelect={onSelect} />
             : null)}
-          {hidden > 0 && <li className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground"><Lock size={12} aria-hidden /> 另有 {hidden} 个未解锁</li>}
+          {hidden > 0 && <li className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-muted-foreground"><Lock size={12} aria-hidden /> 另有 {hidden} 个未解锁</li>}
         </ol>}
       </section>;
     })}
@@ -216,7 +218,7 @@ function RouteRow({ node, selected, transfer, hasNote, dimmed, onSelect }: {
   const StatusIcon = statusIcon[node.status];
   return <li data-node-id={node.id}>
     <button onClick={() => onSelect(node)} aria-current={selected ? "step" : undefined}
-      className={cn("flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[13px] transition-colors hover:bg-accent/40",
+      className={cn("flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-accent/40",
         selected && "bg-accent text-foreground", dimmed && "opacity-35")}>
       <StatusIcon size={14} className={cn("shrink-0", stateText[node.status])} aria-hidden />
       <span className="min-w-0 flex-1 truncate">{node.title}</span>

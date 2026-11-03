@@ -1,4 +1,6 @@
 .modal:has(.goal-dashboard) { width: min(100%, 1280px); }
+/* Before the first goal there is one block to read, not three columns: keep the dialog at reading width. */
+.modal:has(.goal-first-run) { width: min(100%, 760px); }
 .goal-dashboard { gap: 18px; }
 .goal-toolbar, .goal-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .goal-toolbar h3 { display: flex; align-items: center; gap: 9px; font-size: var(--fs-section); font-weight: 600; }

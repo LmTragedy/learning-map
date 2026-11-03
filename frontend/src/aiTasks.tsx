@@ -174,7 +174,9 @@ const Context=createContext<Ledger|null>(null);
 export function AiTaskProvider({course,onCourse,onNavigate,aiEnabled,children}:{course:Course|null;onCourse:(course:Course)=>void;onNavigate:(task:AiTask)=>void;aiEnabled:boolean;children:ReactNode}) {
   return <Context.Provider value={useTaskLedger(course,onCourse,onNavigate,aiEnabled)}>{children}</Context.Provider>;
 }
+// eslint-disable-next-line react-refresh/only-export-components -- the hooks read this file's context
 export function useCourseTasks(){const value=useContext(Context);if(!value)throw new Error('缺少 AI 任务上下文');return value;}
+// eslint-disable-next-line react-refresh/only-export-components -- the hooks read this file's context
 export function useTask(requestId:string){return useCourseTasks().tasks.find(t=>t.request_id===requestId);}
 const trayProps=(l:Ledger,location:string)=>({tasks:l.tasks,viewFor:l.viewFor,loading:l.loading,error:l.error,open:l.open&&l.activeEntry===location,onOpenChange:(open:boolean)=>{l.setActiveEntry(location);l.setOpen(open);if(!open)l.setTrayFilter('all');},filter:l.trayFilter,onShowAll:()=>l.setTrayFilter('all'),onRefresh:l.refresh,onRecover:l.recover,onRegenerate:l.regenerate,onCollect:l.collect,onOrganize:l.organize,onReadResult:l.readResult,onImportHistory:l.importHistory,importingHistory:l.importingHistory,importMessage:l.importMessage,onNavigate:l.navigate});
 export function TaskEntry({location='header'}:{location?:string}){const l=useCourseTasks();return <TaskTray {...trayProps(l,location)}/>;}
@@ -191,7 +193,8 @@ function inlineTasks(l:Ledger,{kind,target,taskId}:InlineQuery){
 }
 function useOnScreen(l:Ledger,ids:string[]){
   const key=ids.join(' ');
-  useEffect(()=>l.markOnScreen(key?key.split(' '):[]),[l.markOnScreen,key]);
+  const {markOnScreen}=l;
+  useEffect(()=>markOnScreen(key?key.split(' '):[]),[markOnScreen,key]);
 }
 export function TaskCards({limit=2,...query}:InlineQuery&{limit?:number}) {
   const l=useCourseTasks(), tasks=inlineTasks(l,query);
