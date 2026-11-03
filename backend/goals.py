@@ -68,6 +68,21 @@ def new_goal(request, sources=None):
     return dict(id=identity(), created_at=timestamp(), sources=sources or [], **goal_fields(request))
 
 
+def goal_route(nodes, node_ids):
+    """Include completed predecessors too, so the map shows how the whole route connects."""
+    route, stack = [], list(node_ids)
+    seen = set()
+    while stack:
+        node_id = stack.pop()
+        if node_id in seen or node_id not in nodes:
+            continue
+        seen.add(node_id)
+        node = nodes[node_id]
+        route.append(node_id)
+        stack.extend(node["prerequisites"])
+    return route
+
+
 def project_goals(course):
     nodes = {node["id"]: node for node in course["nodes"]}
     verified_ids = {nid for nid, node in nodes.items() if node["verification"] in {"ai_passed", "user_passed"}}
@@ -75,6 +90,8 @@ def project_goals(course):
         for task in goal.get("subtasks", []):
             task["auto_done"] = bool(task.get("node_id")) and task["node_id"] in verified_ids
         linked = [nodes[nid] for nid in goal["node_ids"] if nid in nodes]
+        endpoints = list(dict.fromkeys([*goal["node_ids"], *(task["node_id"] for task in goal.get("subtasks", []) if task.get("node_id"))]))
+        goal["route_ids"] = goal_route(nodes, endpoints)
         goal["progress"] = dict(
             linked=len(linked),
             studied=sum(node["status"] == "studied" for node in linked),

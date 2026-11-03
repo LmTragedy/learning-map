@@ -64,6 +64,35 @@ class Source(Input):
     quote: str = Field(min_length=1, max_length=6000)
 
 
+PieceKind = Literal["定义", "记号", "性质", "方法", "例子"]
+Strength = Literal["required", "suggested", "extension"]
+
+
+# Knowledge-bridge shapes the AI fills, both during map generation and when bridging older relationships.
+class DraftPiece(Input):
+    kind: PieceKind
+    title: str = Field(min_length=1, max_length=160, pattern=r"\S")
+    detail: str = Field(max_length=1000)
+    sources: list[Source] = Field(default_factory=list, max_length=4)
+
+
+class DraftBridge(Input):
+    piece: DraftPiece
+    step: str = Field(min_length=1, max_length=200, pattern=r"\S")
+    how: str = Field(min_length=1, max_length=600, pattern=r"\S")
+    if_missing: str = Field(max_length=600)
+    strength: Strength
+    check_question: str = Field(min_length=1, max_length=600, pattern=r"\S")
+    check_answer: str = Field(min_length=1, max_length=1200, pattern=r"\S")
+    sources: list[Source] = Field(default_factory=list, max_length=4)
+    uncertain: bool = True
+
+
+class NodeBridge(DraftBridge):
+    """A bridge written while generating a map: `from_key` names one of the node's prerequisites."""
+    from_key: str = Field(min_length=1, max_length=100)
+
+
 class MapNode(Input):
     key: str = Field(min_length=1, max_length=100)
     title: str = Field(min_length=1, max_length=160)
@@ -72,6 +101,9 @@ class MapNode(Input):
     sources: list[Source] = Field(min_length=1, max_length=30)
     prerequisites: list[str] = Field(max_length=30)
     uncertain: bool
+    pieces: list[DraftPiece] = Field(default_factory=list, max_length=6)
+    steps: list[str] = Field(default_factory=list, max_length=8)
+    bridges: list[NodeBridge] = Field(default_factory=list, max_length=12)
 
 
 class MapRelation(Input):
@@ -90,6 +122,7 @@ class MapRelation(Input):
     presentation: Literal["simple", "synthesis"] = "simple"
     synthesis_title: str = Field(default="", max_length=160)
     synthesis_summary: str = Field(default="", max_length=3000)
+    bridges: list[DraftBridge] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="after")
     def evidence_and_synthesis(self):
@@ -163,6 +196,8 @@ class Judgment(Input):
     reasoning: str = Field(min_length=1, max_length=6000)
     blockers: list[str] = Field(max_length=20)
     next_step: str = Field(min_length=1, max_length=4000)
+    # Ids of incoming knowledge bridges the answer suggests are missing; only kept when the attempt failed.
+    missing_bridges: list[str] = Field(default_factory=list, max_length=8)
 
 
 class RecallItem(Input):

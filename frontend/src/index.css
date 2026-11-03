@@ -26,7 +26,13 @@
   --accent-foreground: #fafafa;
   --destructive: #f87171;
   --border: #27272a;
-  --input: #27272a;
+  /* Fields sit recessed (dark fill, visible border); buttons are raised fills with no border. */
+  --input: #3f3f46;
+  --input-hover: #52525b;
+  --field: #111113;
+  --control: #27272a;
+  --control-hover: #323238;
+  --control-active: #3f3f46;
   --ring: #d4d4d8;
   --sidebar: #0c0c0e;
   /* learning states: always shown with a word and an icon too */
@@ -57,6 +63,10 @@
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
+  --color-field: var(--field);
+  --color-control: var(--control);
+  --color-control-hover: var(--control-hover);
+  --color-control-active: var(--control-active);
   --color-ring: var(--ring);
   --color-sidebar: var(--sidebar);
   --color-st-new: var(--state-new);
@@ -128,11 +138,11 @@
   .modal button:not([class*="inline-flex"]), .practice-panel button, .recall-panel button, .lesson-reader button,
   .decision-row button, .mastered-note button, .suggestion-card button {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px;
-    border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--foreground);
+    border: 1px solid transparent; border-radius: 8px; background: var(--control); color: var(--foreground);
     font-size: 13px; font-weight: 500; cursor: pointer; transition: background .15s;
   }
   .modal button:not([class*="inline-flex"]):hover, .practice-panel button:hover, .recall-panel button:hover,
-  .lesson-reader button:hover, .decision-row button:hover { background: var(--accent-soft); }
+  .lesson-reader button:hover, .decision-row button:hover { background: var(--control-hover); }
   button.primary, .modal button.primary, .practice-panel button.primary, .lesson-reader button.primary, .decision-row button.primary {
     background: var(--primary); color: var(--primary-foreground); border-color: var(--primary);
   }
@@ -143,10 +153,12 @@
 
   /* Inputs */
   input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), select, textarea {
-    background: transparent; border: 1px solid var(--input); border-radius: 8px; color: var(--foreground);
-    padding: 7px 11px; font-size: 13px; box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+    background: var(--field); border: 1px solid var(--input); border-radius: 8px; color: var(--foreground);
+    padding: 7px 11px; font-size: 13px; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .45);
   }
-  input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; border-color: #52525b; box-shadow: 0 0 0 3px rgba(212, 212, 216, .18); }
+  input:hover, textarea:hover, select:hover { border-color: var(--input-hover); }
+  input::placeholder, textarea::placeholder { color: #71717a; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; border-color: #71717a; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .45), 0 0 0 3px rgba(212, 212, 216, .16); }
   select option { background: #18181b; color: #fafafa; }
   /* Group labels in native dropdowns otherwise fall back to the light system style. */
   select optgroup { background: #18181b; color: #a1a1aa; font-style: normal; font-weight: 600; }
@@ -174,14 +186,13 @@
   .toggle-row input[type="checkbox"]:checked { background: var(--primary); }
 }
 
-.learning-dialogue .conversation { min-height: min(20rem, 45dvh); max-height: 60dvh; }
 
-.study-workspace:has(.lesson-reader) > .node-dock { width: clamp(340px, 40%, 560px); }
+.study-workspace:has(.workbench) > .node-dock { width: 360px; }
 @media (max-width: 780px) {
-  .study-workspace:has(.lesson-reader) { flex-direction: column; padding-bottom: 56px; }
-  .study-workspace:has(.lesson-reader) > .graph-area { flex: 0 0 42%; height: auto; min-height: 150px; }
-  .study-workspace:has(.lesson-reader) > .node-dock { position: static; flex: 1; width: 100%; height: auto; min-height: 0; transform: none; border-radius: 0; border-top: 1px solid var(--border); }
-  .study-workspace:has(.lesson-reader) > .node-dock > button { display: none; }
+  .study-workspace:has(.workbench) { flex-direction: column; padding-bottom: 56px; }
+  .study-workspace:has(.workbench) > .graph-area { flex: 0 0 42%; height: auto; min-height: 150px; }
+  .study-workspace:has(.workbench) > .node-dock { position: static; flex: 1; width: 100%; height: auto; min-height: 0; transform: none; border-radius: 0; border-top: 1px solid var(--border); }
+  .study-workspace:has(.workbench) > .node-dock > button { display: none; }
   .lesson-reader > header strong { font-size: var(--fs-sm); }
 }
 

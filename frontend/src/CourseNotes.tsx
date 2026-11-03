@@ -49,7 +49,7 @@ export function CourseNotes({ course, onOpen, onExitReview }: {
   const total = new Set(groups.flatMap((group) => group.entries.map((entry) => entry.noteId || `main:${entry.node.id}`))).size;
   return <div className="modal-body">
     <div className="flex flex-wrap items-center gap-3">
-      <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-input px-2.5 text-muted-foreground">
+      <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-input bg-field px-2.5 text-muted-foreground">
         <Search size={15} aria-hidden />
         <input type="search" className="!m-0 min-w-0 flex-1 !border-0 !bg-transparent !p-0 text-sm text-foreground !shadow-none outline-none"
           placeholder="搜索笔记名称、正文或知识点" aria-label="搜索笔记" value={query} onChange={(event) => setQuery(event.target.value)} />
@@ -67,7 +67,7 @@ export function CourseNotes({ course, onOpen, onExitReview }: {
           <strong className="flex items-center gap-1.5"><NotebookPen size={14} aria-hidden />{entry.title}</strong>
           <p className="line-clamp-2 whitespace-pre-wrap text-sm text-muted-foreground">{plainPreview(entry.content) || "尚未保存到课程"}</p>
           <span className="text-xs text-muted-foreground">
-            {entry.noteId ? "独立笔记" : "节点主笔记"}
+            {entry.noteId ? (course.notes?.find((note) => note.id === entry.noteId)?.anchor?.kind === "line" ? "主线笔记" : course.notes?.find((note) => note.id === entry.noteId)?.anchor?.kind === "bridge" ? "知识桥笔记" : "独立笔记") : "节点主笔记"}
             {entry.also.length ? ` · 同时绑定：${entry.also.join("、")}` : ""}
             {entry.drafts ? ` · 本机草稿 ${entry.drafts}` : ""}
           </span>

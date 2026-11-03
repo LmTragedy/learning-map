@@ -1,7 +1,9 @@
 import hashlib
 import json
 
+from .bridges import project_bridges
 from .goals import project_goals
+from .lines import project_lines
 from .relations import project_edges
 from .review_scope import project_review
 from .route import learning_route
@@ -34,10 +36,13 @@ def project_course(course):
         # Full HTML is retrieved separately so every chat does not retransmit every lesson.
         for lesson in node.get("lessons", []):
             lesson.pop("html", None)
-    doing = [node_id for goal in course.get("goals", []) if goal.get("status") == "doing" for node_id in goal.get("node_ids", [])]
+    # Goals in progress steer "next step" along their whole route, not just their end stations.
+    doing = [node_id for goal in course.get("goals", []) if goal.get("status") == "doing" for node_id in goal.get("route_ids", [])]
     course["route"] = learning_route(course["nodes"], doing)
     project_edges(course)
-    return project_review(course)
+    project_bridges(course)
+    project_review(course)
+    return project_lines(course)
 
 
 def mark_node(node, status):

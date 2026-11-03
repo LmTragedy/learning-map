@@ -1,10 +1,13 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
+  BaseEdge,
   Controls,
+  getStraightPath,
   Handle,
   Position,
   ReactFlow,
   type Edge,
+  type EdgeProps,
   type Node,
   type NodeProps,
   type ReactFlowInstance,
@@ -16,14 +19,24 @@ import type { Course, LearningNode } from "./types";
 import { forceLayout, lineage } from "./graphLayout";
 import { Button } from "./components/ui/button";
 import { cn } from "./lib/utils";
-import { isRelationVisible, needsExplanation } from "./relationVisibility";
+import { isRelationVisible } from "./relationVisibility";
+import { edgeLabel, STRENGTH_LABEL } from "./bridges";
+import { lineColor, linesByNode, lineSegments } from "./lines";
 import { isNodeVisible } from "./nodeVisibility";
 
 type Tone = "passed" | "mastered" | "studied" | "available" | "locked";
 type Role = "focus" | "up" | "down" | "dim" | "none";
 type DotData = {
   title: string; tone: Tone; role: Role; selected: boolean; next: boolean; radius: number; hint: string;
+  /** Colour of the first main line the node is on; transfer stations sit on two or more. */
+  line?: string; transfer: boolean;
 };
+type LinkData = { label: string; title: string; color: string; weak: boolean; onOpen?: () => void };
+/** The bridge label follows the pointer while it rests on a line, so it never sits on the dots. */
+type EdgeTip = { id: string; x: number; y: number };
+
+/** Node names stop growing past 100% zoom, so zooming in makes room instead of crowding. */
+const labelScale = (zoom: number) => Math.min(1, 1 / zoom);
 
 const toneLabel: Record<Tone, string> = {
   passed: "验收通过", mastered: "自我掌握", studied: "学过", available: "可学习", locked: "未解锁",
@@ -31,8 +44,8 @@ const toneLabel: Record<Tone, string> = {
 
 const DotNode = memo(function DotNode({ data }: NodeProps<Node<DotData>>) {
   const size = data.radius * 2;
-  return <div className={`gdot tone-${data.tone} role-${data.role} ${data.selected ? "is-selected" : ""} ${data.next ? "is-next" : ""}`}
-    style={{ width: size, height: size }} title={data.hint} aria-label={data.title ? `${data.title}，${toneLabel[data.tone]}` : "未解锁知识点"}>
+  return <div className={`gdot tone-${data.tone} role-${data.role} ${data.selected ? "is-selected" : ""} ${data.next ? "is-next" : ""} ${data.line ? "on-line" : ""} ${data.transfer ? "is-transfer" : ""}`}
+    style={{ width: size, height: size, ...(data.line ? { "--line": data.line } as CSSProperties : {}) }} title={data.hint} aria-label={data.title ? `${data.title}，${toneLabel[data.tone]}` : "未解锁知识点"}>
     <Handle type="target" position={Position.Left} isConnectable={false} />
     <span className="gdot-core" />
     {data.title && <span className="gdot-label">{data.title}</span>}
@@ -40,7 +53,14 @@ const DotNode = memo(function DotNode({ data }: NodeProps<Node<DotData>>) {
   </div>;
 });
 
+/** A straight link; hovering shows its bridge label, clicking opens the bridge detail. */
+const BridgeEdge = memo(function BridgeEdge({ sourceX, sourceY, targetX, targetY, style, markerEnd }: EdgeProps<Edge<LinkData>>) {
+  const [path] = getStraightPath({ sourceX, sourceY, targetX, targetY });
+  return <BaseEdge path={path} style={style} markerEnd={markerEnd} interactionWidth={24} />;
+});
+
 const nodeTypes = { dot: DotNode };
+const edgeTypes = { bridge: BridgeEdge };
 type GraphNode = Node<DotData>;
 
 function isDone(node: LearningNode) {
@@ -57,6 +77,7 @@ export function MapView({
   onSelect,
   onRelationSelect,
   focusIds,
+  onOpenLine,
 }: {
   course: Course;
   selected?: LearningNode;
@@ -66,15 +87,18 @@ export function MapView({
   reviewStrict?: boolean;
   prerequisiteNodes?: LearningNode[];
   focusIds?: string[];
+  onOpenLine?: (lineId: string) => void;
   onSelect: (node: LearningNode) => void;
   onRelationSelect?: (edge: Course["edges"][number]) => void;
 }) {
-  const flow = useRef<ReactFlowInstance<GraphNode, Edge>>();
+  const flow = useRef<ReactFlowInstance<GraphNode, Edge<LinkData>>>();
   const clickedInside = useRef(false);
   const [hovered, setHovered] = useState<string>();
   const [focusOnly, setFocusOnly] = useState(false);
   const [alwaysLabels, setAlwaysLabels] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [tip, setTip] = useState<EdgeTip>();
+  const canvasRef = useRef<HTMLDivElement>(null);
   const isVisible = useCallback((node: LearningNode) => isNodeVisible(node, { reviewActive: Boolean(reviewActive), directEntryId, directWeek }),
     [reviewActive, directEntryId, directWeek]);
 
@@ -112,6 +136,15 @@ export function MapView({
   }, [links, prerequisiteEdgeIds, inSelectedChain]);
   const inRelatedContext = useCallback((id: string) => inSelectedChain(id) || relatedContextIds.has(id), [inSelectedChain, relatedContextIds]);
 
+  const stationLines = useMemo(() => linesByNode(course), [course]);
+  const segments = useMemo(() => lineSegments(course), [course]);
+  const transfers = useMemo(() => new Set(course.transfers || []), [course.transfers]);
+  const overview = zoom < 0.65 && Boolean(course.lines?.length) && !focusOnly && !focusIds;
+  const overviewStops = useMemo(() => new Set([
+    ...(course.transfers || []),
+    ...(course.lines || []).flatMap((line) => [line.node_ids[0], line.node_ids.at(-1)]).filter((id): id is string => Boolean(id)),
+  ]), [course.lines, course.transfers]);
+
   const { nodes, edges } = useMemo(() => {
     const byId = new Map(course.nodes.map((n) => [n.id, n]));
     const roleOf = (id: string): Role => {
@@ -124,7 +157,9 @@ export function MapView({
     const dots: GraphNode[] = course.nodes.map((n) => {
       const visible = isVisible(n);
       const tone: Tone = !visible ? "locked" : n.status === "new" ? "available" : n.status;
-      const radius = Math.round(5 + Math.sqrt(degree.get(n.id) ?? 0) * 2.4);
+      const transfer = transfers.has(n.id);
+      const radius = Math.round(5 + Math.sqrt(degree.get(n.id) ?? 0) * 2.4) + (transfer ? 3 : 0);
+      const onLines = stationLines.get(n.id) || [];
       const centre = centres.get(n.id)!;
       const missing = n.prerequisites.map((id) => byId.get(id)).filter((p): p is LearningNode => Boolean(p) && !isDone(p!));
       return {
@@ -133,7 +168,7 @@ export function MapView({
         position: { x: centre.x - radius, y: centre.y - radius },
         width: radius * 2,
         height: radius * 2,
-        hidden: filtering && !inRelatedContext(n.id),
+        hidden: (filtering && !inRelatedContext(n.id)) || (overview && !overviewStops.has(n.id)),
         // Focusing on a goal fades every node outside it.
         style: focusIds && !focusIds.includes(n.id) ? { opacity: 0.15 } : undefined,
         draggable: false,
@@ -145,8 +180,10 @@ export function MapView({
           selected: n.id === selected?.id,
           next: n.id === course.route?.next_node_id,
           radius,
+          line: onLines[0] ? lineColor(onLines[0]) : undefined,
+          transfer,
           hint: visible
-            ? `${n.title} · ${toneLabel[tone]}${n.personal_note?.trim() ? " · 有笔记" : ""}`
+            ? `${n.title} · ${toneLabel[tone]}${onLines.length ? ` · ${onLines.map((line) => line.name).join(" / ")}${transfer ? "（换乘站）" : ""}` : ""}${n.personal_note?.trim() ? " · 有笔记" : ""}`
             : `未解锁${missing.length ? `：还需先完成 ${missing.length} 个先修` : ""}；通过先修节点后显示，也可以从考点搜索临时直达`,
         },
       };
@@ -159,32 +196,61 @@ export function MapView({
       if ((source === focusId || chain.down.has(source)) && chain.down.has(target)) return "down";
       return "dim";
     };
-    const lines: Edge[] = links.map((edge) => {
-      const role = edgeRole(edge);
-      const lit = role === "up" || role === "down";
-      const color = role === "up" ? "#fbbf24" : role === "down" ? "#60a5fa" : "#52525b";
+    const lines: Edge<LinkData>[] = links.map((edge) => {
+      // A bridge a failed practice blamed stays red until it is checked again.
+      const weak = (edge.bridges || []).some((bridge) => bridge.state?.result === "missing");
+      const role = weak ? "weak" : edgeRole(edge);
+      const lit = role !== "none" && role !== "dim";
+      const line = segments.get(`${edge.source}>${edge.target}`);
+      const onGoal = Boolean(focusIds?.includes(edge.source) && focusIds.includes(edge.target));
+      const color = weak ? "#f87171" : onGoal ? "#fbbf24" : role === "up" ? "#fbbf24" : role === "down" ? "#60a5fa" : line ? lineColor(line) : "#52525b";
+      // Solid = a required bridge; dashed = only suggested or extension bridges.
+      const optional = edge.strength ? edge.strength !== "required" : edge.kind !== "用到";
+      const source = byId.get(edge.source);
+      const target = byId.get(edge.target);
+      const readable = Boolean(source && target && isVisible(source) && isVisible(target));
       return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        type: "straight",
+        type: "bridge",
         className: "relationship-edge",
         selectable: false,
         focusable: true,
-        interactionWidth: 24,
         hidden: filtering && !(inRelatedContext(edge.source) && inRelatedContext(edge.target)),
-        ariaLabel: `${edge.relation}：${needsExplanation(edge) ? "原因待补充" : (edge.explanation || "").split("\n")[0]}`,
+        ariaLabel: edgeLabel(course, edge),
+        data: {
+          label: edgeLabel(course, edge),
+          title: `${edgeLabel(course, edge)}${edge.strength ? ` · ${STRENGTH_LABEL[edge.strength]}` : ""} · 点击看知识桥`,
+          color, weak,
+          onOpen: readable ? () => onRelationSelect?.(edge) : undefined,
+        },
         style: {
           stroke: color,
-          strokeWidth: lit ? 1.6 : 1,
-          opacity: role === "dim" ? 0.06 : role === "none" ? 0.32 : 0.9,
-          strokeDasharray: edge.uncertain || !edge.confirmed ? "4 3" : undefined,
+          strokeWidth: onGoal ? 3 : lit ? 1.8 : line ? 2.4 : 1,
+          opacity: focusIds && !onGoal ? 0.06 : onGoal ? 1 : role === "dim" ? 0.06 : role === "none" ? (line ? 0.75 : edge.uncertain && !edge.confirmed ? 0.25 : 0.38) : 0.9,
+          strokeDasharray: optional ? "4 3" : undefined,
         },
         markerEnd: lit ? { type: "arrowclosed", color, width: 12, height: 12 } : undefined,
       };
     });
+    if (overview) {
+      const overviewEdges: Edge<LinkData>[] = [];
+      for (const mainLine of course.lines || []) {
+        const stops = mainLine.node_ids.filter((id) => byId.has(id) && overviewStops.has(id));
+        stops.slice(0, -1).forEach((id, index) => overviewEdges.push({
+          id: `overview:${mainLine.id}:${index}`, source: id, target: stops[index + 1], type: "bridge",
+          style: { stroke: lineColor(mainLine), strokeWidth: 4, opacity: 0.85 },
+          data: { label: mainLine.name, title: mainLine.goal, color: lineColor(mainLine), weak: false,
+            onOpen: () => onOpenLine?.(mainLine.id) },
+        }));
+      }
+      return { nodes: dots, edges: overviewEdges };
+    }
+
     return { nodes: dots, edges: lines };
-  }, [course, centres, degree, links, prerequisiteEdgeIds, focusId, chain, selected?.id, isVisible, filtering, inRelatedContext, focusIds]);
+  }, [course, centres, degree, links, prerequisiteEdgeIds, focusId, chain, selected?.id, isVisible, filtering, inRelatedContext, focusIds,
+    stationLines, segments, transfers, onRelationSelect, overview, overviewStops, onOpenLine]);
 
   const fitAll = useCallback((duration = 300) => {
     void flow.current?.fitView({ padding: 0.18, maxZoom: 1.4, duration });
@@ -219,7 +285,7 @@ export function MapView({
         <span>所有节点与进度均由本地学习记录生成</span>
       </div>
     );
-  const labelMode = alwaysLabels || zoom >= 1.15 ? "labels-all" : zoom >= 0.75 ? "labels-key" : "labels-none";
+  const labelMode = overview || alwaysLabels || zoom >= 1.15 ? "labels-all" : zoom >= 0.75 ? "labels-key" : "labels-none";
   return (
     <div className="map-wrap">
       <div className="graph-tools flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
@@ -237,6 +303,7 @@ export function MapView({
           onClick={() => setAlwaysLabels((value) => !value)} title="缩小时也显示全部名称">
           <Tags /> 显示名称
         </Button>
+        {overview && <span className="text-xs text-muted-foreground">整体视图 · 主线与换乘站（放大返回知识点）</span>}
         {selected && (
           <span className="graph-focus-note ml-auto flex items-center gap-1.5 text-[13px] text-muted-foreground">
             <Sparkles className="size-3.5" aria-hidden />
@@ -244,12 +311,18 @@ export function MapView({
           </span>
         )}
       </div>
-      <div className={`map-canvas graph-canvas ${labelMode} ${focusId ? "has-focus" : ""}`}>
+      <div className={`map-canvas graph-canvas ${labelMode} ${focusId ? "has-focus" : ""}`} ref={canvasRef} style={{ "--label-scale": labelScale(zoom) } as CSSProperties}>
+        {overview && <div className="absolute left-3 top-3 z-10 flex max-w-[90%] flex-wrap gap-2" aria-label="整体视图主线">
+          {(course.lines || []).map((line) => <Button key={line.id} size="sm" variant="outline" onClick={() => onOpenLine?.(line.id)}>
+            <i className="h-1 w-5 rounded" style={{ background: lineColor(line) }} />{line.name}
+          </Button>)}
+        </div>}
         <ReactFlow
           key={`${course.id}:${directWeek ?? ""}`}
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           minZoom={0.3}
           maxZoom={3}
           onInit={(instance) => { flow.current = instance; requestAnimationFrame(() => fitAll(0)); }}
@@ -263,6 +336,11 @@ export function MapView({
             const found = course.nodes.find((n) => n.id === node.id);
             if (found && isVisible(found)) { clickedInside.current = true; onSelect(found); }
           }}
+          onEdgeMouseMove={(event, edge) => {
+            const box = canvasRef.current?.getBoundingClientRect();
+            if (box && edge.data?.onOpen) setTip({ id: edge.id, x: event.clientX - box.left, y: event.clientY - box.top });
+          }}
+          onEdgeMouseLeave={() => setTip(undefined)}
           onEdgeClick={(_, edge) => {
             const found = links.find((item) => item.id === edge.id);
             const source = found && course.nodes.find((item) => item.id === found.source);
@@ -273,6 +351,17 @@ export function MapView({
         >
           <Controls showInteractive={false} position="bottom-left" />
         </ReactFlow>
+        {tip && (() => {
+          const edge = edges.find((item) => item.id === tip.id);
+          // Centred above the pointer, then kept inside the canvas once its width is known.
+          const clamp = (el: HTMLDivElement | null) => {
+            const width = canvasRef.current?.clientWidth;
+            if (!el || !width) return;
+            el.style.left = `${Math.max(8, Math.min(tip.x - el.offsetWidth / 2, width - el.offsetWidth - 8))}px`;
+          };
+          return edge?.data && <div ref={clamp} className={`gedge-tip ${edge.data.weak ? "is-weak" : ""}`} role="tooltip"
+            style={{ left: tip.x, top: tip.y, borderColor: edge.data.color }}>{edge.data.title}</div>;
+        })()}
       </div>
     </div>
   );

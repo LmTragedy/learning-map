@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from .domain import find_node, project_course
@@ -13,12 +15,20 @@ class NoteInput(BaseModel):
     title: str | None = Field(default=None, max_length=200)
 
 
+class NoteAnchor(BaseModel):
+    """Where a note hangs besides its nodes: a knowledge bridge (relationship) or a main line."""
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["bridge", "line"]
+    id: str = Field(min_length=1, max_length=100)
+
+
 class ExtraNoteInput(BaseModel):
-    """A named note of its own, bound to one or more knowledge nodes."""
+    """A named note of its own, bound to knowledge nodes and optionally to a bridge or a line."""
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=200)
     node_ids: list[str] = Field(min_length=1, max_length=20)
     content: str = Field(default="", max_length=100000)
+    anchor: NoteAnchor | None = None
 
 
 class ExtraNoteUpdate(ExtraNoteInput):
@@ -32,6 +42,13 @@ def _clean(request, course):
     node_ids = list(dict.fromkeys(request.node_ids))
     for node_id in node_ids:
         find_node(course, node_id)
+    anchor = request.anchor
+    if anchor and anchor.kind == "bridge" and not any(
+        edge.get("id") == anchor.id and not edge.get("synthesis_link") for edge in course.get("edges", [])
+    ):
+        raise KeyError("笔记要挂的知识联系不存在")
+    if anchor and anchor.kind == "line" and not any(line["id"] == anchor.id for line in course.get("lines", [])):
+        raise KeyError("笔记要挂的主线不存在")
     return title, node_ids
 
 
@@ -83,6 +100,7 @@ def register_goals_notes(app, store):
             course.setdefault('notes', []).append(dict(
                 id=identity(), title=title, node_ids=node_ids, content=request.content,
                 created_at=now, updated_at=now,
+                **({'anchor': request.anchor.model_dump()} if request.anchor else {}),
             ))
         return project_course(store.course(cid))
 
@@ -95,6 +113,8 @@ def register_goals_notes(app, store):
             title, node_ids = _clean(request, course)
             _note_backup(store, course, connection)
             note.update(title=title, node_ids=node_ids, content=request.content, updated_at=timestamp())
+            if request.anchor:
+                note['anchor'] = request.anchor.model_dump()
         return project_course(store.course(cid))
 
     @app.delete('/api/courses/{cid}/notes/{note_id}')

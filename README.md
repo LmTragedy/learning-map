@@ -4,19 +4,19 @@ MIT 开源的单用户本地学习应用，使用 React Flow 地图、FastAPI �
 
 ## 启动
 
-已安装依赖的这台 Windows 电脑，可以双击 `start.cmd`，或在 PowerShell 运行：
+已安装依赖的这台 Windows 电脑，可以双击上一级记忆库目录中的 `启动知识地图.cmd`，它会打开独立可见的 CMD 日志窗口。也可以双击项目内的 `start.cmd`，或在 PowerShell 运行：
 
 ```powershell
 cd D:\记忆库\learning-map
 .\start.cmd
 ```
 
-打开 <http://127.0.0.1:8741>。保留终端，Ctrl+C 停止；重启使用同一命令。此入口使用固定端口 8741，直接调用项目 Python，不受 PowerShell 的 `.ps1` 执行策略影响，也不修改执行策略。
+打开 <http://127.0.0.1:8741>。保留终端，Ctrl+C 停止；重启使用同一入口。服务退出后窗口会保留，便于查看报错。默认端口为 8741，入口直接调用项目 Python，不受 PowerShell 的 `.ps1` 执行策略影响，也不修改执行策略。
 
-原有 `start.ps1` 和 `stop.ps1` 仍保留，供允许执行 PowerShell 脚本的环境使用。若 `start.cmd` 报告端口已占用，先打开上述地址检查是否已经运行。需要其他端口时，在项目目录直接运行：
+原有 `start.ps1` 和 `stop.ps1` 仍保留，供允许执行 PowerShell 脚本的环境使用。端口不可用时，入口会尝试显示占用程序、PID 和启动命令，不会自动结束进程。若是已经启动的知识地图，可以打开上述地址继续使用。需要其他端口时，在项目目录运行：
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn backend.app:app --host 127.0.0.1 --port 8742
+.\start.cmd --port 8742
 ```
 
 新电脑需要 Python 3.13、Node.js 22 或更新版本、npm；AI 模式需要安装并登录 Codex 桌面版，或安装并配置 Codex CLI。在允许执行 PowerShell 脚本的环境先运行 `./setup.ps1`，再运行 `./start.cmd`。本次验证环境为 Windows / Python 3.13 / Node 24；未做其他系统或干净电脑安装验收。安装脚本使用全局 Python 的 pip 安装到项目虚拟环境，不需要改全局包。

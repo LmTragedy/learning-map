@@ -20,7 +20,7 @@
 .gdot.role-down.tone-locked .gdot-core { background: #2a4a75; }
 .gdot.role-dim { opacity: .18; }
 
-.gdot-label { position: absolute; left: 50%; top: calc(100% + 4px); transform: translateX(-50%); white-space: nowrap;
+.gdot-label { position: absolute; left: 50%; top: calc(100% + 4px); transform: translateX(-50%) scale(var(--label-scale, 1)); transform-origin: 50% 0; white-space: nowrap;
   font-size: 11px; line-height: 1.3; color: #d4d4d8; pointer-events: none; text-shadow: 0 0 4px #09090b, 0 0 2px #09090b;
   opacity: 0; transition: opacity .15s; }
 .labels-all .gdot-label, .labels-key .gdot-label { opacity: 1; }
@@ -35,3 +35,17 @@
 .graph-canvas .react-flow__controls { border: 1px solid var(--border, #27272a); border-radius: 8px; overflow: hidden; box-shadow: none; }
 .graph-canvas .react-flow__controls-button { background: var(--card, #0f0f11); border-bottom: 1px solid var(--border, #27272a); color: var(--muted-foreground, #a1a1aa); fill: currentColor; }
 .graph-canvas .react-flow__controls-button:hover { background: var(--secondary, #27272a); color: var(--foreground, #fafafa); }
+
+/* Main lines and knowledge-bridge labels. */
+.gdot.on-line .gdot-core { box-shadow: 0 0 0 2px #09090b, 0 0 0 4px var(--line); }
+.gdot.is-transfer .gdot-core { background: #09090b; box-shadow: 0 0 0 3px #fafafa, 0 0 0 5px var(--line, #fafafa); }
+.gdot.is-transfer.tone-passed .gdot-core, .gdot.is-transfer.tone-mastered .gdot-core { background: var(--tone); }
+.gdot.is-selected.on-line .gdot-core { box-shadow: 0 0 0 2px #09090b, 0 0 0 4px var(--line), 0 0 0 6px #fafafa; }
+/* Shown beside the pointer only while it rests on a line. */
+.gedge-tip { position: absolute; z-index: 10; pointer-events: none; transform: translateY(calc(-100% - 12px)); width: max-content; max-width: min(320px, calc(100% - 16px));
+  font: 500 12px/1.4 var(--font-sans, system-ui); color: #fafafa; background: #18181b; border: 1px solid #3f3f46; border-radius: 8px;
+  padding: 4px 9px; box-shadow: 0 6px 20px rgb(0 0 0 / .45); }
+.gedge-tip.is-weak { color: #fecaca; background: #3b1414; border-color: #f87171 !important; }
+.route-line { position: relative; }
+.route-line::before { content: ""; position: absolute; left: 18px; top: 8px; bottom: 8px; width: 2px; border-radius: 2px; background: var(--line); opacity: .45; }
+.route-line li button { position: relative; }

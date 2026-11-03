@@ -3,11 +3,13 @@ import type {
   CourseSummary,
   GoalFields,
   GoalPreview,
+  PieceKind,
   Preview,
   Profile,
   RecallSummary,
   RelationKind,
   Settings,
+  Strength,
 } from "./types";
 import type { NoteReviewResponse } from "./noteReviewTypes";
 
@@ -36,6 +38,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
+type LineFields = { name: string; goal: string; node_ids: string[]; endpoint: string; story: { node_id: string; text: string }[] };
 const json = (method: string, value?: unknown): RequestInit => ({
   method,
   body: value === undefined ? undefined : JSON.stringify(value),
@@ -61,7 +64,7 @@ export const api = {
   goalCandidates: (cid: string) => request<GoalPreview>(`/courses/${cid}/goal-candidates`, json("POST", {})),
   acceptGoals: (cid: string, token: string, indices: number[]) => request<Course>(`/courses/${cid}/goals/accept`, json("POST", { token, indices })),
   savePersonalNote: (cid: string, nid: string, content: string, expected: string, title?: string) => request<Course>(`/courses/${cid}/nodes/${nid}/personal-note`, json("PUT", { content, expected, ...(title === undefined ? {} : { title }) })),
-  createNote: (cid: string, note: { title: string; node_ids: string[]; content?: string }) => request<Course>(`/courses/${cid}/notes`, json("POST", note)),
+  createNote: (cid: string, note: { title: string; node_ids: string[]; content?: string; anchor?: { kind: "bridge" | "line"; id: string } }) => request<Course>(`/courses/${cid}/notes`, json("POST", note)),
   saveNote: (cid: string, id: string, note: { title: string; node_ids: string[]; content: string; expected: string }) =>
     request<Course>(`/courses/${cid}/notes/${encodeURIComponent(id)}`, json("PUT", note)),
   deleteNote: (cid: string, id: string) => request<Course>(`/courses/${cid}/notes/${encodeURIComponent(id)}`, { method: "DELETE" }),
@@ -73,6 +76,19 @@ export const api = {
     request<Course>(`/courses/${cid}/relations/${encodeURIComponent(rid)}/confirm`, json("POST", { revision })),
   backfillRelations: (cid: string, revision: number) =>
     request<Course>(`/courses/${cid}/relations/backfill`, json("POST", { revision })),
+  editBridges: (cid: string, rid: string, revision: number, bridges: { id: string; from_piece: string; to_step: string; how: string; if_missing: string; strength: Strength; check: { question: string; answer: string } }[]) =>
+    request<Course>(`/courses/${cid}/relations/${encodeURIComponent(rid)}/bridges`, json("PUT", { revision, bridges })),
+  editPieces: (cid: string, nid: string, revision: number, pieces: { id: string; kind: PieceKind; title: string; detail: string }[], steps: { id: string; title: string }[]) =>
+    request<Course>(`/courses/${cid}/nodes/${nid}/pieces`, json("PUT", { revision, pieces, steps })),
+  checkPiece: (cid: string, nid: string, pid: string, result: "known" | "unsure") =>
+    request<Course>(`/courses/${cid}/nodes/${nid}/pieces/${pid}/check`, json("POST", { result })),
+  checkBridge: (cid: string, rid: string, bid: string, result: "known" | "unsure", answer = "") =>
+    request<Course>(`/courses/${cid}/relations/${encodeURIComponent(rid)}/bridges/${encodeURIComponent(bid)}/check`, json("POST", { result, answer })),
+  createLine: (cid: string, line: LineFields) => request<Course>(`/courses/${cid}/lines`, json("POST", line)),
+  generateLines: (cid: string) => request<Course>(`/courses/${cid}/lines/generate`, json("POST", {})),
+  retellLine: (cid: string, lid: string, text: string) => request<Course>(`/courses/${cid}/lines/${lid}/retell`, json("POST", { text })),
+  editLine: (cid: string, lid: string, revision: number, line: LineFields) => request<Course>(`/courses/${cid}/lines/${lid}`, json("PUT", { ...line, revision })),
+  deleteLine: (cid: string, lid: string, revision: number) => request<Course>(`/courses/${cid}/lines/${lid}/delete`, json("POST", { revision })),
   editRelation: (cid: string, rid: string, value: { revision: number; explanation: string; when_to_use: string; basis: string; relation: RelationKind; forward_difficulty: string; reverse_difficulty: string }) =>
     request<Course>(`/courses/${cid}/relations/${encodeURIComponent(rid)}`, json("POST", value)),
   create: (title: string) =>

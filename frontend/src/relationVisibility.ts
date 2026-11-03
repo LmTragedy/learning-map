@@ -13,10 +13,3 @@ export function isRelationVisible(course: Course, edge: Course["edges"][number],
     node.id === id && node.sources.some((source) => materialIds.has(source.material_id)),
   ));
 }
-
-/** Relationships saved before explanations were recorded still carry this server placeholder. */
-export const LEGACY_EXPLANATION = "旧版关系未记录解释。";
-
-export function needsExplanation(edge: Course["edges"][number]) {
-  return !edge.synthesis_link && (edge.explanation ?? LEGACY_EXPLANATION) === LEGACY_EXPLANATION;
-}

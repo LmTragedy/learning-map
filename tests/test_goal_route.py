@@ -40,3 +40,20 @@ def test_subgoal_linked_to_node_completes_when_node_is_verified(tmp_path):
     assert goal["progress"]["subtasks_done"] == 1
     bad = client.post(f"/api/courses/{course['id']}/goals", json={"title": "g", "subtasks": [{"title": "x", "node_id": "missing"}]})
     assert bad.status_code == 404
+
+
+
+def test_goal_map_route_includes_completed_predecessors_and_subtask_endpoints(tmp_path):
+    from fastapi.testclient import TestClient
+    from backend.app import create_app
+    app = create_app(tmp_path / "data", lambda _: None)
+    client = TestClient(app, headers={"X-Learning-Map": "1"})
+    course = client.post("/api/sample").json()
+    base = f"/api/courses/{course['id']}"
+    ids = [node["id"] for node in course["nodes"]]
+    client.post(f"{base}/nodes/{ids[0]}/mark", json={"status": "mastered"})
+    saved = client.post(f"{base}/goals", json={"title": "终点", "node_ids": [ids[2]], "status": "doing",
+        "subtasks": [{"title": "最后一站", "node_id": ids[3]}]}).json()
+    assert set(saved["goals"][0]["route_ids"]) == set(ids)
+    assert saved["route"]["next_node_id"] == ids[1]
+    assert saved["nodes"][2]["unlocked"] is False

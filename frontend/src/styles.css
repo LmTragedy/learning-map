@@ -273,8 +273,8 @@ a {
   gap: 7px;
   padding: 0 11px;
   border-radius: var(--r-md);
-  border: 1px solid var(--border-strong);
-  background: var(--raised);
+  border: 1px solid transparent;
+  background: var(--control);
   color: #dedee1;
   font-size: var(--fs-xs);
   font-weight: 550;
@@ -287,9 +287,8 @@ a {
 }
 .quiet-button:hover,
 .secondary:hover {
-  background: var(--border);
+  background: var(--control-hover);
   color: #ffffff;
-  border-color: #52525a;
 }
 .primary {
   background: var(--accent);
@@ -302,7 +301,7 @@ a {
   border-color: var(--accent-hover);
 }
 .secondary {
-  background: var(--raised);
+  background: var(--control);
 }
 .danger-text {
   color: #ff9393;
@@ -530,7 +529,7 @@ a {
 .lesson-supplement textarea { width: 100%; font-size: var(--fs-xs); line-height: 1.8; }
 .study-content-host { position: absolute; inset: 0; z-index: 1; min-width: 0; min-height: 0; }
 .study-content-host:empty { display: none; }
-.graph-area:has(.lesson-reader, .node-note-document) > :not(.study-content-host) { visibility: hidden; }
+.graph-area:has(.workbench) > :not(.study-content-host) { visibility: hidden; }
 .lesson-reader { display: flex; flex-direction: column; padding: 0; width: 100%; height: 100%; min-width: 0; min-height: 0; color: #e8e8eb; background: #1d1d20; }
 .lesson-reader > header { display: flex; align-items: center; gap: 16px; padding: 16px 22px; }
 .lesson-reader > header > div { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
@@ -838,15 +837,16 @@ a {
 .composer textarea,
 .field-label textarea,
 .field-label input,
+.reference-answer textarea,
 .search-form input {
   width: 100%;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
+  background: var(--field);
+  border: 1px solid var(--input);
   border-radius: var(--r-md);
   padding: 8px 9px;
   resize: vertical;
-  font-size: var(--fs-xs);
-  line-height: 1.5;
+  font-size: var(--fs-md);
+  line-height: 1.65;
 }
 .composer textarea {
   min-height: 42px;
@@ -867,9 +867,18 @@ a {
   color: var(--bg);
 }
 .practice-pane {
-  gap: 9px;
-  padding-top: 10px;
+  gap: 12px;
+  padding-top: 4px;
 }
+.reference-answer summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.reference-answer summary::-webkit-details-marker { display: none; }
+.reference-answer summary:hover { color: var(--text); }
+.reference-answer textarea { margin-top: 6px; width: 100%; }
 .question-card,
 .result-card {
   padding: 10px;
@@ -879,9 +888,10 @@ a {
 }
 .question-card p,
 .result-card p {
-  font-size: var(--fs-xs);
+  font-size: var(--fs-md);
   margin: 4px 0 0;
-  line-height: 1.55;
+  line-height: 1.75;
+  color: var(--text-2);
   white-space: pre-wrap;
 }
 .full {
@@ -931,7 +941,7 @@ a {
   font-size: var(--fs-xs);
 }
 .result-card ul {
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   padding-left: 18px;
 }
 .result-card li {
@@ -1091,7 +1101,7 @@ a {
 }
 .modal-scrim {
   position: fixed;
-  z-index: 20;
+  z-index: 60;
   inset: 0;
   background: #050b13b8;
   display: grid;

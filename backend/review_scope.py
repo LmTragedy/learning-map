@@ -98,6 +98,10 @@ def project_review(course):
         ]
         course["suggestions"] = active_records(course, course["suggestions"])
         for node in course["nodes"]:
+            node["pieces"] = [
+                piece for piece in node.get("pieces", [])
+                if piece.get("sources") and all(source.get("material_id") in selected for source in piece["sources"])
+            ]
             node["review_verification"] = node.get("review_progress", {}).get(scope_key(course), {}).get("verification", "none")
             node["material_variants"] = [
                 variant for variant in node.get("material_variants", [])

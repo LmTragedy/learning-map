@@ -1,0 +1,575 @@
+<title>目标与知识点联动</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;900&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+/* Layout: report column (760px) with one wide live demo (1120px) that is the page's centrepiece; demo uses the app's own navy console look */
+:root {
+  --bg: #eef1f5; --surface: #ffffff; --fg: #141b26; --muted: #5a6577; --line: #d6dce5;
+  --accent: #0d8a80; --amber: #b9730b; --warn-bg: #fdf1dc; --warn-fg: #7f4c00; --tint: #e2f3f1;
+  --app-bg: #0c1420; --app-panel: #121d2e; --app-raise: #182638; --app-line: #233249; --app-fg: #e2e9f3; --app-muted: #7e8da4;
+  --app-teal: #2cc4b5; --app-amber: #f0a73a; --app-lock: #34425a;
+  --display: "Noto Serif SC", "Songti SC", serif;
+  --body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0a0f17; --surface: #111925; --fg: #e4eaf2; --muted: #919eb1; --line: #243042;
+  --accent: #3ccfc0; --amber: #f0a73a; --warn-bg: #33250f; --warn-fg: #f3c47e; --tint: #10302d; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0a0f17; --surface: #111925; --fg: #e4eaf2; --muted: #919eb1; --line: #243042;
+  --accent: #3ccfc0; --amber: #f0a73a; --warn-bg: #33250f; --warn-fg: #f3c47e; --tint: #10302d; color-scheme: dark }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 15.5px/1.8 var(--body); }
+.page { padding-block: 56px 96px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 88px; }
+.col { width: 100%; max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+.wide { width: 100%; max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.eyebrow { font: 500 12px var(--mono); letter-spacing: .12em; color: var(--accent); text-transform: uppercase; }
+h1 { font: 900 clamp(32px, 6vw, 56px)/1.15 var(--display); margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+h1 em { font-style: normal; color: var(--accent); }
+h2 { font: 600 clamp(22px, 3.4vw, 28px)/1.35 var(--display); margin: 0; text-wrap: balance; }
+h3 { font-size: 16px; margin: 0; line-height: 1.5; }
+p { margin: 0; }
+.lede { font-size: 18px; color: var(--muted); max-width: 40em; }
+.muted { color: var(--muted); }
+code { font: 13px var(--mono); background: color-mix(in srgb, var(--line) 55%, transparent); padding: 1px 6px; border-radius: 4px; word-break: break-word; }
+.scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- hero stats ---------- */
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-top: 10px; }
+.fact { background: var(--surface); padding: 16px 18px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fact b { font: 700 26px/1.2 var(--mono); color: var(--fg); font-variant-numeric: tabular-nums; }
+.fact span { font-size: 13px; color: var(--muted); line-height: 1.5; }
+@media (max-width: 560px) { .facts { grid-template-columns: 1fr; } }
+
+/* ---------- demo chrome ---------- */
+.demo-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
+.seg { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 4px; gap: 4px; }
+.seg button { border: 0; background: transparent; padding: 7px 16px; border-radius: 7px; cursor: pointer; font-size: 14px; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); font-weight: 500; }
+.hint { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.hint .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--app-amber); box-shadow: 0 0 0 4px color-mix(in srgb, var(--app-amber) 25%, transparent); }
+
+.app { min-width: 860px; background: var(--app-bg); color: var(--app-fg); border-radius: 14px; overflow: hidden; font-size: 13px; line-height: 1.55;
+  box-shadow: 0 30px 60px -30px rgba(8, 18, 32, .55), 0 0 0 1px var(--app-line); }
+.app-bar { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--app-line); min-height: 64px; }
+.app-bar .t { font-weight: 700; font-size: 15px; }
+.app-bar .s { color: var(--app-muted); font-size: 12px; display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+.mini-meter { display: inline-block; width: 48px; height: 4px; border-radius: 2px; background: var(--app-line); vertical-align: middle; margin-right: 6px; overflow: hidden; }
+.mini-meter i { display: block; height: 100%; background: var(--app-teal); }
+.abtn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--app-line); background: transparent; border-radius: 7px; padding: 5px 11px; color: var(--app-fg); font-size: 12px; white-space: nowrap; cursor: pointer; position: relative; }
+.abtn:hover { background: var(--app-raise); }
+.abtn.pri { background: var(--app-teal); border-color: transparent; color: #04211e; font-weight: 700; }
+.abtn.pri:hover { background: #46d6c8; }
+.abtn svg { width: 14px; height: 14px; flex: none; }
+.app-main { display: grid; grid-template-columns: 60px minmax(0, 1fr) 348px; height: 520px; }
+.rail { border-right: 1px solid var(--app-line); display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 12px; }
+.rail span { width: 46px; padding: 7px 0; border-radius: 8px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10.5px; color: var(--app-muted); position: relative; }
+.rail span.on { background: var(--app-raise); color: var(--app-fg); }
+.rail span.new { color: var(--app-teal); }
+.rail svg { width: 17px; height: 17px; }
+.map { position: relative; min-width: 0; }
+.map svg.g { position: absolute; inset: 0; width: 100%; height: 100%; }
+.map-tools { position: absolute; left: 14px; top: 12px; right: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; z-index: 2; }
+.sel { border: 1px solid var(--app-line); background: var(--app-bg); border-radius: 7px; padding: 5px 10px; font-size: 12px; color: var(--app-muted); position: relative; display: inline-flex; gap: 6px; align-items: center; }
+.focus-chip { background: color-mix(in srgb, var(--app-teal) 18%, var(--app-bg)); color: var(--app-teal); border-color: color-mix(in srgb, var(--app-teal) 50%, transparent); }
+.focus-chip button { border: 0; background: none; cursor: pointer; color: inherit; padding: 0 0 0 4px; font-size: 14px; line-height: 1; }
+.map-legend { position: absolute; left: 14px; bottom: 12px; display: flex; gap: 14px; font-size: 11px; color: var(--app-muted); }
+.map-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
+.node { cursor: pointer; }
+.node:focus { outline: none; }
+.node:focus-visible circle.hit { stroke: var(--app-fg); stroke-width: 2; }
+.node text { font: 500 12.5px var(--body); fill: var(--app-fg); }
+.node .sub { font: 400 10.5px var(--mono); fill: var(--app-muted); }
+.edge, .node { transition: opacity .25s; }
+@media (prefers-reduced-motion: no-preference) {
+  .halo { animation: pulse 2.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  @keyframes pulse { 0%,100% { opacity: .55; } 50% { opacity: .15; } }
+  .card, .toast { animation: rise .28s ease-out; }
+  @keyframes rise { from { transform: translateY(6px); opacity: .4; } }
+}
+
+.panel { background: var(--app-panel); border-left: 1px solid var(--app-line); display: flex; flex-direction: column; min-height: 0; }
+.panel-scroll { overflow-y: auto; padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+.kick { color: var(--app-muted); font-size: 11.5px; }
+.ntitle { font: 700 19px/1.35 var(--body); margin: 0; }
+.badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--app-line); color: var(--app-muted); }
+.badge.done { color: var(--app-teal); border-color: color-mix(in srgb, var(--app-teal) 45%, transparent); background: color-mix(in srgb, var(--app-teal) 10%, transparent); }
+.badge.avail { color: var(--app-amber); border-color: color-mix(in srgb, var(--app-amber) 45%, transparent); background: color-mix(in srgb, var(--app-amber) 10%, transparent); }
+.oldgoals { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--app-muted); position: relative; padding: 6px 0; }
+.oldgoals .chip { border: 1px solid var(--app-line); border-radius: 999px; padding: 1px 9px; color: var(--app-fg); }
+.oldgoals .add { border-style: dashed; color: var(--app-muted); }
+.oldgoals .none { color: var(--app-fg); }
+
+.card { border: 1px solid var(--app-line); background: var(--app-raise); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 9px; position: relative; }
+.card.primary { border-color: color-mix(in srgb, var(--app-teal) 55%, var(--app-line)); background: linear-gradient(180deg, color-mix(in srgb, var(--app-teal) 9%, var(--app-raise)), var(--app-raise)); }
+.card-h { display: flex; gap: 8px; align-items: flex-start; }
+.card-h .ti { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; display: flex; gap: 6px; align-items: center; }
+.card-h .ti svg { width: 15px; height: 15px; color: var(--app-teal); flex: none; }
+.st { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; flex: none; }
+.st.doing { background: color-mix(in srgb, var(--app-amber) 18%, transparent); color: var(--app-amber); }
+.st.todo { background: var(--app-line); color: var(--app-muted); }
+.st.done { background: color-mix(in srgb, var(--app-teal) 18%, transparent); color: var(--app-teal); }
+.track { display: flex; gap: 3px; }
+.track b { flex: 1; height: 6px; border-radius: 3px; background: var(--app-lock); position: relative; }
+.track b.d { background: var(--app-teal); }
+.track b.c { background: var(--app-amber); box-shadow: 0 0 0 2px color-mix(in srgb, var(--app-amber) 30%, transparent); }
+.track-l { display: flex; justify-content: space-between; font: 11px var(--mono); color: var(--app-muted); font-variant-numeric: tabular-nums; }
+.role { font-size: 13px; }
+.role strong { color: var(--app-amber); }
+.role.end strong { color: var(--app-teal); }
+.subt { display: flex; gap: 7px; align-items: flex-start; font-size: 12px; color: var(--app-muted); }
+.subt svg { width: 14px; height: 14px; flex: none; margin-top: 2px; }
+.subt.ok { color: var(--app-teal); }
+.subt.ok span { text-decoration: line-through; }
+.next { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--app-line); padding-top: 9px; font-size: 12.5px; }
+.next .grow { flex: 1; min-width: 0; color: var(--app-muted); }
+.next .grow strong { color: var(--app-fg); }
+.card-a { display: flex; gap: 6px; flex-wrap: wrap; }
+.ready { font-size: 12px; color: var(--app-amber); background: color-mix(in srgb, var(--app-amber) 12%, transparent); border-radius: 6px; padding: 6px 8px; }
+.collapsed { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid var(--app-line); background: transparent; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; cursor: pointer; }
+.collapsed:hover { background: var(--app-raise); }
+.collapsed .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.collapsed .r { font-size: 11px; color: var(--app-muted); }
+.empty-goal { font-size: 12px; color: var(--app-muted); border: 1px dashed var(--app-line); border-radius: 8px; padding: 10px; }
+.panel-foot { border-top: 1px solid var(--app-line); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; background: var(--app-panel); }
+.tabs { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--app-bg); border-radius: 8px; padding: 3px; gap: 3px; font-size: 11.5px; text-align: center; color: var(--app-muted); }
+.tabs span { padding: 4px 0; border-radius: 6px; }
+.tabs span.on { background: var(--app-raise); color: var(--app-fg); }
+.foot-row { display: flex; gap: 8px; }
+.foot-row .abtn.pri { flex: 1; justify-content: center; padding: 8px 11px; }
+.toasts { display: flex; flex-direction: column; gap: 8px; }
+.toast { border-radius: 9px; padding: 10px 12px; font-size: 12.5px; display: flex; gap: 9px; align-items: flex-start;
+  background: color-mix(in srgb, var(--app-teal) 13%, var(--app-raise)); border: 1px solid color-mix(in srgb, var(--app-teal) 45%, transparent); }
+.toast.warn { background: color-mix(in srgb, var(--app-amber) 13%, var(--app-raise)); border-color: color-mix(in srgb, var(--app-amber) 45%, transparent); }
+.toast.plain { background: var(--app-raise); border-color: var(--app-line); color: var(--app-muted); }
+.toast svg { width: 15px; height: 15px; flex: none; margin-top: 2px; color: var(--app-teal); }
+.toast.warn svg { color: var(--app-amber); }
+.toast div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.toast small { color: var(--app-muted); font-size: 11.5px; }
+.toast .x { border: 0; background: none; color: var(--app-muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 0; }
+
+.pin { position: absolute; top: -9px; right: -9px; width: 20px; height: 20px; border-radius: 50%; background: #ff6b5b; color: #fff; font: 700 11px/20px var(--mono); text-align: center; z-index: 3; box-shadow: 0 0 0 3px var(--app-bg); pointer-events: none; }
+.pin.g { background: var(--app-teal); color: #04211e; }
+.pinned { position: relative; }
+
+/* explainer list under demo */
+.keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.key { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; font-size: 14px; line-height: 1.7; }
+.key .n { width: 24px; height: 24px; border-radius: 50%; background: #e2574a; color: #fff; font: 700 12px/24px var(--mono); text-align: center; margin-top: 2px; }
+.key .n.g { background: var(--accent); }
+.key strong { display: block; }
+
+/* ---------- relationships ---------- */
+.rels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.rel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.rel svg { width: 100%; height: auto; display: block; }
+.rel .q { font-size: 13px; background: var(--bg); border-radius: 8px; padding: 8px 10px; }
+.rel code { font-size: 12px; }
+@media (max-width: 720px) { .rels { grid-template-columns: 1fr; } }
+
+/* ---------- phases ---------- */
+.timeline { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; position: relative; }
+.ph { padding: 0 14px 0 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ph .bar { height: 6px; border-radius: 3px; background: var(--line); margin-bottom: 8px; }
+.ph.core .bar { background: var(--accent); }
+.ph.mid .bar { background: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+.ph .k { font: 700 13px var(--mono); color: var(--accent); }
+.ph ul { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.7; }
+.ph .be { font-size: 12px; color: var(--muted); }
+@media (max-width: 760px) { .timeline { grid-template-columns: 1fr 1fr; row-gap: 26px; } }
+@media (max-width: 460px) { .timeline { grid-template-columns: 1fr; } }
+.callout { border-left: 3px solid var(--accent); background: var(--tint); border-radius: 0 10px 10px 0; padding: 14px 18px; font-size: 15px; }
+
+/* ---------- lists ---------- */
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+@media (max-width: 720px) { .two { grid-template-columns: 1fr; } }
+.two > div { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+ul.ticks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 14.5px; }
+ul.ticks li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; }
+ul.ticks li::before { content: ""; width: 12px; height: 12px; margin-top: 7px; border-radius: 3px; border: 2px solid var(--muted); }
+ul.ticks.no li::before { border-radius: 50%; border-color: #d0574b; background: linear-gradient(45deg, transparent 44%, #d0574b 44% 56%, transparent 56%); }
+ul.ticks.yes li::before { border-color: var(--accent); background: var(--accent); }
+footer { font: 12px var(--mono); color: var(--muted); text-align: center; }
+</style>
+
+<div class="page">
+
+<header class="col">
+  <span class="eyebrow">设计报告 · learning-map · 2026-11-03</span>
+  <h1>让目标<em>跟着知识点</em>走</h1>
+  <p class="lede">目标看板现在挂在顶栏、以弹窗打开，你学到哪个知识点它都不会变。这份方案把目标信息搬进节点面板：点到哪个节点，就看到它通往哪个目标、走到第几步、学完会推进什么。</p>
+  <div class="facts">
+    <div class="fact"><b>0 处</b><span>后端需要改动（前三阶段）</span></div>
+    <div class="fact"><b>3 种</b><span>节点与目标的关系：终点、路线、小目标</span></div>
+    <div class="fact"><b>1 个</b><span>根因：节点面板只认目标终点</span></div>
+  </div>
+</header>
+
+<section class="wide" aria-labelledby="demo-h">
+  <div class="demo-head">
+    <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+      <span class="eyebrow">可交互示意</span>
+      <h2 id="demo-h">同一个界面，前后对比</h2>
+      <span class="hint"><span class="dot"></span>点地图上的节点，再点右下角「模拟验收通过」</span>
+    </div>
+    <div class="seg" role="group" aria-label="切换界面版本">
+      <button id="m-before" aria-pressed="false">现在</button>
+      <button id="m-after" aria-pressed="true">改造后</button>
+    </div>
+  </div>
+  <div class="scroll"><div class="app" id="app"></div></div>
+  <div class="keys" id="keys"></div>
+</section>
+
+<section class="col">
+  <span class="eyebrow">根因</span>
+  <h2>数据早就联动了，只是没显示出来</h2>
+  <p>后端每次读课程都会重新计算每个目标的路线 <code>route_ids</code>、进度 <code>progress</code> 和小目标的自动勾选 <code>auto_done</code>（<code>backend/goals.py</code> 里的 <code>project_goals</code>）。但节点面板的「所属目标」只检查 <code>goal.node_ids</code>，也就是目标终点（<code>NodeGoals.tsx:13</code>）。你在学通往目标的先修节点时，它永远显示「暂无」。</p>
+  <p>所以前三个阶段只需要改前端：把已有的数据按“当前节点”重新组织，放到你正在看的位置。</p>
+</section>
+
+<section class="col">
+  <span class="eyebrow">核心概念</span>
+  <h2>一个节点和目标有三种关系</h2>
+  <p>把这三种关系都算出来，节点面板就能回答三个问题。判定全部来自现有字段。</p>
+</section>
+<section class="wide" style="margin-top:-64px">
+  <div class="rels">
+    <div class="rel">
+      <svg viewBox="0 0 260 80" aria-hidden="true">
+        <path d="M20 40 H240" stroke="var(--line)" stroke-width="3"/>
+        <circle cx="30" cy="40" r="9" fill="var(--accent)"/><circle cx="100" cy="40" r="9" fill="var(--accent)"/><circle cx="170" cy="40" r="9" fill="var(--surface)" stroke="var(--muted)" stroke-width="2"/>
+        <circle cx="232" cy="40" r="15" fill="none" stroke="var(--amber)" stroke-width="3"/><circle cx="232" cy="40" r="9" fill="var(--fg)"/>
+      </svg>
+      <h3>终点 · endpoint</h3>
+      <code>goal.node_ids.includes(id)</code>
+      <p class="q">“这是目标终点，路线已掌握 2/4”</p>
+    </div>
+    <div class="rel">
+      <svg viewBox="0 0 260 80" aria-hidden="true">
+        <path d="M20 40 H240" stroke="var(--line)" stroke-width="3"/><path d="M30 40 H100" stroke="var(--accent)" stroke-width="3"/>
+        <circle cx="30" cy="40" r="9" fill="var(--accent)"/><circle cx="100" cy="40" r="9" fill="var(--accent)"/>
+        <circle cx="170" cy="40" r="15" fill="none" stroke="var(--amber)" stroke-width="3"/><circle cx="170" cy="40" r="9" fill="var(--surface)" stroke="var(--muted)" stroke-width="2"/>
+        <circle cx="232" cy="40" r="9" fill="var(--fg)"/>
+        <text x="170" y="72" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="var(--amber)">3 / 4</text>
+      </svg>
+      <h3>路线上 · route</h3>
+      <code>goal.route_ids.includes(id)</code>
+      <p class="q">“通往终点的第 3 / 4 步，还剩 2 步”</p>
+    </div>
+    <div class="rel">
+      <svg viewBox="0 0 260 80" aria-hidden="true">
+        <circle cx="70" cy="40" r="15" fill="none" stroke="var(--amber)" stroke-width="3"/><circle cx="70" cy="40" r="9" fill="var(--surface)" stroke="var(--muted)" stroke-width="2"/>
+        <path d="M92 40 H140" stroke="var(--muted)" stroke-width="2" stroke-dasharray="4 4"/>
+        <rect x="146" y="26" width="28" height="28" rx="6" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
+        <path d="M153 40 l5 5 l10 -11" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="184" y="34" width="56" height="5" rx="2" fill="var(--line)"/><rect x="184" y="44" width="38" height="5" rx="2" fill="var(--line)"/>
+      </svg>
+      <h3>小目标 · subtask</h3>
+      <code>subtasks.some(t =&gt; t.node_id === id)</code>
+      <p class="q">“验收通过后会自动完成：能写出背包状态转移”</p>
+    </div>
+  </div>
+  <p class="muted" style="font-size:13.5px;max-width:760px;margin:0 auto;width:100%">“第 k / n 步”需要一条包含已完成节点的完整路线；<code>route_ids</code> 只含未完成的节点，适合算“还剩几步”。完整路线可以在前端从终点沿 <code>prerequisites</code> 求祖先闭包，再按 <code>course.route.stages</code> 排序，是一个可单测的纯函数。</p>
+</section>
+
+<section class="col">
+  <span class="eyebrow">实施</span>
+  <h2>四个阶段，前三个不动后端</h2>
+  <div class="timeline">
+    <div class="ph core"><div class="bar"></div><span class="k">P1 · 核心</span><h3>目标卡 + 顶栏收缩</h3>
+      <ul><li>新增 <code>goalContext.ts</code></li><li>重写 <code>NodeGoals.tsx</code></li><li><code>NodePanel</code> 加 <code>onFocusGoal</code></li><li>看板入口移到侧栏</li></ul>
+      <span class="be">测试：goalContext.test.mjs</span></div>
+    <div class="ph mid"><div class="bar"></div><span class="k">P2</span><h3>验收后原地提示</h3>
+      <ul><li><code>goalProgressDiff()</code></li><li>刷新课程时比较前后进度</li></ul>
+      <span class="be">纯前端</span></div>
+    <div class="ph mid"><div class="bar"></div><span class="k">P3</span><h3>地图路线描边</h3>
+      <ul><li><code>MapView</code> 新增 <code>hintIds</code></li><li>只加描边，不改透明度</li></ul>
+      <span class="be">纯前端</span></div>
+    <div class="ph"><div class="bar"></div><span class="k">P4 · 可选</span><h3>后端完整路线</h3>
+      <ul><li><code>project_goals</code> 多返回 <code>path_ids</code></li><li>只读投影，无迁移</li></ul>
+      <span class="be">前端排序不一致时再做</span></div>
+  </div>
+  <p class="callout">做完 P1，两个核心问题就解决了：“到这个知识点没反应”和“放在上面不会看”。P2、P3 让变化更容易被注意到。</p>
+</section>
+
+<section class="col">
+  <div class="two">
+    <div>
+      <span class="eyebrow">边界</span>
+      <h2>刻意不做</h2>
+      <ul class="ticks no">
+        <li>不自动把目标移到「已完成」，目标达成仍由你确认。</li>
+        <li>不根据当前节点自动改目标状态。</li>
+        <li>不覆盖你手动选的地图聚焦。</li>
+        <li>不把看板做成常驻侧栏，避免挤压地图。</li>
+      </ul>
+    </div>
+    <div>
+      <span class="eyebrow">验证</span>
+      <h2>怎么确认做对了</h2>
+      <ul class="ticks yes">
+        <li>单测 <code>goalsForNode</code>：三种关系、多目标排序、已完成节点不计入剩余步数。</li>
+        <li>单测 <code>goalProgressDiff</code>：进度增加、小目标自动完成、条件全部满足。</li>
+        <li>现有 <code>tests/test_goal_route.py</code> 保持通过。</li>
+        <li>浏览器里用合成课程走一遍：三层先修链、验收提示、严格复习模式下的禁用。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>数据为示意课程「算法设计与分析」，非真实学习记录</footer>
+</div>
+
+<script>
+(function () {
+  const ICON = {
+    target: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>',
+    map: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/></svg>',
+    note: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 3h10l4 4v14H5z"/><path d="M9 12h6M9 16h4"/></svg>',
+    review: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5" stroke-linecap="round"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/></svg>',
+    arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+    route: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 18H15a3 3 0 000-6H9a3 3 0 010-6h6.5"/></svg>',
+    flag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 21V4h11l-2 4 2 4H5"/></svg>',
+    reset: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12a8 8 0 108-8 8 8 0 00-6 2.7M4 4v4h4"/></svg>',
+  };
+  // Nodes listed in topological order.
+  const NODES = [
+    { id: "rec", label: "递归", x: 80, y: 210, pre: [] },
+    { id: "dc", label: "分治", x: 220, y: 120, pre: ["rec"] },
+    { id: "memo", label: "记忆化搜索", x: 220, y: 310, pre: ["rec"] },
+    { id: "sort", label: "归并排序", x: 360, y: 120, pre: ["dc"] },
+    { id: "knap", label: "背包问题", x: 360, y: 310, pre: ["memo"] },
+    { id: "greedy", label: "贪心", x: 500, y: 120, pre: ["sort"] },
+    { id: "interval", label: "区间 DP", x: 500, y: 310, pre: ["knap"] },
+    { id: "dp", label: "动态规划", x: 610, y: 215, pre: ["interval"] },
+  ];
+  const BY = Object.fromEntries(NODES.map((n) => [n.id, n]));
+  const GOALS = [
+    { id: "g1", title: "学会 动态规划", status: "doing", node_ids: ["dp"], subtasks: [
+      { title: "能写出背包状态转移", node: "knap" }, { title: "做完 3 道区间 DP 题", node: "interval" }] },
+    { id: "g3", title: "贪心入门", status: "todo", node_ids: ["greedy"], subtasks: [] },
+    { id: "g2", title: "理解分治与归并", status: "done", node_ids: ["sort"], subtasks: [] },
+  ];
+  const START_DONE = ["rec", "dc", "memo", "sort"];
+  const S = { mode: "after", sel: "knap", done: new Set(START_DONE), focus: "", open: "", toasts: [] };
+  const ORDER = { doing: 0, todo: 1, done: 2 };
+  const STATUS = { doing: "进行中", todo: "待开始", done: "已完成" };
+
+  const unlocked = (id) => BY[id].pre.every((p) => S.done.has(p));
+  function path(goal) {
+    const seen = new Set(), stack = [...goal.node_ids];
+    while (stack.length) { const id = stack.pop(); if (seen.has(id)) continue; seen.add(id); stack.push(...BY[id].pre); }
+    return NODES.filter((n) => seen.has(n.id)).map((n) => n.id);
+  }
+  function related(id) {
+    return GOALS.map((goal) => {
+      const p = path(goal), roles = [];
+      if (goal.node_ids.includes(id)) roles.push("endpoint"); else if (p.includes(id)) roles.push("route");
+      if (goal.subtasks.some((t) => t.node === id)) roles.push("subtask");
+      return { goal, p, roles };
+    }).filter((r) => r.roles.length).sort((a, b) => ORDER[a.goal.status] - ORDER[b.goal.status]);
+  }
+  const doneCount = (p) => p.filter((id) => S.done.has(id)).length;
+  const ready = (goal) => path(goal).every((id) => S.done.has(id)) && goal.subtasks.every((t) => S.done.has(t.node));
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const pin = (n, good) => S.mode === "before" ? `<span class="pin">${n}</span>` : good ? `<span class="pin g">${good}</span>` : "";
+
+  function mapSvg() {
+    const rel = related(S.sel);
+    const focusPath = S.focus ? path(GOALS.find((g) => g.id === S.focus)) : null;
+    const hint = S.mode === "after" && !focusPath && rel.length ? rel[0].p : null;
+    const on = focusPath || hint || [];
+    let edges = "", nodes = "";
+    for (const n of NODES) for (const p of n.pre) {
+      const a = BY[p], both = on.includes(p) && on.includes(n.id);
+      const dim = focusPath && !both;
+      const stroke = both ? "#2cc4b5" : S.done.has(p) && S.done.has(n.id) ? "#2f5a63" : "#26354c";
+      const mx = (a.x + n.x) / 2;
+      edges += `<path class="edge" d="M${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${n.y}, ${n.x} ${n.y}" fill="none" stroke="${stroke}" stroke-width="${both ? 2.6 : 1.8}" ${both && hint ? 'stroke-dasharray="6 5"' : ""} opacity="${dim ? .12 : 1}"/>`;
+    }
+    for (const n of NODES) {
+      const done = S.done.has(n.id), open = unlocked(n.id), sel = n.id === S.sel;
+      const fill = done ? "#2cc4b5" : open ? "#0c1420" : "#1c2738";
+      const ring = done ? "#2cc4b5" : open ? "#f0a73a" : "#3a4861";
+      const dim = focusPath && !focusPath.includes(n.id);
+      const onRoute = on.includes(n.id);
+      const isEnd = GOALS.some((g) => g.node_ids.includes(n.id) && on.includes(n.id) && (focusPath ? g.id === S.focus : rel[0] && g.id === rel[0].goal.id));
+      const sub = done ? "已掌握" : open ? "可学习" : "未解锁";
+      nodes += `<g class="node" data-id="${n.id}" tabindex="0" role="button" aria-label="${n.label}，${sub}" opacity="${dim ? .18 : 1}">
+        <circle class="hit" cx="${n.x}" cy="${n.y}" r="26" fill="transparent"/>
+        ${sel ? `<circle class="halo" cx="${n.x}" cy="${n.y}" r="24" fill="#f0a73a" opacity=".4"/>` : ""}
+        ${onRoute && S.mode === "after" ? `<circle cx="${n.x}" cy="${n.y}" r="18" fill="none" stroke="#2cc4b5" stroke-opacity=".55" stroke-width="1.5"/>` : ""}
+        <circle cx="${n.x}" cy="${n.y}" r="${sel ? 13 : 11}" fill="${fill}" stroke="${sel ? "#ffffff" : ring}" stroke-width="${sel ? 3 : 2.2}"/>
+        ${isEnd && S.mode === "after" ? `<path d="M${n.x - 4} ${n.y + 5} V${n.y - 6} h7 l-1.5 2.5 l1.5 2.5 h-7" fill="none" stroke="${done ? "#04211e" : "#e2e9f3"}" stroke-width="1.6" stroke-linejoin="round"/>` : ""}
+        ${done ? `<path d="M${n.x - 5} ${n.y} l3.5 3.5 l6.5 -7" fill="none" stroke="#04211e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ${isEnd && S.mode === "after" ? 'opacity="0"' : ""}/>` : ""}
+        <text x="${n.x}" y="${n.y + 34}" text-anchor="middle">${n.label}</text>
+        <text class="sub" x="${n.x}" y="${n.y + 49}" text-anchor="middle">${sub}</text>
+      </g>`;
+    }
+    return `<svg class="g" viewBox="0 0 690 430" preserveAspectRatio="xMidYMid meet" aria-label="知识地图">${edges}${nodes}</svg>`;
+  }
+
+  function card(r, primary) {
+    const { goal, p, roles } = r, id = S.sel;
+    const k = p.indexOf(id) + 1, n = p.length, dc = doneCount(p);
+    const remaining = n - dc;
+    const next = p.find((x) => !S.done.has(x) && x !== id);
+    const segs = p.map((x) => `<b class="${x === id ? "c" : S.done.has(x) ? "d" : ""}" title="${BY[x].label}"></b>`).join("");
+    const role = roles.includes("endpoint")
+      ? `<div class="role end">这是<strong>目标终点</strong>${remaining ? `<span class="muted"> · 路线还剩 ${remaining} 步</span>` : ""}</div>`
+      : `<div class="role">通往终点的<strong>第 ${k} / ${n} 步</strong><span class="muted"> · ${remaining ? `还剩 ${remaining} 步` : "路线已走完"}</span></div>`;
+    const subs = goal.subtasks.filter((t) => t.node === id).map((t) => {
+      const ok = S.done.has(t.node);
+      return `<div class="subt ${ok ? "ok" : ""}">${ok ? ICON.check : ICON.box}<div>${ok ? "已自动完成：" : "验收通过后自动完成："}<span>${esc(t.title)}</span></div></div>`;
+    }).join("");
+    const nextHtml = next ? `<div class="next"><span class="grow">下一步 → <strong>${BY[next].label}</strong>${unlocked(next) ? "" : " · 需先完成本节点"}</span><button class="abtn" data-go="${next}">${ICON.arrow}进入</button></div>` : "";
+    const isFocus = S.focus === goal.id;
+    return `<div class="card ${primary ? "primary" : ""}">
+      ${primary ? pin(0, "A") : ""}
+      <div class="card-h"><span class="ti">${ICON.target}<span>${esc(goal.title)}</span></span><span class="st ${goal.status}">${STATUS[goal.status]}</span></div>
+      <div><div class="track">${segs}</div><div class="track-l"><span>${BY[p[0]].label}</span><span>已掌握 ${dc}/${n}</span><span>${BY[p[n - 1]].label}</span></div></div>
+      ${role}${subs}
+      ${ready(goal) && goal.status !== "done" ? `<div class="ready">条件已全部满足，可以去看板确认完成</div>` : ""}
+      ${nextHtml}
+      <div class="card-a"><button class="abtn" data-focus="${goal.id}">${ICON.route}${isFocus ? "取消路线显示" : "在地图上显示路线"}</button><button class="abtn" data-board="1">打开目标</button></div>
+    </div>`;
+  }
+
+  function panel() {
+    const n = BY[S.sel], done = S.done.has(n.id), open = unlocked(n.id);
+    const badge = done ? `<span class="badge done">已掌握 · 系统验收通过</span>` : open ? `<span class="badge avail">学习中</span>` : `<span class="badge">临时直达 · 未解锁</span>`;
+    let goals = "";
+    if (S.mode === "before") {
+      const linked = GOALS.filter((g) => g.node_ids.includes(n.id));
+      goals = `<div class="oldgoals pinned">${ICON.target.replace("<svg", '<svg width="13" height="13"')} 所属目标
+        ${linked.length ? linked.map((g) => `<span class="chip">${esc(g.title)}${g.status === "doing" ? " · 进行中" : ""}</span>`).join("") : `<span class="none">暂无</span>`}
+        <span class="chip add">+ 加入目标…</span>${pin(4)}</div>`;
+    } else {
+      const rel = related(n.id);
+      if (!rel.length) goals = `<div class="empty-goal">这个节点不在任何目标路线上。<span class="chip" style="margin-left:4px">+ 加入目标…</span></div>`;
+      else {
+        const openId = S.open && rel.some((r) => r.goal.id === S.open) ? S.open : rel[0].goal.id;
+        const first = rel.find((r) => r.goal.id === openId);
+        const rest = rel.filter((r) => r !== first);
+        goals = card(first, true) + (rest.length ? `<div style="display:flex;flex-direction:column;gap:6px"><span class="kick">另有 ${rest.length} 个目标经过这里</span>` +
+          rest.map((r) => `<button class="collapsed" data-open="${r.goal.id}"><span style="color:var(--app-teal);display:flex">${ICON.target.replace("<svg", '<svg width="14" height="14"')}</span><span class="grow">${esc(r.goal.title)}</span><span class="r">${r.roles.includes("endpoint") ? "终点" : `第 ${r.p.indexOf(n.id) + 1}/${r.p.length} 步`}</span><span class="st ${r.goal.status}">${STATUS[r.goal.status]}</span></button>`).join("") + `</div>` : "");
+      }
+    }
+    const toasts = S.toasts.length ? `<div class="toasts" aria-live="polite">${S.toasts.map((t, i) => `<div class="toast ${t.kind || ""}">${t.kind === "warn" ? ICON.flag : ICON.check}<div><strong>${t.title}</strong>${t.lines.map((l) => `<small>${l}</small>`).join("")}</div><button class="x" data-dismiss="${i}" aria-label="关闭提示">×</button></div>`).join("")}</div>` : "";
+    return `<aside class="panel">
+      <div class="panel-scroll">
+        ${S.mode === "after" ? toasts.replace('class="toasts"', 'class="toasts pinned"') : toasts}
+        <span class="kick">${n.id === "dp" ? "终点知识点" : "知识点"}</span>
+        <h3 class="ntitle">${n.label}</h3>
+        <div class="badges">${badge}<span class="badge">${ICON.note.replace("<svg", '<svg width="11" height="11" style="vertical-align:-1px;margin-right:3px"')}笔记 2 份</span></div>
+        ${goals}
+      </div>
+      <div class="panel-foot">
+        <div class="tabs"><span>小课</span><span>学习对话</span><span class="on">练习验收</span></div>
+        <div class="foot-row">
+          <button class="abtn pri" id="verify" ${done ? "disabled style=\"opacity:.45;cursor:default\"" : ""}>${ICON.check}${done ? "已验收通过" : "模拟验收通过"}</button>
+          <button class="abtn" id="reset" title="恢复初始进度">${ICON.reset}重置</button>
+        </div>
+      </div>
+    </aside>`;
+  }
+
+  function header() {
+    const total = NODES.length, dc = S.done.size;
+    const cur = GOALS.find((g) => g.status === "doing");
+    const curTxt = S.mode === "before" ? `<span class="pinned" style="display:inline-flex;gap:5px;align-items:center;color:var(--app-fg)">${ICON.target.replace("<svg", '<svg width="12" height="12"')}当前目标：${cur.title} · ${cur.node_ids.filter((id) => S.done.has(id)).length}/${cur.node_ids.length} 节点${pin(1)}</span>` : "";
+    return `<div class="app-bar">
+      <div style="flex:1;min-width:0"><div class="t">算法设计与分析</div>
+        <div class="s"><span>版本 42</span><span>6 份材料</span><span><span class="mini-meter"><i style="width:${dc / total * 100}%"></i></span>${dc}/${total} 已掌握</span>${curTxt}</div></div>
+      ${S.mode === "before" ? `<span class="abtn pinned">${ICON.target}目标看板${pin(2)}</span>` : ""}
+      <span class="abtn">${ICON.review}复习所选 PDF</span><span class="abtn pri">导入材料</span>
+    </div>`;
+  }
+
+  function tools() {
+    if (S.mode === "before") return `<div class="map-tools"><span class="abtn">课程全貌</span><span class="sel pinned">${ICON.target.replace("<svg", '<svg width="12" height="12"')}按目标聚焦：全部目标 ▾${pin(3)}</span></div>`;
+    const g = S.focus && GOALS.find((x) => x.id === S.focus);
+    return `<div class="map-tools"><span class="abtn">课程全貌</span>${g ? `<span class="sel focus-chip">${ICON.route.replace("<svg", '<svg width="12" height="12"')}正在显示：${esc(g.title)} 的路线<button data-focus="${g.id}" aria-label="取消路线显示">×</button></span>` : `<span class="sel pinned" style="border-style:dashed">${ICON.route.replace("<svg", '<svg width="12" height="12"')}自动描出当前节点所属目标的路线${pin(0, "C")}</span>`}</div>`;
+  }
+
+  const KEYS = {
+    before: [
+      ["1", "顶栏只显示一个目标", "只取第一个进行中的目标，字号很小，窄屏隐藏，和选中节点无关。"],
+      ["2", "看板是全屏弹窗", "打开就盖住地图和节点面板，学习时不会去点。"],
+      ["3", "地图聚焦要手动选", "点不同的节点，路线高亮不会跟着变。"],
+      ["4", "「所属目标」只认终点", "试试点「背包问题」：它是「学会 动态规划」的必经节点，这里却显示「暂无」。"],
+    ],
+    after: [
+      ["A", "目标卡跟着节点换", "显示路线进度条、这是第几步、学完会勾掉哪个小目标、下一步去哪。点「递归」能看到它同时在三个目标上。"],
+      ["B", "验收后原地提示", "点「模拟验收通过」：进度变化和自动完成的小目标直接出现在面板顶部。目标完成仍要你确认。"],
+      ["C", "地图自动描出路线", "没手动聚焦时，用虚线描出当前节点所属目标的路线；点「在地图上显示路线」则淡化其余节点。"],
+      ["D", "顶栏让出来", "顶栏的目标文字和看板按钮去掉，看板入口移到左侧导航（图中「目标」），只负责增删改。"],
+    ],
+  };
+
+  function render() {
+    const app = document.getElementById("app");
+    app.innerHTML = header() + `<div class="app-main">
+      <nav class="rail" aria-label="导航示意"><span class="on">${ICON.map}地图</span>${S.mode === "after" ? `<span class="new pinned">${ICON.target}目标${pin(0, "D")}</span>` : ""}<span>${ICON.note}笔记</span><span>${ICON.review}复习</span></nav>
+      <div class="map">${tools()}${mapSvg()}<div class="map-legend"><span><i style="background:#2cc4b5"></i>已掌握</span><span><i style="border:2px solid #f0a73a"></i>可学习</span><span><i style="background:#1c2738;border:2px solid #3a4861"></i>未解锁</span></div></div>
+      ${panel()}
+    </div>`;
+    if (S.mode === "after" && S.toasts.length) {
+      const t = app.querySelector(".toasts"); if (t) t.insertAdjacentHTML("beforeend", "");
+      const first = app.querySelector(".toast"); if (first) { first.style.position = "relative"; first.insertAdjacentHTML("beforeend", '<span class="pin g">B</span>'); }
+    }
+    document.getElementById("keys").innerHTML = KEYS[S.mode].map(([n, t, d]) => `<div class="key"><span class="n ${S.mode === "after" ? "g" : ""}">${n}</span><div><strong>${t}</strong><span class="muted">${d}</span></div></div>`).join("");
+    document.getElementById("m-before").setAttribute("aria-pressed", S.mode === "before");
+    document.getElementById("m-after").setAttribute("aria-pressed", S.mode === "after");
+  }
+
+  function select(id) { S.sel = id; S.open = ""; S.toasts = []; render(); const el = document.querySelector(`.node[data-id="${id}"]`); if (el && document.activeElement && document.activeElement.classList.contains("node")) el.focus(); }
+
+  function verify() {
+    const id = S.sel; if (S.done.has(id)) return;
+    const before = related(id).map((r) => ({ goal: r.goal, dc: doneCount(r.p), n: r.p.length }));
+    S.done.add(id);
+    S.toasts = [];
+    if (S.mode === "before") { render(); return; }
+    const lines = [], warn = [];
+    for (const b of before) {
+      lines.push(`「${b.goal.title}」路线 ${b.dc}/${b.n} → <b style="color:#e2e9f3">${b.dc + 1}/${b.n}</b>`);
+      for (const t of b.goal.subtasks.filter((t) => t.node === id)) lines.push(`小目标「${esc(t.title)}」已自动完成`);
+      if (ready(b.goal) && b.goal.status !== "done") warn.push(b.goal);
+    }
+    const unlockedNow = NODES.filter((n) => !S.done.has(n.id) && n.pre.includes(id) && unlocked(n.id)).map((n) => n.label);
+    if (unlockedNow.length) lines.push(`已解锁：${unlockedNow.join("、")}`);
+    S.toasts.push({ title: `验收通过 · ${BY[id].label}`, lines: lines.length ? lines : ["这个节点不在任何目标路线上"] });
+    for (const g of warn) S.toasts.push({ kind: "warn", title: `「${g.title}」条件已全部满足`, lines: ["由你在看板里确认后，才会移到「已完成」"] });
+    render();
+  }
+
+  document.getElementById("app").addEventListener("click", (e) => {
+    const t = e.target.closest("[data-id],[data-go],[data-focus],[data-open],[data-dismiss],[data-board],#verify,#reset");
+    if (!t) return;
+    if (t.dataset.id) select(t.dataset.id);
+    else if (t.dataset.go) select(t.dataset.go);
+    else if (t.dataset.focus) { S.focus = S.focus === t.dataset.focus ? "" : t.dataset.focus; render(); }
+    else if (t.dataset.open) { S.open = t.dataset.open; render(); }
+    else if (t.dataset.dismiss) { S.toasts.splice(+t.dataset.dismiss, 1); render(); }
+    else if (t.dataset.board) { S.toasts = [{ kind: "plain", title: "会打开目标看板并定位到这个目标", lines: ["示意中不展开看板"] }]; render(); }
+    else if (t.id === "verify") verify();
+    else if (t.id === "reset") { S.done = new Set(START_DONE); S.toasts = []; S.focus = ""; S.open = ""; render(); }
+  });
+  document.getElementById("app").addEventListener("keydown", (e) => {
+    const n = e.target.closest && e.target.closest(".node");
+    if (n && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); select(n.dataset.id); }
+  });
+  document.getElementById("m-before").onclick = () => { S.mode = "before"; S.focus = ""; S.toasts = []; render(); };
+  document.getElementById("m-after").onclick = () => { S.mode = "after"; S.toasts = []; render(); };
+  render();
+})();
+</script>

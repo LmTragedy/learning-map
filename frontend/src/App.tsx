@@ -50,7 +50,8 @@ import { recommendedNode } from "./learningNavigation";
 import { isRelationVisible } from "./relationVisibility";
 import { NodePanel } from "./NodePanel";
 import { GoalBoard } from "./GoalBoard";
-import { needsExplanation } from "./relationVisibility";
+import { needsBridges } from "./bridges";
+import { LinesPanel } from "./LinesPanel";
 import { CourseNotes } from "./CourseNotes";
 import { hasUnsavedNotes } from "./noteDrafts";
 import { hasVolatileAnswerDrafts } from "./answerDrafts";
@@ -78,6 +79,7 @@ type Modal =
   | "review"
   | "materials"
   | "goals"
+  | "lines"
   | "course-notes"
   | null;
 export function App() {
@@ -90,6 +92,7 @@ export function App() {
   const [goalChatTarget, setGoalChatTarget] = useState("");
   const [goalFocus, setGoalFocus] = useState("");
   const [explainHidden, setExplainHidden] = useState(false);
+  const [lineFocus, setLineFocus] = useState("");
   const [mapGoal, setMapGoal] = useState("");
   const [activeRelationId, setActiveRelationId] = useState("");
   const [relationContextNodeId, setRelationContextNodeId] = useState("");
@@ -279,6 +282,16 @@ export function App() {
       setDirectNodeId("");
       setDirectQuery("");
     }
+  };
+  const openMapNote = (node: LearningNode, noteId: string) => {
+    setNoteTarget(node.id); setNoteTargetId(noteId); setNoteRequest((value) => value + 1);
+    setDirectWeek(""); setDirectQuery(""); setActiveRelationId(""); setRelationBackStack([]);
+    setSelected(node); setDirectNodeId(node.id); setModal(null); setSheetOpen(true);
+  };
+  const lineAct = async (key: string, fn: () => Promise<Course>) => {
+    const value = await run(key, fn);
+    if (value) refreshCourse(value);
+    return value;
   };
   const openSettings = async () => {
     const value = await run("settings", api.settings);
@@ -488,7 +501,7 @@ export function App() {
         </div>
         <nav className="-mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1">
           {courses.map((c) => {
-            const done = course?.id === c.id && course.route ? course.route.completed_count : c.passed_count;
+            const done = course?.id === c.id && course.progress ? course.progress.nodes.done : c.passed_count;
             const total = course?.id === c.id && course.route ? course.route.total : c.node_count;
             const chosen = course?.id === c.id;
             return (
@@ -584,8 +597,8 @@ export function App() {
                   <span className="flex items-center gap-1"><FileText aria-hidden /> {course.materials.length} 份材料</span>
                   <span className="flex items-center gap-1 max-[1100px]:hidden"><Layers aria-hidden /> {course.nodes.length} 个知识点</span>
                   {course.route && <span className="flex items-center gap-1.5 text-foreground/80">
-                    <span className="h-1 w-14 overflow-hidden rounded-full bg-secondary"><span className="block h-full bg-st-passed" style={{ width: `${percent(course.route.completed_count, course.route.total)}%` }} /></span>
-                    {course.route.completed_count}/{course.route.total} 已掌握
+                    <span className="h-1 w-14 overflow-hidden rounded-full bg-secondary"><span className="block h-full bg-st-passed" style={{ width: `${(course.progress?.ratio ?? (course.route.total ? course.route.completed_count / course.route.total : 0)) * 100}%` }} /></span>
+                    {course.progress?.pieces.total ? `${course.progress.pieces.known}/${course.progress.pieces.total} 知识块已掌握` : `${course.route.completed_count}/${course.route.total} 站已掌握`}
                   </span>}
                   {(() => {
                     const current = course.goals?.find((goal) => goal.status === "doing");
@@ -662,16 +675,16 @@ export function App() {
                 </Button>
               </div>
             )}
-            {!explainHidden && course.edges.some(needsExplanation) && (
+            {!explainHidden && course.edges.some(needsBridges) && (
               <div className="mx-4 mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
                 <Waypoints size={17} className="shrink-0 text-muted-foreground" aria-hidden />
                 <div className="min-w-0 flex-1 text-sm">
-                  <strong className="font-semibold">{course.edges.filter(needsExplanation).length} 条前置关系还没有说明</strong>
-                  <span className="block text-xs text-muted-foreground max-[780px]:hidden">让 AI 根据材料说明“后一个知识点用到了前一个的什么”。每次处理 30 条，结果标为待核对，不改变进度和解锁。</span>
+                  <strong className="font-semibold">{course.edges.filter(needsBridges).length} 条联系还没有知识桥</strong>
+                  <span className="block text-xs text-muted-foreground max-[780px]:hidden">让 AI 根据材料写清“后一个知识点的哪一步用到了前一个的哪一块”，并配一道检验题。每次处理 12 条，结果标为待核对，不改变进度和解锁。</span>
                 </div>
                 {aiOn ? <Button size="sm" disabled={busy}
                   onClick={() => void run("backfill-relations", () => api.backfillRelations(course.id, course.revision)).then((v) => v && refreshCourse(v))}>
-                  <Sparkles /> 用 AI 补充说明
+                  <Sparkles /> 用 AI 补充知识桥
                 </Button> : <Button size="sm" variant="outline" onClick={() => void openSettings()}>先在设置中开启 AI</Button>}
                 <Button size="icon-sm" variant="ghost" aria-label="暂时隐藏" onClick={() => setExplainHidden(true)}><X /></Button>
               </div>
@@ -693,9 +706,15 @@ export function App() {
                   reviewStrict={reviewStrict}
                   directEntryId={directNodeId}
                   directWeek={directWeek}
-                  focusIds={course.goals?.find((goal) => goal.id === mapGoal)?.node_ids}
+                  focusIds={course.goals?.find((goal) => goal.id === mapGoal)?.route_ids}
+                  onOpenLine={(id) => { setLineFocus(id); setModal("lines"); }}
                   toolbar={
                     <div className="flex min-w-0 items-center gap-2 max-[780px]:w-full">
+                      <Button size="sm" variant="outline" onClick={() => { setLineFocus(""); setModal("lines"); }}>课程全貌</Button>
+                      {selectedNode && <Button size="sm" variant="ghost" disabled={busy || reviewStrict} onClick={() => void lineAct("goal-endpoint", () => api.addGoal(course.id, {
+                        title: `学会 ${selectedNode.title}`, description: "以图上的这个知识点为终点", kind: "personal", status: "doing", node_ids: [selectedNode.id], subtasks: [],
+                      })).then((updated) => { const goal = updated?.goals?.at(-1); if (goal) setMapGoal(goal.id); })}><Target />设为目标终点</Button>}
+
                       {!!course.goals?.length && <label className="relative flex items-center max-[780px]:hidden">
                         <Target size={14} className="pointer-events-none absolute left-2.5 text-muted-foreground" aria-hidden />
                         <select className="h-8 max-w-48 cursor-pointer appearance-none !py-0 !pl-8 !pr-7" aria-label="按目标聚焦"
@@ -724,7 +743,7 @@ export function App() {
                         </select>
                         <ChevronDown size={14} className="pointer-events-none absolute right-2 text-muted-foreground" aria-hidden />
                       </label>}
-                      <label className="flex h-8 w-64 min-w-0 items-center gap-2 rounded-md border border-input px-2.5 text-muted-foreground shadow-xs focus-within:border-zinc-600 focus-within:ring-[3px] focus-within:ring-ring/20 max-[1100px]:w-48 max-[780px]:flex-1">
+                      <label className="flex h-8 w-64 min-w-0 items-center gap-2 rounded-md border border-input bg-field px-2.5 text-muted-foreground shadow-[inset_0_1px_2px_rgba(0,0,0,.45)] hover:border-zinc-600 focus-within:border-zinc-500 focus-within:ring-[3px] focus-within:ring-ring/20 max-[1100px]:w-48 max-[780px]:flex-1">
                         <Search size={14} className="shrink-0" aria-hidden />
                         <input
                           id="node-search"
@@ -812,7 +831,9 @@ export function App() {
                     onReturnToTarget={returnToRelationTarget}
                     onOpenReview={openReview}
                     onExitReview={() => void saveReviewScope(false)}
+                    onOpenNote={openMapNote}
                     onCloseRelation={closeRelationDetail}
+                    onOpenRelation={(edge) => { setRelationContextNodeId(selectedNode.id); setActiveRelationId(edge.id); }}
                     onOpenGoal={(goalId) => { setGoalFocus(goalId); setModal("goals"); }}
                     directEntryId={directNodeId}
                     directWeek={directWeek}
@@ -895,6 +916,8 @@ export function App() {
                 <X size={18} />
               </button>
             </div>
+            {modal === "lines" && course && <LinesPanel key={`${course.id}:${lineFocus}`} course={course} initialLineId={lineFocus} busy={busy} aiEnabled={aiOn} act={lineAct}
+              onNode={(node) => { setSelected(node); setDirectNodeId(node.id); setActiveRelationId(""); setModal(null); setSheetOpen(true); }} onNote={openMapNote} />}
             {modal === "goals" && course && <GoalBoard key={`${course.id}:${goalFocus}`} initialGoalId={goalFocus} course={course} busy={busy} aiEnabled={aiOn} run={run} onRefresh={refreshCourse} onNode={(id, destination) => {
               const node = course.nodes.find((item) => item.id === id);
               if (node) {
@@ -1616,6 +1639,7 @@ function modalIcon(m: Modal) {
     review: FileSearch,
     materials: FolderOpen,
     goals: Layers,
+    lines: Waypoints,
     "course-notes": BookMarked,
   };
   const Icon = icons[m || ""] || CircleHelp;
@@ -1636,6 +1660,7 @@ function modalTitle(m: Modal) {
         recall: "找回思路",
         materials: "已导入材料",
         goals: "课程目标看板",
+        lines: "课程全貌与主线串讲",
         "course-notes": "课程笔记",
         review: "选择复习资料",
       } as Record<string, string>

@@ -41,3 +41,24 @@ def test_extra_note_create_update_conflict_and_delete(session):
     assert removed["notes"] == []
     versions = client.get(f"/api/courses/{course['id']}/versions").json()
     assert any(version["reason"] == "删除笔记前自动备份" for version in versions)
+
+
+@pytest.mark.parametrize("kind", ["bridge", "line"])
+def test_note_anchor_survives_workbench_save_without_anchor_field(session, kind):
+    client, course = session
+    cid = course["id"]
+    nodes = [node["id"] for node in course["nodes"][:2]]
+    if kind == "line":
+        response = client.post(f"/api/courses/{cid}/lines", json={"name": "事务线", "node_ids": nodes})
+        assert response.status_code == 200
+        anchor_id = response.json()["lines"][0]["id"]
+    else:
+        anchor_id = course["edges"][0]["id"]
+    base = f"/api/courses/{cid}/notes"
+    created = client.post(base, json={"title": "连接笔记", "node_ids": nodes, "anchor": {"kind": kind, "id": anchor_id}})
+    assert created.status_code == 200
+    note = created.json()["notes"][-1]
+    saved = client.put(f"{base}/{note['id']}", json={"title": note["title"], "node_ids": nodes, "content": "补充理解", "expected": ""})
+    assert saved.status_code == 200
+    assert saved.json()["notes"][-1]["anchor"] == {"kind": kind, "id": anchor_id}
+    assert saved.json()["notes"][-1]["content"] == "补充理解"

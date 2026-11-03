@@ -29,10 +29,12 @@ from .goal_routes import register_goal_routes
 from .goals_notes import register_goals_notes
 from .learning import Learning, recall_messages
 from .lesson_routes import register_lesson_routes
+from .line_routes import register_line_routes
+from .lines_ai import register_line_ai
 from .note_review import register_note_review
 from .profile import accept_stage as apply_stage
 from .recall import summarize_recall
-from .relation_backfill import register_relation_backfill
+from .bridge_backfill import register_bridge_backfill
 from .relation_routes import register_relation_routes
 from .review_scope import question_for, require_review_record, set_review_scope, strict_scope
 from .sample import create_sample
@@ -67,11 +69,13 @@ def create_app(data_dir=None, ai_factory=None):
     _course_routes(app, store, learning)
     _learning_routes(app, store, learning)
     # Registered before /relations/{rid} so "backfill" is not read as a relation id.
-    register_relation_backfill(app, store, learning)
+    register_bridge_backfill(app, store, learning)
     register_relation_routes(app, store)
     register_goals_notes(app, store)
     register_note_review(app, learning)
     register_goal_routes(app, store, learning)
+    register_line_routes(app, store)
+    register_line_ai(app, store, learning)
     register_lesson_routes(app, store, learning)
     _protection_routes(app, store)
     _settings_routes(app, store, factory)

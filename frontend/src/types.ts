@@ -1,4 +1,39 @@
 export type NodeStatus = "new" | "studied" | "mastered" | "passed";
+export const PIECE_KINDS = ["定义", "记号", "性质", "方法", "例子"] as const;
+export type PieceKind = (typeof PIECE_KINDS)[number];
+export type Strength = "required" | "suggested" | "extension";
+/** A check or practice result for one bridge: "missing" is written only by a failed practice. */
+export type BridgeState = { result: "known" | "unsure" | "missing"; at: string; via: "check" | "attempt"; answer?: string } | null;
+export type Piece = { id: string; kind: PieceKind; title: string; detail: string; sources?: Source[]; uncertain?: boolean; state?: BridgeState };
+export type Step = { id: string; title: string };
+export type Bridge = {
+  id: string;
+  from_piece: string;
+  to_step: string;
+  how: string;
+  if_missing: string;
+  strength: Strength;
+  check: { question: string; answer: string };
+  sources: Source[];
+  uncertain: boolean;
+  origin: "migrated" | "ai" | "user";
+  legacy?: boolean;
+  state?: BridgeState;
+};
+export type Source = { material_id: string; page: number; quote: string };
+/** A main line: an ordered chain of nodes that together answer one larger question. */
+export type Line = {
+  id: string;
+  name: string;
+  goal: string;
+  node_ids: string[];
+  endpoint: string;
+  story: { node_id: string; text: string }[];
+  retells?: { id: string; at: string; text: string; review: { covered: string[]; missing: { node_id: string; note: string }[]; feedback: string } }[];
+  origin: "ai" | "user";
+  color: number;
+  progress: { done: number; total: number; ratio?: number; nodes?: { done: number; total: number } };
+};
 export const RELATION_KINDS = ["前置知识", "帮助理解", "工具关系", "相似或对比", "归纳关系"] as const;
 export type RelationKind = (typeof RELATION_KINDS)[number];
 export type Attempt = {
@@ -12,6 +47,7 @@ export type Attempt = {
     reasoning: string;
     blockers: string[];
     next_step: string;
+    missing_bridges?: string[];
   };
   resolution?: string;
   rating_state: "pending" | "submitted" | "skipped";
@@ -63,6 +99,9 @@ export type LearningNode = {
   kind?: "concept" | "synthesis" | string;
   related_node_ids?: string[];
   relation_id?: string;
+  progress?: { known: number; total: number; ratio: number; done: boolean };
+  pieces?: Piece[];
+  steps?: Step[];
   title: string;
   summary: string;
   week: string;
@@ -111,6 +150,7 @@ export type GoalFields = {
   subtasks: { id: string; title: string; done: boolean; node_id?: string; auto_done?: boolean }[];
 };
 export type Goal = GoalFields & {
+  route_ids?: string[];
   id: string;
   created_at: string;
   sources: { material_id: string; page: number; quote: string }[];
@@ -123,6 +163,7 @@ export type GoalPreview = {
 };
 /** A named note of its own, bound to one or more nodes (the node's main note lives on the node). */
 export type CourseNote = {
+  anchor?: { kind: "bridge" | "line"; id: string };
   id: string;
   title: string;
   node_ids: string[];
@@ -140,6 +181,11 @@ export type Course = {
   nodes: LearningNode[];
   goals?: Goal[];
   notes?: CourseNote[];
+  lines?: Line[];
+  overview?: { summary: string; abilities: string[] };
+  progress?: { pieces: { known: number; total: number }; nodes: { done: number; total: number }; ratio?: number };
+  /** Nodes on two or more lines. */
+  transfers?: string[];
   edges: {
     id: string;
     source: string;
@@ -160,6 +206,10 @@ export type Course = {
     synthesis_link?: boolean;
     origin_relation_id?: string;
     related_node_ids?: string[];
+    /** Learner-facing kind projected by the server. */
+    kind?: "用到" | "推广" | "对比" | "帮助理解" | "综合";
+    bridges?: Bridge[];
+    strength?: Strength | null;
   }[];
   ratings: unknown[];
   suggestions: { id: string; [key: string]: unknown }[];

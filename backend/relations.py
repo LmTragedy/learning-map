@@ -1,5 +1,6 @@
 """Compatibility projection and helpers for course-owned learning relationships."""
 
+from .bridges import bridge_context, bridges_of, learner_kind, real_text
 from .review_scope import active_sources, strict_scope
 from .store import identity
 
@@ -47,19 +48,23 @@ def relations_for_node(course, node):
             )
             if parent is not None:
                 edge = {**parent, **edge, "id": parent["id"]}
-        if not all(edge.get(field, "").strip() for field in ("explanation", "when_to_use", "basis")):
-            continue
         if node["id"] not in {edge.get("source"), edge.get("target")}:
+            continue
+        # Placeholders from older relationships are not explanations and must not reach the AI.
+        texts = {field: real_text(edge.get(field)) for field in ("explanation", "when_to_use", "basis")}
+        bridges = bridge_context(course, edge)
+        if not texts["explanation"] and not bridges:
             continue
         other_id = edge["target"] if edge["source"] == node["id"] else edge["source"]
         other = nodes.get(other_id)
         if other is None:
             continue
         fields = (
-            "id", "relation", "explanation", "when_to_use", "basis", "evidence_kind", "sources",
+            "id", "relation", "evidence_kind", "sources",
             "uncertain", "confirmed", "presentation", "synthesis_node_id", "controls_unlock",
         )
         entry = {key: edge.get(key) for key in fields}
+        entry.update(texts, kind=learner_kind(edge), bridges=bridges)
         entry.update(
             other_node={"id": other["id"], "title": other["title"], "status": other["status"]},
             direction="forward" if edge["source"] == node["id"] else "reverse",
@@ -73,6 +78,28 @@ def relations_for_node(course, node):
         )
         visible.append(entry)
     return visible
+
+
+def incoming_bridges(course, node):
+    """Bridges into a node that a failed practice may point back to, under the same scope rules."""
+    nodes = {item["id"]: item for item in course["nodes"]}
+    strict = strict_scope(course)
+    found = []
+    for edge in course.get("edges", []):
+        if edge.get("synthesis_link") or edge.get("target") != node["id"]:
+            continue
+        source = nodes.get(edge.get("source"))
+        if source is None or (strict and not relationship_in_scope(course, edge)):
+            continue
+        pieces = {piece["id"]: piece for piece in source.get("pieces", [])}
+        for bridge in bridges_of(edge):
+            piece = pieces.get(bridge.get("from_piece"))
+            found.append(dict(
+                id=bridge["id"], relation_id=edge["id"], from_node=source["title"],
+                uses=f"{piece['kind']}：{piece['title']}" if piece else "整个知识点",
+                how=bridge.get("how", ""), strength=bridge["strength"],
+            ))
+    return found
 
 
 def relationship_in_scope(course, edge):
@@ -97,7 +124,13 @@ def relationship_in_scope(course, edge):
     if parent.get("evidence_kind", "ai_inference") == "ai_inference":
         return False
     sources = parent.get("sources", [])
-    return bool(sources) and all(source.get("material_id") in selected for source in sources)
+    bridge_sources = [source for bridge in parent.get("bridges", []) for source in bridge.get("sources", [])]
+    source_pieces = {piece["id"]: piece for piece in nodes[parent["source"]].get("pieces", [])}
+    piece_sources = [
+        source for bridge in parent.get("bridges", [])
+        for source in source_pieces.get(bridge.get("from_piece"), {}).get("sources", [])
+    ]
+    return bool(sources) and all(source.get("material_id") in selected for source in [*sources, *bridge_sources, *piece_sources])
 
 
 def relation_fingerprint(course, node):
@@ -134,8 +167,8 @@ def _synthesis_details(edge, related_nodes):
     if not title:
         title = ("与" + "、".join(item["title"] for item in related_nodes[:3]) + "的综合应用")[:160]
     if not summary:
-        explanation = edge.get("explanation", "旧版关系未记录解释。")
-        when_to_use = edge.get("when_to_use", "旧版关系未记录适用时机。")
+        explanation = real_text(edge.get("explanation")) or "整合相关知识，说明它们如何一起使用。"
+        when_to_use = real_text(edge.get("when_to_use")) or "结合相关知识练习时"
         summary = f"{explanation}\n\n适用时机：{when_to_use}".strip()[:3000]
     sources = [source for item in related_nodes for source in item.get("sources", [])]
     sources.extend(edge.get("sources", []))
@@ -186,7 +219,7 @@ def synthesis_context(course, node):
         if not relationship_in_scope(course, edge):
             return None
     return {
-        "relation": {key: edge.get(key) for key in (
+        "relation": {key: real_text(edge.get(key)) if key in {"explanation", "when_to_use", "basis"} else edge.get(key) for key in (
             "id", "relation", "explanation", "when_to_use", "basis", "evidence_kind", "sources",
             "uncertain", "confirmed", "forward_difficulty", "reverse_difficulty", "controls_unlock",
         )},

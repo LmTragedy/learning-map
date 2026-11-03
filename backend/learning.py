@@ -4,10 +4,17 @@ from dataclasses import dataclass
 
 from pydantic import ValidationError
 
+from .bridges import apply_draft_bridges, record_attempt_bridges, stamp_generated
 from .conversation_labels import conversation_label, remember_conversation
 from .domain import append_chat, find_node, make_node, propose_streak, record_attempt
 from .language_support import LANGUAGE_GUIDANCE
-from .relations import create_synthesis_node, relation_fingerprint, relations_for_node, synthesis_context
+from .relations import (
+    create_synthesis_node,
+    incoming_bridges,
+    relation_fingerprint,
+    relations_for_node,
+    synthesis_context,
+)
 from .review_scope import (
     active_records,
     active_sources,
@@ -213,9 +220,38 @@ def _has_cycle(nodes):
 def append_map(course, draft):
     _validate_sources(course, draft["nodes"])
     _validate_relation_sources(course, draft.get("relations", []))
+    _validate_bridge_sources(course, draft["nodes"])
+    _validate_bridge_sources(course, draft.get("relations", []))
     key_to_node, fresh = _map_nodes(course, draft["nodes"])
     _append_prerequisites(course, draft["nodes"], key_to_node, fresh)
+    _append_bridges(course, draft["nodes"], key_to_node)
     _append_generated_relations(course, draft.get("relations", []), key_to_node)
+
+
+def _validate_bridge_sources(course, specifications):
+    for specification in specifications:
+        pieces = [*specification.get("pieces", []), *(bridge["piece"] for bridge in specification.get("bridges", []))]
+        for item in [*pieces, *specification.get("bridges", [])]:
+            item["uncertain"] = item.get("uncertain", True)
+            _validate_sources(course, [item])
+
+
+def _append_bridges(course, specifications, key_to_node):
+    """Pieces, steps and prerequisite bridges from generation; existing ones are never replaced."""
+    for specification in specifications:
+        node = key_to_node[specification["key"]]
+        if not node.get("pieces") and not node.get("steps"):
+            drafted = dict(pieces=specification.get("pieces", []), steps=specification.get("steps", []))
+            stamp_generated(drafted)
+            node["pieces"], node["steps"] = drafted["pieces"], drafted["steps"]
+        by_parent = {}
+        for bridge in specification.get("bridges", []):
+            if bridge["from_key"] in specification["prerequisites"] and bridge["from_key"] in key_to_node:
+                by_parent.setdefault(key_to_node[bridge["from_key"]]["id"], []).append(bridge)
+        for edge in course.get("edges", []):
+            drafts = by_parent.get(edge.get("source"))
+            if edge.get("target") == node["id"] and drafts and "bridges" not in edge and not edge.get("synthesis_link"):
+                edge["bridges"] = apply_draft_bridges(find_node(course, edge["source"]), node, drafts)
 
 
 def _map_nodes(course, specifications):
@@ -304,6 +340,11 @@ def _append_generated_relations(course, specifications, key_to_node):
         edge = _map_relation(specification, key_to_node)
         if any(_same_relation(existing, edge) for existing in edges):
             continue
+        bridges = edge.pop("bridges", [])
+        if bridges and edge["relation"] != "相似或对比":
+            edge["bridges"] = apply_draft_bridges(
+                find_node(course, edge["source"]), find_node(course, edge["target"]), bridges,
+            )
         edge.update(id=identity(), synthesis_node_id=None, confirmed=False)
         edges.append(edge)
         if edge["presentation"] == "synthesis":
@@ -371,6 +412,12 @@ class Learning:
             "双向初始难度、uncertain。material_quote/material_inference必须给sources，ai_inference可不提供来源；"
             "presentation=synthesis时给出synthesis_title和synthesis_summary。难度仅是未验证的初始估计。"
             "不要把相似关系误作前置，关系类型只描述联系，解锁只由prerequisites决定。"
+            "每个节点再拆出3–6块pieces（kind只能是定义/记号/性质/方法/例子，title写具体名称，detail一句话）"
+            "和按顺序的2–6步steps（学会它要走的步骤名称）。对每个prerequisites写知识桥bridges："
+            "from_key是该先修key，piece是先修节点里被用到的那一块，step是本节点用到它的那一步，"
+            "how一句动词开头的话，if_missing写不会时的卡点，strength为required/suggested/extension，"
+            "check_question是10秒能答的小题，check_answer是参考答案；都写简短。"
+            "relations里除对比以外每条联系也写bridges，结构同上但无需from_key，引用source的块与target的步骤。"
             "来源识别待用户确认。sources.quote只能摘录材料实际提取文字；"
             "key用短唯一标识，prerequisites仅引用本次key。已有节点同标题会保留状态，"
             "不要重命名已有概念。已有标题："
@@ -462,8 +509,12 @@ class Learning:
             "没有英文尝试就说明尚未观察到，不把中文正确作答判错或视为英文熟练。"
             "语言不清且无法确定原意时outcome=uncertain，next_step请用户用中文或例子澄清；"
             "若知识逻辑清楚正确，不因简单英文、同义表达或非关键语法判错。"
-            "中文表达正确时，next_step邀请用户先尝试简单英文，可给短提示，避免直接替写完整答案。\n节点："
+            "中文表达正确时，next_step邀请用户先尝试简单英文，可给短提示，避免直接替写完整答案。"
+            "未通过或不确定时，对照下面的“进站知识桥”判断卡点是否来自前面某一块没掌握，"
+            "把可能缺的桥 id 放进 missing_bridges（只能从列表中选，没有就留空）；通过时留空。\n节点："
             + context
+            + "\n进站知识桥："
+            + json.dumps(incoming_bridges(course, node), ensure_ascii=False)
             + "\n题目："
             + json.dumps(question, ensure_ascii=False)
             + "\n作答/参考答案/附件提取："
@@ -502,6 +553,7 @@ class Learning:
             require_same_node(course, current, node_id)
             updated = find_node(current, node_id)
             record_attempt(updated, submission)
+            record_attempt_bridges(current, updated, incoming_bridges(current, updated), judgment)
             propose_streak(current, updated)
             if thread_id:
                 remember_conversation(
