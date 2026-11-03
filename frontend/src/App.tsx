@@ -42,6 +42,7 @@ import {
   CircleCheck,
   FolderSync,
   ListTree,
+  ClipboardList,
 } from "lucide-react";
 import { api, materialFileUrl } from "./api";
 import { cn } from "./lib/utils";
@@ -55,6 +56,7 @@ import { recommendedNode } from "./learningNavigation";
 import { isRelationVisible } from "./relationVisibility";
 import { NodePanel } from "./NodePanel";
 import { GoalBoard } from "./GoalBoard";
+import { ProblemBank } from "./ProblemBank";
 import { GoalActionsContext } from "./goalActions";
 import { goalProgressDiff, goalsForNode, type GoalChange } from "./goalContext";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -526,6 +528,7 @@ export function App() {
   const sideTools: NavTool[] = [
     { label: "目标看板", ...goalsTool },
     { label: "课程笔记", ...notesTool },
+    { label: "真题题库", Icon: ClipboardList, onClick: () => setModal("problems"), disabled: !course },
     { label: "学习档案", Icon: Archive, onClick: () => void openProfile() },
     { label: "Obsidian 导入导出", Icon: FolderSync, onClick: () => void showObsidian() },
     { label: "设置", Icon: Settings2, onClick: () => void openSettings() },
@@ -539,6 +542,7 @@ export function App() {
       if(target)openNode(target,edge?.id||'');
       if(task.kind==='lines'||task.kind==='retell'){setLineFocus(task.kind==='retell'?task.target:'');setModal('lines');}
       if(task.kind==='goals')setModal('goals');
+      if(task.kind==='problem_unit')setModal('problems');
       setTaskNavigation({task,sequence:Date.now()});
     }}>
     <div className={cn("shell flex h-dvh overflow-hidden bg-background text-foreground", navOpen && "nav-open")}>
@@ -673,6 +677,9 @@ export function App() {
                     <FileSearch /> 复习所选 PDF
                   </Button>
                 )}
+                <Button size="sm" variant="outline" onClick={() => setModal("problems")} title="导入真题，按真题标准出题和练习">
+                  <ClipboardList /> <span className="max-[480px]:hidden">真题题库{course.problem_sets?.length ? ` · ${course.problem_sets.length}` : ""}</span>
+                </Button>
                 <Button size="sm" variant="outline" onClick={() => void openImport()}>
                   <Upload /> <span className="max-[480px]:hidden">导入材料</span>
                 </Button>
@@ -985,7 +992,7 @@ export function App() {
         <Dialog.Portal>
         <Dialog.Overlay className="modal-scrim">
           <Dialog.Content
-            className={`modal ${modal && ["profile", "versions", "obsidian", "recall", "import", "materials", "goals", "course-notes"].includes(modal) ? "modal-wide" : ""}`}
+            className={`modal ${modal && ["profile", "versions", "obsidian", "recall", "import", "materials", "goals", "course-notes", "problems"].includes(modal) ? "modal-wide" : ""}`}
             aria-describedby={undefined}
             // Clicking the backdrop never throws away typed input; it asks first, like Escape and ×.
             onPointerDownOutside={(event) => { if (modalDirty()) { event.preventDefault(); setDiscardFor(modal); } }}
@@ -1005,6 +1012,16 @@ export function App() {
             {modal === "lines" && course && <LinesPanel key={`${course.id}:${lineFocus}`} course={course} initialLineId={lineFocus} busy={busy} aiEnabled={aiOn} act={lineAct}
               onNode={(node) => openNode(node)} onNote={openMapNote} />}
             {modal === "goals" && course && <GoalBoard key={`${course.id}:${goalFocus}`} initialGoalId={goalFocus} course={course} busy={busy} aiEnabled={aiOn} run={run} onRefresh={refreshCourse} onNode={openGoalNode} />}
+            {modal === "problems" && course && <ProblemBank key={course.id} course={course} busy={busy} aiEnabled={aiOn} run={run} onRefresh={refreshCourse}
+              onOpenNode={(nodeId) => { setModal(null); openGoalNode(nodeId); }}
+              onPractise={(nodeId) => {
+                const node = course.nodes.find((item) => item.id === nodeId);
+                if (!node) return;
+                setModal(null);
+                openNode(node);
+                // Same path a finished question task takes: open this node's practice tab.
+                setTaskNavigation({ task: { id: `problem-${nodeId}`, course_id: course.id, kind: "question", target: nodeId, state: "applied", request_id: "", created_at: "", updated_at: "" }, sequence: Date.now() });
+              }} />}
             {modal === "course-notes" && course && <CourseNotes course={course}
               onExitReview={() => void saveReviewScope(false).then(() => setModal("course-notes"))}
               onOpen={(node, noteId = "") => openMapNote(node, noteId)} />}

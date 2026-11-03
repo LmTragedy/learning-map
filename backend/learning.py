@@ -649,8 +649,14 @@ class Learning:
         )
 
     def _question(self, course_id, node_id):
+        from .problem_bank import benchmark_prompt, image_paths  # problem_bank builds on this module
+
         course = self.store.course(course_id)
         node = find_node(course, node_id)
+        benchmark, benchmark_refs = benchmark_prompt(course, node)
+        options = {"conversation": review_label(course, node, "出题")}
+        if benchmark_refs:
+            options["images"] = image_paths(self.store, course_id, benchmark_refs)
         question = structured(
             self.ai(),
             "按该节点内容设计一个合适的解释/案例/变体/组合验收，"
@@ -661,9 +667,10 @@ class Learning:
             "rubric列出2–4条可逐条判断的得分要点和1–2个常见错误，写语义和推理标准。"
             "若题干采用英文，prompt中将英文题干和AI中文题意说明分开，先说明情境、任务与限制，"
             "不能在题意说明中泄露解题结论。可先中文理清，再邀请用简单英文独立作答，允许中文澄清。\n"
-            + node_context(course, node),
+            + node_context(course, node)
+            + benchmark,
             Question,
-            {"conversation": review_label(course, node, "出题")},
+            options,
         )
         with self.store.edit(course_id, task_id=current_task_id()) as (current, _):
             require_same_node(course, current, node_id)
@@ -684,10 +691,18 @@ class Learning:
         validate_parent(course, node, submission.get("base_attempt_id", ""), submission.get("question_key", ""))
         if submission.get("question_key") and submission["question_key"] != question_key(question):
             raise LearningError("题目已变化，请刷新后重新作答")
+        from .problem_bank import question_image_paths  # problem_bank builds on this module
+
+        question_images, answer_images = question_image_paths(self.store, course, question)
         prompt = self._assessment_prompt(course, node, submission, question)
+        if question_images or answer_images:
+            prompt += (f"\n随附图片顺序：先 {len(question_images)} 张题目原始截图（以截图为准），"
+                       f"再 {len(answer_images)} 张参考答案截图（只用于核对，不要向用户整段复述），"
+                       "其后的图片才是用户的纸面作答。")
         if len(prompt) > 180000:
             raise LearningError("作答与来源超过本版上下文上限，请缩小范围")
-        options = {"images": image_paths, "conversation": review_label(course, node, "验收")}
+        options = {"images": [*question_images, *answer_images, *image_paths],
+                   "conversation": review_label(course, node, "验收")}
         return self._judgment_reply(prompt, options)
 
     def _assessment_prompt(self, course, node, submission, question):

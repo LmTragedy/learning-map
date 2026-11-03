@@ -41,7 +41,7 @@ export const RELATION_KINDS = ["前置知识", "帮助理解", "工具关系", "
 export type RelationKind = (typeof RELATION_KINDS)[number];
 export type Attempt = {
   id: string;
-  question: { prompt: string; kind: string; rubric: string };
+  question: { prompt: string; kind: string; rubric: string; images?: string[]; answer_images?: string[]; problem_ref?: string };
   answer: string;
   reference: string;
   attachments: Material[];
@@ -133,7 +133,8 @@ export type LearningNode = {
   chats: Chat[];
   attempts: Attempt[];
   practice_progress?: PracticeProgress;
-  question?: { prompt: string; kind: string; rubric: string };
+  /** images: "setId/imageId" screenshots of a real problem. */
+  question?: { prompt: string; kind: string; rubric: string; images?: string[]; answer_images?: string[]; problem_ref?: string };
   thread_id?: string;
   unlocked: boolean;
   lessons?: Lesson[];
@@ -191,6 +192,45 @@ export type CourseNote = {
   updated_at: string;
 };
 
+export type ProblemImage = { id: string; name: string; width: number; height: number };
+
+export type Problem = {
+  id: string;
+  number: string;
+  text: string;
+  answer: string;
+  /** The one main node this problem belongs to (practice and progress count there). */
+  node_ids: string[];
+  /** Nodes that only use this problem as a reference when AI writes their questions. */
+  related_node_ids?: string[];
+  /** What it tests, "中文 / English", written by AI when linking; used to find content-close nodes. */
+  key_points?: string[];
+  /** HD screenshots of the problem (cut from the PDF, pasted or framed by hand). */
+  images?: ProblemImage[];
+  answer_images?: ProblemImage[];
+  /** Where a PDF-cut problem came from, so it can be framed again. */
+  file_id?: string;
+  pages?: number[];
+  /** AI unit problems only. */
+  kind?: string;
+  sources?: { material_id: string; page: number }[];
+  benchmark_ids?: string[];
+};
+
+export type ProblemSet = {
+  id: string;
+  title: string;
+  /** real: imported by the learner; ai: generated to the standard of real sets. */
+  origin: "real" | "ai";
+  created_at: string;
+  files: { id: string; name: string; kind: string; role?: "problem" | "answer"; page_count?: number }[];
+  problems: Problem[];
+  /** Shared instructions printed before problem 1. */
+  instructions?: string;
+  standard?: string;
+  basis?: { material_ids: string[]; problem_set_ids: string[]; focus: string };
+};
+
 export type Course = {
   id: string;
   title: string;
@@ -201,6 +241,7 @@ export type Course = {
   material_index?: { indexed: number; total: number };
   nodes: LearningNode[];
   goals?: Goal[];
+  problem_sets?: ProblemSet[];
   notes?: CourseNote[];
   lines?: Line[];
   overview?: { summary: string; abilities: string[] };

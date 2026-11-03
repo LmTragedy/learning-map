@@ -1,3 +1,4 @@
+import { problemSummary } from "./problemStatus";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowRight, BookOpen, ChevronDown, Info, ListOrdered, Lock, Network, NotebookPen, PanelRight, Sparkles } from "lucide-react";
 import { cn } from "./lib/utils";
@@ -133,6 +134,7 @@ function RouteList({ course, selected, directEntryId, directWeek, onSelect, revi
   const byId = new Map(course.nodes.map((node) => [node.id, node]));
   const next = byId.get(route?.next_node_id ?? "");
   const transfers = new Set(course.transfers || []);
+  const problems = problemSummary(course);
   const noted = new Set([...course.nodes.filter((node) => node.personal_note?.trim()).map((node) => node.id), ...(course.notes || []).flatMap((note) => note.node_ids)]);
   const lines = course.lines || [];
   const onLine = new Set(lines.flatMap((line) => line.node_ids));
@@ -202,7 +204,7 @@ function RouteList({ course, selected, directEntryId, directWeek, onSelect, revi
         </div>
         {open && <ol className={cn("mt-0.5 flex list-none flex-col gap-px", group.color && "route-line")} style={group.color ? { "--line": group.color } as CSSProperties : undefined}>
           {nodes.map((node) => available(node)
-            ? <RouteRow key={node.id} node={node} selected={selected?.id === node.id} transfer={transfers.has(node.id)} hasNote={noted.has(node.id)}
+            ? <RouteRow key={node.id} node={node} selected={selected?.id === node.id} transfer={transfers.has(node.id)} hasNote={noted.has(node.id)} problems={problems.get(node.id)}
                 dimmed={Boolean(focusIds && !focusIds.includes(node.id))} onSelect={onSelect} />
             : null)}
           {hidden > 0 && <li className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-muted-foreground"><Lock size={12} aria-hidden /> 另有 {hidden} 个未解锁</li>}
@@ -212,8 +214,8 @@ function RouteList({ course, selected, directEntryId, directWeek, onSelect, revi
   </aside>;
 }
 
-function RouteRow({ node, selected, transfer, hasNote, dimmed, onSelect }: {
-  node: LearningNode; selected: boolean; transfer: boolean; hasNote: boolean; dimmed: boolean; onSelect: (node: LearningNode) => void;
+function RouteRow({ node, selected, transfer, hasNote, problems, dimmed, onSelect }: {
+  node: LearningNode; selected: boolean; transfer: boolean; hasNote: boolean; problems?: { total: number; passed: number }; dimmed: boolean; onSelect: (node: LearningNode) => void;
 }) {
   const StatusIcon = statusIcon[node.status];
   return <li data-node-id={node.id}>
@@ -223,6 +225,8 @@ function RouteRow({ node, selected, transfer, hasNote, dimmed, onSelect }: {
       <StatusIcon size={14} className={cn("shrink-0", stateText[node.status])} aria-hidden />
       <span className="min-w-0 flex-1 truncate">{node.title}</span>
       {transfer && <Badge variant="outline" className="px-1.5">换乘</Badge>}
+      {problems && <span className={cn("shrink-0 rounded px-1 text-[11px] tabular-nums", problems.passed === problems.total ? "text-st-passed" : "text-muted-foreground")}
+        title={`关联真题 ${problems.total} 道，通过 ${problems.passed} 道`}>真题 {problems.passed}/{problems.total}</span>}
       {hasNote && <NotebookPen size={12} className="shrink-0 text-muted-foreground" aria-label="有笔记" />}
       {!!node.lessons?.length && <BookOpen size={12} className="shrink-0 text-muted-foreground" aria-label="有小课" />}
       <span className="sr-only">{statusLabel[node.status]}</span>

@@ -202,7 +202,7 @@ export function TaskCards({limit=2,...query}:InlineQuery&{limit?:number}) {
   return <div className="task-stack">{tasks.slice(0,limit).map(task=><TaskCard key={task.id} task={task} view={l.viewFor(task)} onRefresh={l.refresh} onRecover={()=>l.recover(task)} onRegenerate={()=>l.regenerate(task)} onCollect={()=>l.collect(task)} onOrganize={()=>l.organize(task)} onReadResult={()=>l.readResult(task)} onOpen={()=>l.navigate(task)} onDismiss={query.taskId||ACTIVE_STATES.has(task.state)?undefined:()=>l.hideCard(task)} onNewTask={rid=>{const child=l.tasks.find(t=>t.request_id===rid);if(child)l.navigate(child);else l.setOpen(true);}}/>)}{tasks.length>limit&&<button type="button" className="task-more" onClick={()=>l.setOpen(true)}>还有 {tasks.length-limit} 个 AI 任务<span aria-hidden="true">→</span></button>}</div>;
 }
 /** Course-wide work with no panel of its own shows as cards under the header. */
-const GLOBAL_KINDS=['map','lines','recall','retell','goals','bridge_history'];
+const GLOBAL_KINDS=['map','lines','recall','retell','goals','bridge_history','problem_unit','problem_link'];
 /** A status slot for one kind of task (e.g. the batch bridge run), drawn by the caller where that task was started. */
 export function TaskSlot({kind,target,children}:{kind:string;target:string;children:(task:AiTask|undefined,view:ReturnType<Ledger['viewFor']>|undefined,dismiss:()=>void)=>ReactNode}){
   const l=useCourseTasks();

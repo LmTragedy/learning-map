@@ -14,6 +14,7 @@ export type Modal =
   | "goals"
   | "lines"
   | "course-notes"
+  | "problems"
   | null;
 
 export function modalTitle(m: Modal) {
@@ -34,6 +35,7 @@ export function modalTitle(m: Modal) {
         lines: "课程全貌与主线串讲",
         "course-notes": "课程笔记",
         review: "选择复习资料",
+        problems: "真题题库",
       } as Record<string, string>
     )[m || ""] || ""
   );
@@ -50,6 +52,9 @@ export function busyLabel(key: string) {
         chat: "AI 正在整理思路…",
         attempt: "正在检查作答…",
         question: "正在生成练习…",
+        "problem-import": "正在导入并切分题目…",
+        "problem-unit": "正在按真题标准出单元题…",
+        "problem-link": "正在把真题关联到知识点…",
         restore: "正在恢复课程…",
         delete: "正在删除课程…",
         recall: "正在找回对话…",
