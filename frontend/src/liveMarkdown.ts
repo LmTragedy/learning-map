@@ -34,11 +34,13 @@ const INLINE_STYLE = /<(span) style="color:(#[0-9a-fA-F]{6})">(.*?)<\/span>|<(ma
 const TASK = /^(\s*[-*+]\s+)\[([ xX])\]\s/;
 
 /** Colours, highlights and to-do boxes: Markdown has no syntax for them, so notes keep small HTML tags. */
-function extras(view: EditorView, ranges: Range<Decoration>[], editing: (from: number, to: number) => boolean) {
+function extras(view: EditorView, ranges: Range<Decoration>[], editing: (from: number, to: number) => boolean, code: Set<number>) {
   for (const visible of view.visibleRanges) {
     let at = visible.from;
     while (at <= visible.to) {
       const line = view.state.doc.lineAt(at);
+      // Code is shown as typed: no colours or checkboxes inside a code block.
+      if (code.has(line.number)) { at = line.to + 1; continue; }
       const active = editing(line.from, line.to);
       for (const match of line.text.matchAll(INLINE_STYLE)) {
         const start = line.from + match.index!;
@@ -66,6 +68,7 @@ function extras(view: EditorView, ranges: Range<Decoration>[], editing: (from: n
 function decorations(view: EditorView) {
   const ranges: Range<Decoration>[] = [];
   const visited = new Set<string>();
+  const code = new Set<number>();
   const editing = (from: number, to: number) => view.hasFocus && view.state.selection.ranges.some((selection) =>
     view.state.doc.lineAt(selection.from).from <= to && view.state.doc.lineAt(selection.to).to >= from);
   for (const visible of view.visibleRanges) syntaxTree(view.state).iterate({
@@ -82,8 +85,25 @@ function decorations(view: EditorView) {
           ranges.push(Decoration.line({ class: "cm-note-quote" }).range(view.state.doc.line(line).from));
         }
       }
+      if (node.name === "FencedCode") {
+        // One continuous box for the block; the fence lines shrink to a thin edge when not editing.
+        const first = view.state.doc.lineAt(node.from).number, last = view.state.doc.lineAt(node.to).number;
+        const open = editing(node.from, node.to);
+        for (let line = first; line <= last; line++) {
+          code.add(line);
+          const edge = line === first ? " cm-note-codeblock-first" : line === last ? " cm-note-codeblock-last" : "";
+          const fence = (line === first || (line === last && last > first && /^\s*(`{3,}|~{3,})\s*$/.test(view.state.doc.line(line).text)))
+            && !open ? " cm-note-codefence" : "";
+          ranges.push(Decoration.line({ class: `cm-note-codeblock${edge}${fence}` }).range(view.state.doc.line(line).from));
+        }
+      }
       const parent = node.node.parent;
       if (!parent || editing(parent.from, parent.to)) return;
+      if (parent.name === "FencedCode" && node.name === "CodeMark"
+        && view.state.doc.lineAt(node.from).number === view.state.doc.lineAt(node.to).number) {
+        ranges.push(Decoration.replace({}).range(node.from, node.to));
+        return;
+      }
       const hidden = node.name === "HeaderMark" || node.name === "EmphasisMark" || node.name === "QuoteMark"
         || (node.name === "CodeMark" && parent.name === "InlineCode")
         || (["LinkMark", "URL", "LinkTitle"].includes(node.name) && parent.name === "Link");
@@ -101,7 +121,7 @@ function decorations(view: EditorView) {
       }
     },
   });
-  extras(view, ranges, editing);
+  extras(view, ranges, editing, code);
   return Decoration.set(ranges, true);
 }
 

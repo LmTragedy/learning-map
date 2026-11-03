@@ -41,7 +41,7 @@
 .node-note-preview th, .node-note-preview td { padding: 6px 10px; border: 1px solid var(--border); }
 .node-note-preview a { text-decoration: underline; }
 .node-note-preview .task-list-item { list-style: none; }
-.node-note-review { display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; border-top: 1px solid var(--border); padding-top: 16px; }
+.node-note-review { display: flex; flex-direction: column; gap: 10px; }
 .node-note-document .is-knowledge_logic { --review-tone: var(--danger); }
 .node-note-document .is-english { --review-tone: var(--st-mastered); }
 .node-note-document .is-uncertain { --review-tone: var(--amber); }
@@ -109,3 +109,19 @@
 /* Typeset formulas: long display equations scroll instead of overflowing the chat column. */
 .chat-md .katex, .node-note-preview .katex { font-size: 1.08em; overflow-wrap: normal; }
 .chat-md .katex-display, .node-note-preview .katex-display { margin: .7em 0; padding: .15em 0; overflow-x: auto; overflow-y: hidden; }
+/* Fenced code blocks: one continuous monospace box; the ``` lines become thin edges. */
+.node-note-code .cm-line.cm-note-codeblock { padding: 0 14px; background: color-mix(in srgb, var(--foreground) 7%, transparent); font-family: var(--font-mono, monospace); font-size: .88em; line-height: 1.65; white-space: pre-wrap; }
+.node-note-code .cm-line.cm-note-codeblock-first { margin-top: 6px; padding-top: 8px; border-radius: 8px 8px 0 0; }
+.node-note-code .cm-line.cm-note-codeblock-last { margin-bottom: 6px; padding-bottom: 8px; border-radius: 0 0 8px 8px; }
+.node-note-code .cm-line.cm-note-codeblock-first.cm-note-codeblock-last { border-radius: 8px; }
+.node-note-code .cm-line.cm-note-codefence { color: var(--muted-foreground); font-size: .75em; line-height: 1.2; }
+.node-note-code .cm-note-codeblock .cm-note-code { background: none; border-radius: 0; }
+/* AI check as a small status dot next to the save status. */
+.note-ai-dot { position: relative; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 6px; border-radius: 999px; font-size: var(--fs-xs); color: var(--muted-foreground); cursor: var(--cursor-pointer, pointer); }
+.note-ai-dot:hover, .note-ai-dot[data-state="open"] { background: var(--accent); color: var(--foreground); }
+.note-ai-dot > i { width: 8px; height: 8px; border-radius: 50%; background: var(--dot, #30a46c); }
+.note-ai-dot.is-off > i { --dot: var(--muted-foreground); opacity: .6; }
+.note-ai-dot.is-error > i { --dot: #e5484d; }
+.note-ai-dot.is-checking > i { animation: note-ai-pulse 1.1s ease-in-out infinite; }
+@keyframes note-ai-pulse { 50% { opacity: .35; transform: scale(.75); } }
+@media (prefers-reduced-motion: reduce) { .note-ai-dot.is-checking > i { animation: none; opacity: .6; } }

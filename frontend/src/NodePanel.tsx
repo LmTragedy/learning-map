@@ -13,6 +13,7 @@ import { statusIcon } from "./status";
 import { PracticePanel } from "./PracticePanel";
 import { LessonStudy } from "./LessonPanel";
 import { NodeChat } from "./NodeChat";
+import { SelectionToNote } from "./SelectionToNote";
 import { BridgeDetail } from "./BridgeDetail";
 import { PersonalNote } from "./PersonalNote";
 import { Workbench } from "./workbench/Workbench";
@@ -174,6 +175,7 @@ export function NodePanel({
 }) {
   const [reviewMastered, setReviewMastered] = useState(false);
   const [message, setMessage] = useState("");
+  const [linkNotice, setLinkNotice] = useState<{ nodeId: string; text: string } | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const bench = useWorkbenchState(initialNote, initialNoteId);
   const { noteOpen, noteId, material, pendingAppend, appendToNote, openMaterial } = bench;
@@ -252,6 +254,7 @@ export function NodePanel({
         <Workbench course={course} node={node} material={material} active={bench.active} noteOpen={noteOpen}
           study={bench.study ? {
             downloadUrl: studyLesson && lessonHtmlUrl(course.id, node.id, studyLesson.id),
+            lessonTitle: studyLesson?.title,
             lesson: <LessonStudy course={course} node={node} lessonId={bench.lessonId} busy={busy} aiEnabled={aiEnabled} act={act}
               onSelect={bench.selectLesson} onAsk={askInChat} onPractice={bench.openPractice} />,
             practice: <PracticePanel course={course} node={node} busy={busy} aiEnabled={aiEnabled} run={run} onRefresh={onRefresh} onRatingSubmitted={onRatingSubmitted} onNavigate={onNavigateNode} />,
@@ -285,10 +288,10 @@ export function NodePanel({
           </Button>
         </div>
       </div>
-      {view === "chat" ? <NodeChat node={node} busy={busy} aiEnabled={aiEnabled} message={message} fieldRef={chatField}
+      {view === "chat" ? <SelectionToNote className="min-h-0 flex-1" label="AI 导师 · 学习对话" onExcerpt={appendToNote} onAsk={askInChat}><NodeChat node={node} busy={busy} aiEnabled={aiEnabled} message={message} fieldRef={chatField}
         context={<><b className="truncate">{node.title}</b>{studyContext && <><span aria-hidden>·</span>{studyContext}</>}</>}
         onMessage={setMessage} onSend={() => void sendChat()}
-        onSaveToNote={(text) => appendToNote(quoteBlock(text, "AI 导师 · 学习对话"))} />
+        onSaveToNote={(text) => appendToNote(quoteBlock(text, "AI 导师 · 学习对话"))} /></SelectionToNote>
       : <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="px-5 pb-5 pt-4">
         <span className="block truncate text-xs text-muted-foreground">{node.kind === "synthesis" ? "综合节点" : stage ? `${stage.title} · 知识点` : "知识点"}</span>
@@ -363,7 +366,8 @@ export function NodePanel({
         <NodeLinks key={`${node.id}:${course.revision}`} course={course} node={node} busy={busy} aiEnabled={aiEnabled} reviewStrict={reviewStrict} act={act}
           canOpen={(entry) => reviewStrict ? course.review_scope.node_ids.includes(entry.id) : isNodeVisible(entry, { reviewActive, directEntryId, directWeek })}
           onNavigate={onNavigateNode} onOpenBridge={onOpenRelation}
-          onOpenSource={(source) => openMaterial({ materialId: source.material_id, page: source.page })} />
+          onOpenSource={(source) => openMaterial({ materialId: source.material_id, page: source.page })}
+          notice={linkNotice?.nodeId === node.id ? linkNotice.text : ""} onNotice={(text) => setLinkNotice({ nodeId: node.id, text })} />
         <section className="flex flex-col" aria-label="相关">
           <h3 className="t-label mb-1">相关</h3>
           <Related icon={Target} label={goalEntries[0]?.goal.title || "目标"}

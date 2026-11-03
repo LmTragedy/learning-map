@@ -4,6 +4,7 @@ import json
 from .bridges import project_bridges
 from .goals import project_goals
 from .handoff import project_handoffs
+from .lesson_coverage import uncovered_pieces
 from .lines import project_lines
 from .page_index import index_progress
 from .practice_progress import project_practice_progress
@@ -36,6 +37,7 @@ def project_course(course):
     completed = {node["id"] for node in course["nodes"] if is_complete(node)}
     for node in course["nodes"]:
         node["unlocked"] = is_complete(node) or set(node["prerequisites"]).issubset(completed)
+        node["lesson_gaps"] = uncovered_pieces(node)
         # Full HTML is retrieved separately so every chat does not retransmit every lesson.
         for lesson in node.get("lessons", []):
             lesson.pop("html", None)

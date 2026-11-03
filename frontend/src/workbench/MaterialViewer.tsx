@@ -5,11 +5,9 @@ import { MaterialText } from "./MaterialText";
 import type { MaterialView } from "./useWorkbenchState";
 
 /** One page of a course material, as the original PDF or as extracted text, with a floating pager. */
-export function MaterialViewer({ course, view, textMode, onPage, onExcerpt, onAsk }: {
+export function MaterialViewer({ course, view, textMode, onPage }: {
   course: Course; view: MaterialView; textMode: boolean;
   onPage: (view: MaterialView) => void;
-  onExcerpt: (block: string) => void;
-  onAsk: (text: string) => void;
 }) {
   const material = course.materials.find((entry) => entry.id === view.materialId);
   if (!material) return <div className="m-auto text-sm text-muted-foreground">这份材料已不在课程中。</div>;
@@ -18,7 +16,7 @@ export function MaterialViewer({ course, view, textMode, onPage, onExcerpt, onAs
   const total = material.pages.length;
   return <div className="wb-material">
     {textMode
-      ? <MaterialText text={page?.text || ""} uncertain={Boolean(page?.uncertain)} label={label} onExcerpt={onExcerpt} onAsk={onAsk} />
+      ? <MaterialText text={page?.text || ""} uncertain={Boolean(page?.uncertain)} />
       : <iframe key={`${view.materialId}:${view.page}`} title={label} src={materialFileUrl(course.id, view.materialId, view.page)} />}
     <div className="wb-pager" role="group" aria-label="翻页">
       <button aria-label="上一页" disabled={view.page <= 1} onClick={() => onPage({ ...view, page: view.page - 1 })}><ChevronLeft size={15} /></button>

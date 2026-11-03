@@ -1,4 +1,5 @@
 import { EditorSelection } from "@codemirror/state";
+import { syntaxTree } from "@codemirror/language";
 import type { EditorView } from "@codemirror/view";
 import type { Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 
@@ -109,6 +110,41 @@ export function insertDivider(view: EditorView) {
   view.focus();
 }
 
+/** Wrap the selected lines in a fenced code block, or start an empty one on a new line. */
+export function insertCodeBlock(view: EditorView) {
+  const { state } = view;
+  const range = state.selection.main;
+  const first = state.doc.lineAt(range.from), last = state.doc.lineAt(range.to);
+  if (!range.empty) {
+    const body = state.sliceDoc(first.from, last.to);
+    const insert = `\`\`\`\n${body}\n\`\`\``;
+    view.dispatch({ changes: { from: first.from, to: last.to, insert },
+      selection: { anchor: first.from + 3 }, userEvent: "input.format" });
+  } else {
+    // An empty line becomes the block; otherwise the block opens below the current line.
+    const blank = !first.text.trim();
+    const from = blank ? first.from : first.to;
+    const lead = blank ? "" : "\n";
+    const insert = `${lead}\`\`\`\n\n\`\`\``;
+    view.dispatch({ changes: { from, to: blank ? first.to : first.to, insert },
+      selection: { anchor: from + lead.length + 4 }, userEvent: "input.format" });
+  }
+  view.focus();
+}
+
+/** Inside a fenced code block, Tab indents instead of leaving the editor. */
+export function indentInCode(view: EditorView) {
+  const { state } = view;
+  const head = state.selection.main.head;
+  let inside = false;
+  for (let node: ReturnType<ReturnType<typeof syntaxTree>["resolveInner"]> | null = syntaxTree(state).resolveInner(head, -1); node; node = node.parent) {
+    if (node.name === "FencedCode") { inside = true; break; }
+  }
+  if (!inside) return false;
+  view.dispatch(state.replaceSelection("  "), { userEvent: "input.indent" });
+  return true;
+}
+
 /** Append text (for example a PDF excerpt or an AI answer) as a new block at the end of the note. */
 export function appendBlock(content: string, block: string) {
   const trimmed = content.replace(/\s+$/, "");
@@ -131,7 +167,8 @@ const slashItems: SlashItem[] = [
   { label: "待办清单", detail: "☐", keys: "todo daiban check", run: (view) => setBlock(view, "todo") },
   { label: "引用", detail: "❝", keys: "quote yinyong", run: (view) => setBlock(view, "quote") },
   { label: "分隔线", detail: "—", keys: "hr divider fengexian", run: insertDivider },
-  { label: "代码", detail: "`", keys: "code daima", run: (view) => toggleInline(view, "`") },
+  { label: "代码块", detail: "```", keys: "code block daimakuai pre", run: insertCodeBlock },
+  { label: "行内代码", detail: "`", keys: "code inline daima", run: (view) => toggleInline(view, "`") },
   ...NOTE_COLORS.map((color) => ({ label: `${color.label}色文字`, detail: "颜色", keys: `color yanse ${color.key}`, run: (view: EditorView) => colorSelection(view, color.value) })),
   { label: "高亮", detail: "荧光笔", keys: "highlight gaoliang mark", run: highlightSelection },
 ];

@@ -1,8 +1,8 @@
 import type { EditorView } from "@codemirror/view";
-import { Bold, Code, Heading1, Heading2, Heading3, Highlighter, Italic, Link, List, ListChecks, ListOrdered, Minus, Palette, Quote, Strikethrough, Type } from "lucide-react";
+import { Bold, Code, SquareCode, Heading1, Heading2, Heading3, Highlighter, Italic, Link, List, ListChecks, ListOrdered, Minus, Palette, Quote, Strikethrough, Type } from "lucide-react";
 import type { ReactNode } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
-import { colorSelection, highlightSelection, insertDivider, insertLink, NOTE_COLORS, setBlock, toggleInline } from "./noteFormatting";
+import { colorSelection, highlightSelection, insertCodeBlock, insertDivider, insertLink, NOTE_COLORS, setBlock, toggleInline } from "./noteFormatting";
 
 function Tool({ label, onRun, children }: { label: string; onRun: () => void; children: ReactNode }) {
   // mousedown keeps the editor selection, so the command applies to the selected text.
@@ -56,6 +56,7 @@ export function NoteToolbar({ view }: { view: EditorView | null }) {
     <Tool label="有序列表" onRun={() => setBlock(view, "number")}><ListOrdered size={16} /></Tool>
     <Tool label="待办清单" onRun={() => setBlock(view, "todo")}><ListChecks size={16} /></Tool>
     <Tool label="引用" onRun={() => setBlock(view, "quote")}><Quote size={16} /></Tool>
+    <Tool label="代码块" onRun={() => insertCodeBlock(view)}><SquareCode size={16} /></Tool>
     <Tool label="分隔线" onRun={() => insertDivider(view)}><Minus size={16} /></Tool>
     <span className="ml-auto text-xs text-muted-foreground max-[700px]:hidden">输入 / 唤出菜单 · 选中文字可设置格式</span>
   </div>;
