@@ -243,7 +243,9 @@ def _recognize_pdf_page(
     if time.monotonic() >= deadline:
         return "", _OCR_BUDGET_WARNING, []
     with tempfile.TemporaryDirectory(prefix="learning-map-ocr-") as temp_dir:
-        rendered = _render_pdf_page(pdf_document, number, Path(temp_dir) / "page.png")
+        # Hold the pdfium lock only while rendering; OCR can take minutes and must not block previews.
+        with _PDFIUM_LOCK:
+            rendered = _render_pdf_page(pdf_document, number, Path(temp_dir) / "page.png")
         return _ocr(rendered, deadline)
 
 
@@ -276,7 +278,8 @@ def _read_pdf_page(pdf_page: Any, pdf_document: pdfium.PdfDocument,
 
 
 def _parse_pdf_basic(source: Path, deadline: float) -> dict[str, Any]:
-    reader, pdf_document = _open_pdf(source)
+    with _PDFIUM_LOCK:
+        reader, pdf_document = _open_pdf(source)
     pages = []
     used_chars = 0
     try:
@@ -285,7 +288,8 @@ def _parse_pdf_basic(source: Path, deadline: float) -> dict[str, Any]:
             pages.append(page_record)
             used_chars += len(page_record["text"])
     finally:
-        pdf_document.close()
+        with _PDFIUM_LOCK:
+            pdf_document.close()
     warnings = [warning for page in pages for warning in page["warnings"]]
     return _document_result("pdf", pages, list(dict.fromkeys(warnings)))
 
@@ -300,17 +304,18 @@ def _validate_docling_source(source: Path) -> int:
                 raise DocumentParseError("The PDF exceeds the 200 page parsing limit.")
         except DocumentParseError:
             raise
-            return len(reader.pages)
         except (PyPdfError, OSError, ValueError) as exc:
             raise DocumentParseError(f"The PDF is invalid or unreadable ({type(exc).__name__}).") from exc
-    else:
-        try:
-            with Image.open(source) as image:
-                _check_image(image)
-                image.verify()
-        except UnidentifiedImageError as exc:
-            raise DocumentParseError("The image file is invalid or unsupported.") from exc
-        return 1
+        return len(reader.pages)
+    try:
+        with Image.open(source) as image:
+            _check_image(image)
+            image.verify()
+    except UnidentifiedImageError as exc:
+        raise DocumentParseError("The image file is invalid or unsupported.") from exc
+    return 1
+
+
 def _docling_script() -> str:
     return r'''
 import json, sys
@@ -417,8 +422,7 @@ def parse_document(path: Path, output_dir: Path, parser: str = "basic") -> dict[
     if suffix == ".pdf":
         if parser == "docling":
             return _parse_docling(source)
-        with _PDFIUM_LOCK:
-            return _parse_pdf_basic(source, ocr_deadline)
+        return _parse_pdf_basic(source, ocr_deadline)
     if suffix in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}:
         if parser == "docling":
             return _parse_docling(source)

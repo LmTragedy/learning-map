@@ -93,6 +93,20 @@ def recall_messages(node, query=""):
     return dict(messages=messages, note="以下为本节点实际保存的对话，按时间排列；没有补全未说过的思路。")
 
 
+_RECALL_TRIGGERS = ("我忘了", "忘记之前", "找回思路", "回忆一下", "recall")
+_RECALL_FILLER = ("帮我", "请", "之前说过的", "之前说的", "之前的", "之前", "一下", "思路", "说的", "我", "了")
+
+
+def wants_recall(message):
+    """Only a bare recall command skips the tutor; "帮我回忆一下定义" is a real question."""
+    remainder = re.sub(r"[\s\W_]+", "", message).casefold()
+    if not any(trigger in remainder for trigger in _RECALL_TRIGGERS):
+        return False
+    for phrase in (*_RECALL_TRIGGERS, *_RECALL_FILLER):
+        remainder = remainder.replace(phrase, "")
+    return not remainder
+
+
 def recall_text(node):
     actual = [chat for chat in node["chats"] if chat["role"] == "user"][-6:]
     if not actual:
@@ -179,6 +193,32 @@ def append_map(course, draft):
         )
 
 
+def node_fingerprint(course, node_id):
+    """What an AI answer for one node depends on: the node itself, the review scope and preferences."""
+    return json.dumps(
+        dict(scope=scope_key(course), preferences=course["preferences"], node=find_node(course, node_id)),
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
+def require_same_node(before, current, node_id):
+    # Edits to other nodes or settings while the AI is thinking must not discard its answer.
+    if node_fingerprint(before, node_id) != node_fingerprint(current, node_id):
+        raise Conflict("这个知识点在等待 AI 期间有变化，请刷新后重试；已有进度未覆盖。")
+
+
+def require_same_materials(before, current):
+    def outline(course):
+        return (
+            [material["id"] for material in course["materials"]],
+            [(node["id"], node["title"]) for node in course["nodes"]],
+        )
+
+    if outline(before) != outline(current):
+        raise Conflict("生成期间课程资料或节点已变化，请刷新后重试；当前材料与进度未覆盖。")
+
+
 class Learning:
     def __init__(self, store, ai_factory):
         self.store, self.ai_factory = store, ai_factory
@@ -210,7 +250,8 @@ class Learning:
         )
         label = conversation_label(course, purpose="知识地图生成")
         draft = structured(self.ai(), prompt, MapDraft, {"conversation": label})
-        with self.store.edit(course_id, course["revision"]) as (current, _):
+        with self.store.edit(course_id) as (current, _):
+            require_same_materials(course, current)
             append_map(current, draft.payload)
             remember_conversation(current, draft.thread_id, label)
         return self.store.course(course_id)
@@ -219,12 +260,13 @@ class Learning:
         course = self.store.course(course_id)
         node = find_node(course, node_id)
         require_review_node(course, node)
-        if any(trigger in message for trigger in ("我忘了", "忘记之前", "找回思路", "回忆一下", "Recall")):
+        if wants_recall(message):
             reply = recall_text(dict(chats=active_records(course, node["chats"])))
             thread_id = thread_for(course, node)
         else:
             reply, thread_id = self._chat_reply(course, node, message)
-        with self.store.edit(course_id, course["revision"]) as (current, _):
+        with self.store.edit(course_id) as (current, _):
+            require_same_node(course, current, node_id)
             updated = find_node(current, node_id)
             append_chat(updated, "user", message)
             append_chat(updated, "assistant", reply)
@@ -265,7 +307,8 @@ class Learning:
             Question,
             {"conversation": review_label(course, node, "出题")},
         )
-        with self.store.edit(course_id, course["revision"]) as (current, _):
+        with self.store.edit(course_id) as (current, _):
+            require_same_node(course, current, node_id)
             updated = find_node(current, node_id)
             if strict_scope(course):
                 updated.setdefault("review_questions", {})[scope_key(course)] = question.payload
@@ -322,7 +365,8 @@ class Learning:
                 next_step="可补充清晰作答后重试，或由你决定通过、补题、通过并待复查。",
             )
         submission["judgment"] = judgment
-        with self.store.edit(course["id"], course["revision"]) as (current, _):
+        with self.store.edit(course["id"]) as (current, _):
+            require_same_node(course, current, node_id)
             updated = find_node(current, node_id)
             record_attempt(updated, submission)
             propose_streak(current, updated)

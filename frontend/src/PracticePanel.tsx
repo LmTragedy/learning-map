@@ -33,7 +33,10 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
   }
   const submitRating = async (attempt: Attempt, skip: boolean) => {
     const updated = await act('rating', () => api.rate(course.id, node.id, attempt.id, { problem: skip ? null : problem, mastery: skip ? null : mastery, comment, skip }))
-    if (updated && !skip) onRatingSubmitted()
+    if (!updated) return
+    // Start the next attempt's rating from blank instead of carrying these scores over.
+    setProblem(null); setMastery(null); setComment('')
+    if (!skip) onRatingSubmitted()
   }
 
   return <div className="practice-pane">

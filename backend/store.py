@@ -2,7 +2,7 @@ import copy
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -13,6 +13,11 @@ def timestamp():
 
 def identity():
     return uuid4().hex
+
+
+# Manual saves and pre-delete backups are never pruned; automatic backups keep the newest N per course.
+PROTECTED_VERSION_REASONS = ("手动保存", "删除前完整备份（本地回收区）", "示例课程初始状态")
+AUTOMATIC_VERSIONS_KEPT = 30
 
 
 class Conflict(ValueError):
@@ -121,6 +126,17 @@ class Store:
             "INSERT INTO versions VALUES(?,?,?,?,?)",
             (version_id, course["id"], timestamp(), reason, json.dumps(course, ensure_ascii=False)),
         )
+        if reason not in PROTECTED_VERSION_REASONS:
+            # Automatic backups contain the whole course (lesson HTML included); keep only the newest ones.
+            connection.execute(
+                f"""DELETE FROM versions WHERE course_id=? AND reason NOT IN ({",".join("?" * len(PROTECTED_VERSION_REASONS))})
+                    AND id NOT IN (
+                      SELECT id FROM versions WHERE course_id=?
+                        AND reason NOT IN ({",".join("?" * len(PROTECTED_VERSION_REASONS))})
+                      ORDER BY created_at DESC, rowid DESC LIMIT ?)""",
+                (course["id"], *PROTECTED_VERSION_REASONS, course["id"], *PROTECTED_VERSION_REASONS,
+                 AUTOMATIC_VERSIONS_KEPT),
+            )
         return version_id
 
     def versions(self, course_id):
@@ -151,6 +167,9 @@ class Store:
     def preview(self, action, body, course=None):
         token = identity()
         with self.connect() as connection:
+            # Confirmations expire after 15 minutes; drop stale ones so the table does not grow forever.
+            expired = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+            connection.execute("DELETE FROM confirmations WHERE created_at < ?", (expired,))
             connection.execute(
                 "INSERT INTO confirmations VALUES(?,?,?,?,?,?)",
                 (

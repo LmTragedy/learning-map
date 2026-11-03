@@ -9,7 +9,7 @@ from pydantic import Field
 
 from .conversation_labels import remember_conversation
 from .domain import find_node
-from .learning import LearningError, node_context, structured
+from .learning import LearningError, node_context, require_same_node, structured
 from .lesson_html import render_lesson
 from .review_scope import (
     active_records,
@@ -128,7 +128,8 @@ def generate_lesson(learning, course_id, node_id, request):
         review_scope_key=key,
         material_ids=list(course.get("review_scope", {}).get("material_ids", [])) if key != "course" else [],
     )
-    with learning.store.edit(course_id, course["revision"]) as (current, connection):
+    with learning.store.edit(course_id) as (current, connection):
+        require_same_node(course, current, node_id)
         learning.store.snapshot(current, "生成 Teach 小课前自动备份", connection)
         find_node(current, node_id).setdefault("lessons", []).append(lesson)
         remember_conversation(current, reply.thread_id, label, node_id)

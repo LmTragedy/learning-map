@@ -3,7 +3,7 @@ import json
 from .conversation_labels import remember_conversation
 from .domain import find_node
 from .learning import LearningError, structured
-from .review_scope import active_records, require_review_node, review_label
+from .review_scope import active_records, require_review_node, review_label, scope_key
 from .schemas import RecallSummary
 from .store import Conflict, timestamp
 
@@ -23,10 +23,10 @@ def summarize_recall(learning, course_id, node_id):
     reply = structured(learning.ai(), _summary_prompt(node, encoded), RecallSummary, {"conversation": label})
     summary = reply.payload
     _validate_evidence(summary, history)
-    with learning.store.edit(course_id, course["revision"]) as (current, _):
+    with learning.store.edit(course_id) as (current, _):
         current_node = find_node(current, node_id)
-        if current_node["chats"] != original_history:
-            raise Conflict("整理期间对话已变化，请刷新后重新整理。")
+        if current_node["chats"] != original_history or scope_key(current) != scope_key(course):
+            raise Conflict("整理期间对话或复习范围已变化，请刷新后重新整理。")
         remember_conversation(current, reply.thread_id, label, node_id)
     return summary | dict(messages=history, created_at=timestamp(), history_revision=course["revision"])
 

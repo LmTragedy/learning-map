@@ -39,9 +39,9 @@ def import_uploads(store, course_id, uploads, options):
         try:
             original, digest = copy_upload(upload, directory)
             parsed = parse_document(original, directory / "pages", options["parser"])
-        except (ValueError, OSError, RuntimeError):
-            if directory.resolve().is_relative_to(root.resolve()) and directory.exists():
-                shutil.rmtree(directory)
+        except Exception:
+            _remove_material_dir(root, directory)
+            discard_materials(store, course_id, materials)
             raise
         materials.append(
             dict(
@@ -49,6 +49,18 @@ def import_uploads(store, course_id, uploads, options):
             )
         )
     return materials
+
+
+def _remove_material_dir(root, directory):
+    if directory.resolve().is_relative_to(root.resolve()) and directory.exists():
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def discard_materials(store, course_id, materials):
+    """Delete copies that were imported but never committed to the course (failure or duplicate)."""
+    root = store.root / "courses" / course_id
+    for material in materials:
+        _remove_material_dir(root, root / "materials" / material["id"])
 
 
 def material_by_id(course, material_id):

@@ -17,7 +17,14 @@ from .domain import (
     record_rating,
     resolve_attempt,
 )
-from .files import answer_images, import_uploads, material_by_id, material_original, material_page
+from .files import (
+    answer_images,
+    discard_materials,
+    import_uploads,
+    material_by_id,
+    material_original,
+    material_page,
+)
 from .learning import Learning, recall_messages
 from .lesson_routes import register_lesson_routes
 from .profile import accept_stage as apply_stage
@@ -141,11 +148,23 @@ def _course_routes(app, store, learning):
     ):
         if parser not in {"basic", "docling"} or len(week) > 100:
             raise ValueError("解析器或周次标识不正确")
-        current = store.course(course_id)
+        store.course(course_id)
         materials = import_uploads(store, course_id, files, dict(parser=parser, week=week))
-        with store.edit(course_id, current["revision"]) as (updated, _):
-            known = {m["sha256"] for m in updated["materials"]}
-            updated["materials"].extend(material for material in materials if material["sha256"] not in known)
+        duplicates = []
+        try:
+            # Appending materials is safe on top of edits made while parsing, so no revision pin here.
+            with store.edit(course_id) as (updated, _):
+                known = {m["sha256"] for m in updated["materials"]}
+                for material in materials:
+                    if material["sha256"] in known:
+                        duplicates.append(material)
+                    else:
+                        known.add(material["sha256"])
+                        updated["materials"].append(material)
+        except Exception:
+            discard_materials(store, course_id, materials)
+            raise
+        discard_materials(store, course_id, duplicates)
         return project_course(store.course(course_id))
 
     @app.post("/api/courses/{course_id}/generate")
@@ -216,14 +235,19 @@ def _learning_routes(app, store, learning):
         if len(answer) + len(reference) > 40000:
             raise ValueError("文字作答与参考答案合计不能超过 40,000 字符")
         attachments = import_uploads(store, cid, files, dict(parser="basic", week="纸上作答"))
-        images = answer_images(store, current, attachments)
-        submitted = dict(
-            question=question_for(current, find_node(current, nid)) or {},
-            answer=answer,
-            reference=reference,
-            attachments=attachments,
-        )
-        return project_course(learning.submit(current, nid, submitted, images))
+        try:
+            images = answer_images(store, current, attachments)
+            submitted = dict(
+                question=question_for(current, find_node(current, nid)) or {},
+                answer=answer,
+                reference=reference,
+                attachments=attachments,
+            )
+            saved = learning.submit(current, nid, submitted, images)
+        except Exception:
+            discard_materials(store, cid, attachments)
+            raise
+        return project_course(saved)
 
     @app.post("/api/courses/{cid}/nodes/{nid}/attempts/{aid}/resolve")
     def resolve(cid: str, nid: str, aid: str, request: Resolve):
