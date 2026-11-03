@@ -95,6 +95,8 @@ export type Material = {
   week: string;
   kind: string;
   sha256: string;
+  /** Absent on materials imported before the parser was recorded. */
+  parser?: "basic" | "docling";
   pages: {
     number: number;
     text: string;

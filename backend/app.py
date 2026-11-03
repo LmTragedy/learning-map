@@ -26,11 +26,15 @@ from .domain import (
 )
 from .files import (
     answer_images,
+    apply_reparse,
+    course_material,
     discard_materials,
     import_uploads,
     material_by_id,
     material_original,
     material_page,
+    reparse_original,
+    update_material_info,
 )
 from .goal_routes import register_goal_routes
 from .goals_notes import register_goals_notes
@@ -52,6 +56,8 @@ from .sample import create_sample
 from .schemas import (
     CreateCourse,
     Mark,
+    MaterialReparse,
+    MaterialUpdate,
     Message,
     NoteWrite,
     Rating,
@@ -227,6 +233,25 @@ def _course_routes(app, store, learning):
             discard_materials(store, course_id, materials)
             raise
         discard_materials(store, course_id, duplicates)
+        return project_course(store.course(course_id))
+
+    @app.post("/api/courses/{course_id}/materials/{material_id}/reparse")
+    def reparse(course_id: str, material_id: str, request: MaterialReparse):
+        sha256 = course_material(store.course(course_id), material_id)["sha256"]
+        # Parsing can take minutes (Docling, OCR); it runs outside the course lock.
+        parsed = reparse_original(store, course_id, material_id, request.parser)
+        with store.edit(course_id) as (current, connection):
+            material = course_material(current, material_id)
+            if material["sha256"] != sha256:
+                raise Conflict("解析期间材料已被替换，请刷新后重试")
+            store.snapshot(current, f"重新解析「{material['name']}」前自动备份", connection)
+            apply_reparse(material, parsed, request.parser)
+        return project_course(store.course(course_id))
+
+    @app.patch("/api/courses/{course_id}/materials/{material_id}")
+    def update_material(course_id: str, material_id: str, request: MaterialUpdate):
+        with store.edit(course_id) as (current, _):
+            update_material_info(course_material(current, material_id), request.name, request.week)
         return project_course(store.course(course_id))
 
     @app.post("/api/courses/{course_id}/generate")

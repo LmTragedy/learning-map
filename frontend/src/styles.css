@@ -1076,6 +1076,45 @@ a {
   color: var(--muted);
   font-size: var(--fs-xs);
 }
+.material-card > summary .material-parser {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+.materials-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+.materials-toolbar > small {
+  flex: 1 1 260px;
+}
+.materials-progress {
+  flex-basis: 100%;
+  color: var(--accent);
+}
+.material-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 9px 6px;
+}
+.material-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+.material-edit .field-label {
+  flex: 1 1 180px;
+}
+.material-edit-buttons {
+  display: flex;
+  gap: 4px;
+}
 .warning-list {
   margin: 0;
   padding: 5px 24px;

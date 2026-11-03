@@ -1,5 +1,6 @@
 import hashlib
 import shutil
+import tempfile
 from pathlib import Path
 
 from .documents import MAX_FILE_BYTES, parse_document, render_page
@@ -47,7 +48,8 @@ def import_uploads(store, course_id, uploads, options):
             raise
         materials.append(
             dict(
-                id=material_id, name=Path(upload.filename).name, week=options["week"], sha256=digest, **parsed
+                id=material_id, name=Path(upload.filename).name, week=options["week"], sha256=digest,
+                parser=options["parser"], **parsed
             )
         )
     return materials
@@ -74,6 +76,38 @@ def material_by_id(course, material_id):
         if material["id"] == material_id:
             return material
     raise KeyError("材料不存在")
+
+
+def course_material(course, material_id):
+    """A material of the course itself (not a paper-answer attachment)."""
+    for material in course["materials"]:
+        if material["id"] == material_id:
+            return material
+    raise KeyError("材料不存在")
+
+
+def reparse_original(store, course_id, material_id, parser):
+    """Parse the saved original again; nothing on disk or in the course changes here."""
+    original = material_original(store, course_id, material_id)
+    with tempfile.TemporaryDirectory(dir=original.parent, prefix="reparse-") as scratch:
+        return parse_document(original, Path(scratch), parser)
+
+
+def apply_reparse(material, parsed, parser):
+    """Swap in the new text, keeping id, file and page numbers so every cited page stays valid."""
+    if parsed["kind"] != material["kind"] or len(parsed["pages"]) != len(material["pages"]):
+        raise ValueError("重新解析得到的页数与原材料不一致，未替换")
+    material.update(pages=parsed["pages"], warnings=parsed["warnings"], parser=parser)
+
+
+def update_material_info(material, name=None, week=None):
+    if name is not None:
+        name = name.strip()
+        if not name or "/" in name or "\\" in name or name in {".", ".."}:
+            raise ValueError("文件名不能为空，也不能包含路径分隔符")
+        material["name"] = name
+    if week is not None:
+        material["week"] = week.strip()
 
 
 def material_original(store, course_id, material_id):

@@ -179,6 +179,10 @@ export const api = {
       body,
     });
   },
+  reparseMaterial: (id: string, mid: string, parser: "basic" | "docling") =>
+    request<Course>(`/courses/${id}/materials/${mid}/reparse`, json("POST", { parser })),
+  updateMaterial: (id: string, mid: string, value: { name?: string; week?: string }) =>
+    request<Course>(`/courses/${id}/materials/${mid}`, json("PATCH", value)),
   generate: (id: string) =>
     request<Course>(`/courses/${id}/generate`, json("POST", {})),
   indexMaterials: (id: string, indexed: number) =>
