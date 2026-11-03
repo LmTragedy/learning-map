@@ -24,6 +24,9 @@
 .wb-pane { display: flex; flex: 1 1 50%; min-width: 280px; min-height: 0; overflow: hidden; }
 .wb-pane > * { flex: 1; min-width: 0; }
 .wb-note { flex: 1 1 0; }
+/* Study mode and material side by side inside the left pane. */
+.wb-split { display: flex; min-width: 0; min-height: 0; }
+.wb-split > .wb-pane { min-width: 240px; }
 .wb-divider { position: relative; flex: 0 0 1px; background: var(--border); cursor: col-resize; touch-action: none; transition: background .15s; }
 .wb-divider::after { content: ""; position: absolute; inset: 0 -4px; }
 .wb-divider:hover, .wb-divider:active { background: var(--ring); box-shadow: 0 0 0 1px var(--ring); }
@@ -105,6 +108,8 @@
   .wb-body { flex-direction: column; }
   .wb-pane { flex-basis: auto !important; min-width: 0; min-height: 50%; }
   .wb-divider { display: none; }
+  .wb-split { flex-direction: column; }
+  .wb-split > .wb-pane { min-width: 0; }
 }
 @media (max-width: 780px) {
   .workbench .node-note-footer > p { display: none; }
