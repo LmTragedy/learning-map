@@ -14,6 +14,14 @@ type Selected =
   | { kind: "bridge"; item: ResolvedBridge; side: "in" | "out" }
   | { kind: "step"; step: Step; index: number }
   | { kind: "chain"; item: ResolvedBridge; direction: "before" | "after" };
+/**
+ * What the learner picked, by id only. It is looked up in the current course on every render, so a
+ * save (a self-check, the AI refinding links) keeps the same item open and shows its fresh state.
+ */
+type Pick =
+  | { kind: "bridge"; id: string; side: "in" | "out" }
+  | { kind: "step"; id: string }
+  | { kind: "chain"; id: string; direction: "before" | "after" };
 
 /** How far each chain is followed: back to the roots, and ahead to where the node is still used. */
 const DEPTH_BEFORE = 2;
@@ -51,8 +59,20 @@ export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, ca
   const gaps = incoming.filter((item) => isWeak(item.bridge)).length;
   // Nodes already drawn as direct links are not repeated inside a chain.
   const onScreen = new Set([node.id, ...shownIn.map((item) => item.source.id), ...shownOut.map((item) => item.target.id)]);
-  const [selected, setSelected] = useState<Selected | null>(shownIn[0] ? { kind: "bridge", item: shownIn[0], side: "in" }
-    : shownOut[0] ? { kind: "bridge", item: shownOut[0], side: "out" } : null);
+  const [picked, setPicked] = useState<Pick | null>(null);
+  const resolve = (pick: Pick | null): Selected | null => {
+    if (pick?.kind === "step") {
+      const index = steps.findIndex((step) => step.id === pick.id);
+      if (index >= 0) return { kind: "step", step: steps[index], index };
+    } else if (pick) {
+      const item = resolveBridges(course, edges).find((entry) => entry.bridge.id === pick.id);
+      if (item) return pick.kind === "bridge" ? { kind: "bridge", item, side: pick.side } : { kind: "chain", item, direction: pick.direction };
+    }
+    // Nothing picked yet, or the pick no longer exists (e.g. the AI rewrote the links): show the first link.
+    return shownIn[0] ? { kind: "bridge", item: shownIn[0], side: "in" }
+      : shownOut[0] ? { kind: "bridge", item: shownOut[0], side: "out" } : null;
+  };
+  const selected = resolve(picked);
   const empty = !shownIn.length && !shownOut.length;
   const find = () => void act("find-links", () => api.findLinks(course.id, node.id, course.revision));
   const check = (item: ResolvedBridge) => (result: "known" | "unsure", answer: string) =>
@@ -69,7 +89,7 @@ export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, ca
       state === "known" ? "测过会" : state ? "有缺口" : "",
     ].filter(Boolean).join(" · ");
     return <button key={item.bridge.id} type="button" className={cn("nl-chip", item.bridge.strength !== "required" && "is-weak", state && state !== "known" && "is-gap", isOn(item) && "is-on")}
-      aria-pressed={isOn(item)} onClick={() => setSelected({ kind: "bridge", item, side })}>
+      aria-pressed={isOn(item)} onClick={() => setPicked({ kind: "bridge", id: item.bridge.id, side })}>
       <span className="nl-chip-title"><span className={cn("nl-dot", done(other) && "is-done")} aria-label={done(other) ? "已学会" : "还没学"} />{other.title}</span>
       {tag && <span className="nl-chip-tag">{tag}</span>}
     </button>;
@@ -78,7 +98,7 @@ export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, ca
     const other = direction === "after" ? item.target : item.source;
     return <button key={item.bridge.id} type="button" title={week(other) || undefined}
       className={cn("nl-chip is-small", selected?.kind === "chain" && selected.item.bridge.id === item.bridge.id && "is-on")}
-      onClick={() => setSelected({ kind: "chain", item, direction })}>{other.title}</button>;
+      onClick={() => setPicked({ kind: "chain", id: item.bridge.id, direction })}>{other.title}</button>;
   };
   // Left: the earlier knowledge each used node itself rests on, oldest first, so the row reads forward in time.
   const left = (items: ResolvedBridge[]) => items.map((item) => {
@@ -123,7 +143,7 @@ export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, ca
     </div>}
 
     <Handoff course={course} node={node} canOpen={canOpen} onNavigate={onNavigate}
-      onShow={(item, side) => isStrong(item) ? setSelected({ kind: "bridge", item, side }) : onOpenBridge(item.edge)} />
+      onShow={(item, side) => isStrong(item) ? setPicked({ kind: "bridge", id: item.bridge.id, side }) : onOpenBridge(item.edge)} />
 
     {empty ? <p className="nl-empty">
       {others.length ? `这一课有 ${others.length} 条联系，但还没写清具体用到哪一块。` : "这一课还没有整理出前后联系。"}
@@ -134,7 +154,7 @@ export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, ca
         <div className="nl-row is-head" aria-hidden><span className="nl-side is-left">先要会（及更早的基础）</span><span /><span>这一课的每一步</span><span /><span className="nl-side is-right">后面用到它（及更后面）</span></div>
         {rows.map(({ step, index, uses, usedBy }) => row(step.id, uses, <button type="button"
           className={cn("nl-step", selected?.kind === "step" && selected.step.id === step.id && "is-on")}
-          onClick={() => setSelected({ kind: "step", step, index })}><span className="nl-num">{index + 1}</span>{step.title}</button>, usedBy))}
+          onClick={() => setPicked({ kind: "step", id: step.id })}><span className="nl-num">{index + 1}</span>{step.title}</button>, usedBy))}
         {(loose.uses.length > 0 || loose.usedBy.length > 0) && row("loose", loose.uses,
           <div className="nl-step is-loose">{steps.length ? "整体（没对到具体一步）" : "这一课整体"}</div>, loose.usedBy)}
       </div>
