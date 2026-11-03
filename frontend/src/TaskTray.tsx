@@ -177,4 +177,3 @@ export function TaskNotice({ tasks, viewFor, onNavigate, onViewAll, onDismiss }:
   </Callout>;
 }
 
-export default TaskTray;
