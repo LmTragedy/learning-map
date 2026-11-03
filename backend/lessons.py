@@ -26,6 +26,7 @@ from .review_scope import (
 from .schemas import Input
 from .store import identity, timestamp
 
+
 class LessonRequest(Input):
     kind: Literal["initial", "supplement"] = "initial"
     focus: str = Field(default="", max_length=2000)

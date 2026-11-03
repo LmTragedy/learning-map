@@ -25,9 +25,9 @@ export type TaskView = {
   canRecover: boolean; canRegenerate: boolean; canOpen: boolean; canCollect: boolean; canOrganize: boolean; canViewRaw: boolean; time: string;
   error?: string; shortLabel: string; newRequestId?: string;
 };
+// Mirrors ACTIVE_TASK_STATES in backend/ai_tasks.py (checked by tests/test_ai_task_states.py).
 export const ACTIVE_STATES = new Set(['prepared','sending','running','processing']);
 export const DISPATCH_KINDS = new Set(['bridge','links','bridge_history','assessment','chat','lesson','map','question','recall','lines','retell','goals','note_review','material_index','child']);
-const RECOVER_KINDS = new Set([...DISPATCH_KINDS,'assessment']);
 export const taskTime = (value: string) => formatTime(value);
 export function taskName(task: AiTask, course?: Course) {
   if (task.kind === 'child') return task.role === 'material_page_index' ? 'Luna 阅读材料' : task.role === 'recall_summary' ? 'Luna 整理学习记录' : 'Luna 文字子任务';
@@ -61,7 +61,7 @@ export function taskView(task: AiTask, course?: Course, options: {offline?:boole
     : task.history_disposition === 'unmatched' ? '尚未匹配'
     : task.history_disposition === 'recovered' ? '已取回原文'
     : task.history_disposition || '历史原文';
-  const base: TaskView = {semantic:'unknown',title:'任务中断，可能已有回复',description:`${name} · 开始于 ${taskTime(task.created_at)}`,group:'attention',canRecover:!task.history_only && task.kind !== 'history' && RECOVER_KINDS.has(task.kind) && (task.can_recover ?? !!(task.raw_reply || task.thread_id)),canRegenerate:!task.history_only && task.kind !== 'history' && canDispatch && (task.can_regenerate ?? true) && task.state !== 'applied',canOpen:false,canCollect:!task.history_only && task.kind !== 'history' && task.can_collect === true,canViewRaw:rawAvailable,time,shortLabel:'中断',newRequestId:task.superseded_by,canOrganize:!task.history_only && task.kind !== 'history' && !task.thread_id?.startsWith('deepseek-') && (!!task.organization_error || task.organization?.native_status === 'failed')};
+  const base: TaskView = {semantic:'unknown',title:'任务中断，可能已有回复',description:`${name} · 开始于 ${taskTime(task.created_at)}`,group:'attention',canRecover:!task.history_only && task.kind !== 'history' && DISPATCH_KINDS.has(task.kind) && (task.can_recover ?? !!(task.raw_reply || task.thread_id)),canRegenerate:!task.history_only && task.kind !== 'history' && canDispatch && (task.can_regenerate ?? true) && task.state !== 'applied',canOpen:false,canCollect:!task.history_only && task.kind !== 'history' && task.can_collect === true,canViewRaw:rawAvailable,time,shortLabel:'中断',newRequestId:task.superseded_by,canOrganize:!task.history_only && task.kind !== 'history' && !task.thread_id?.startsWith('deepseek-') && (!!task.organization_error || task.organization?.native_status === 'failed')};
   if (task.history_only || task.kind === 'history') Object.assign(base,{semantic:'history',title:'历史原文 · '+historyLabel,description:name,group:'history',canRecover:false,canRegenerate:false,canCollect:task.can_collect===true,canOpen:false,shortLabel:historyLabel});
   if (task.state === 'prepared') Object.assign(base,{semantic:'prepared',title:'已发起 · 等待 AI 开始',description:name,group:'active',canRecover:false,canRegenerate:false,shortLabel:'等待开始'});
   if (task.state === 'sending' || task.state === 'running') {
