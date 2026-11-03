@@ -20,6 +20,15 @@ export function aiReceiptHints(courseId: string) {
     .map((receipt) => ({ ...receipt, inFlight: inFlight.has(receipt.id) }));
 }
 
+/** Forgets receipts the backend never recorded: with no task behind them there is nothing to recover or replay. */
+export async function dropAiReceipts(ids: string[]) {
+  if (!ids.length) return;
+  await withReceiptLock(() => {
+    const remaining = readStored().filter((item) => !ids.includes(item.id) || inFlight.has(item.id));
+    globalThis.localStorage.setItem(STORAGE_KEY, JSON.stringify(remaining));
+  });
+}
+
 /** Called once this page's request for `receipt` has answered or failed, whatever the outcome. */
 export function endAiRequest(receipt: AiReceipt | null) {
   if (receipt) inFlight.delete(receipt.id);
