@@ -431,10 +431,11 @@ def _append_prerequisites(course, specifications, key_to_node, fresh):
 def _map_relation(specification, key_to_node):
     source = key_to_node[specification["source"]]["id"]
     target = key_to_node[specification["target"]]["id"]
-    raw_related_ids = [source, target, *(key_to_node[key]["id"] for key in specification.get("related_keys", []))]
-    related_ids = list(dict.fromkeys(raw_related_ids))
-    if len(related_ids) < 2 or len(related_ids) != len(raw_related_ids):
-        raise LearningError("知识联系的端点合并为同一知识节点，地图未应用，请重新生成")
+    # Keys merged into the same existing node (same title) collapse into one end.
+    related_ids = list(dict.fromkeys(
+        [source, target, *(key_to_node[key]["id"] for key in specification.get("related_keys", []))]))
+    if source == target:
+        return None
     candidate = dict(specification)
     candidate.pop("related_keys", None)
     candidate.update(source=source, target=target, related_node_ids=related_ids)
@@ -457,6 +458,8 @@ def _append_generated_relations(course, specifications, key_to_node):
     edges = course.setdefault("edges", [])
     for specification in specifications:
         edge = _map_relation(specification, key_to_node)
+        if edge is None:
+            continue
         if any(_same_relation(existing, edge) for existing in edges):
             continue
         bridges = edge.pop("bridges", [])
@@ -553,7 +556,7 @@ class Learning:
             "summary写清这一项讲什么、关键条件和用途，不写空话。"
             "按内容安排例子/整体与先修关系，不要把相似关系误作前置。最多60节点，保留重要差异，"
             "不确定识别或概念合并要uncertain=true。请同时返回relations数组（允许为空），"
-            "关系source/target/related_keys只使用本次节点key。relation只能是前置知识、帮助理解、工具关系、"
+            "关系source/target/related_keys只使用本次节点key；related_keys只列两端以外还涉及的节点，没有就留空，不要重复source/target。relation只能是前置知识、帮助理解、工具关系、"
             "相似或对比、归纳关系。关系仅作为理解线索；填写解释、何时使用、依据、evidence_kind、来源页、"
             "双向初始难度、uncertain。material_quote/material_inference必须给sources，ai_inference可不提供来源；"
             "presentation=synthesis时给出synthesis_title和synthesis_summary。难度仅是未验证的初始估计。"
