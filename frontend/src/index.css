@@ -201,11 +201,11 @@
 .t-label { font-size: var(--fs-sm); font-weight: 600; line-height: 1.5; letter-spacing: 0.04em; color: var(--muted-foreground); }
 .t-meta { font-size: var(--fs-sm); font-weight: 400; line-height: 1.5; color: var(--muted-foreground); }
 
-/* Cartoon cursors: a chunky white arrow, and an amber one with a spark for anything clickable.
+/* Comic cursors (ComixCursors White, GPL-3.0, see cursors/README.md): a hand-drawn arrow, and a pointing hand for anything clickable.
    Unlayered so they win over the kit and the utilities; text fields keep the system I-beam. */
 :root {
-  --cursor-default: url("./cursors/arrow.svg") 5 3, default;
-  --cursor-pointer: url("./cursors/pointer.svg") 9 7, pointer;
+  --cursor-default: url("./cursors/arrow.svg") 4 2, default;
+  --cursor-pointer: url("./cursors/pointer.svg") 7 2, pointer;
 }
 html { cursor: var(--cursor-default); }
 a[href], button:not(:disabled), [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="switch"],
