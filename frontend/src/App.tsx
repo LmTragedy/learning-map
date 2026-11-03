@@ -84,6 +84,15 @@ import type {
   Settings,
 } from "./types";
 
+const DEEPSEEK_OPTIONS: [string, string][] = [["deepseek-chat", "DeepSeek（deepseek-chat）"]];
+
+/** Fixed choices, plus a previously saved custom model so opening settings never changes it. */
+function modelOptions(current: string | undefined, choices: [string, string][]) {
+  const saved = (current ?? "").trim();
+  const extra: [string, string][] = saved && !choices.some(([value]) => value === saved) ? [[saved, `${saved}（已保存）`]] : [];
+  return [...choices, ...extra].map(([value, label]) => <option key={value} value={value}>{label}</option>);
+}
+
 export function App() {
   const [courses, setCourses] = useState<CourseSummary[]>([]);
   const [course, setCourse] = useState<Course | null>(null);
@@ -1224,7 +1233,7 @@ export function App() {
                   <ShieldCheck size={18} />
                   <p>
                     AI 默认关闭。开启后，课程材料节选、对话和作答会发送到 Codex
-                    提供方处理；检查或目标提取模型填 DeepSeek 时，笔记和材料节选会发送到 DeepSeek。Codex
+                    提供方处理；检查或目标提取模型选 DeepSeek 时，笔记和材料节选会发送到 DeepSeek。Codex
                     也可能在其用户目录保存会话记录；删除课程不会清除这些记录，它们由
                     Codex 与提供方的设置管理。
                   </p>
@@ -1267,17 +1276,19 @@ export function App() {
                 </label>
                 <label className="field-label">
                   笔记自动检查模型（独立）
-                  <input value={settings.note_review_model || "gpt-6-luna"}
-                    onChange={(event) => setSettings({ ...settings, note_review_model: event.target.value })}
-                    placeholder="gpt-6-luna" />
-                  <span className="text-xs text-muted-foreground">笔记检查默认 Luna／中等推理；不改变学习对话模型。填 deepseek-chat 等 DeepSeek 模型时改用 DeepSeek。</span>
+                  <select value={settings.note_review_model || "gpt-6-luna"}
+                    onChange={(event) => setSettings({ ...settings, note_review_model: event.target.value })}>
+                    {modelOptions(settings.note_review_model, [["gpt-6-luna", "Luna（gpt-6-luna）"], ...DEEPSEEK_OPTIONS])}
+                  </select>
+                  <span className="text-xs text-muted-foreground">笔记检查默认 Luna／中等推理；不改变学习对话模型。选 DeepSeek 需在下方填写 API key。</span>
                 </label>
                 <label className="field-label">
                   课程目标提取模型（独立）
-                  <input value={settings.goal_model || ""}
-                    onChange={(event) => setSettings({ ...settings, goal_model: event.target.value })}
-                    placeholder="留空则沿用学习对话模型" />
-                  <span className="text-xs text-muted-foreground">可填 DeepSeek 模型；候选目标仍需核对引用并勾选确认。</span>
+                  <select value={settings.goal_model || ""}
+                    onChange={(event) => setSettings({ ...settings, goal_model: event.target.value })}>
+                    {modelOptions(settings.goal_model, [["", "沿用学习对话模型"], ...DEEPSEEK_OPTIONS])}
+                  </select>
+                  <span className="text-xs text-muted-foreground">候选目标仍需核对引用并勾选确认。</span>
                 </label>
                 <label className="field-label">
                   DeepSeek API key
@@ -1293,7 +1304,7 @@ export function App() {
                   <span className="text-xs text-muted-foreground">
                     {deepseekKey === "" && settings.deepseek_key_set
                       ? "保存后将删除已保存的 key。"
-                      : "只保存在本机 data/ 数据库中，页面不会再显示；用于上面填了 DeepSeek 模型的两项任务。"}
+                      : "只保存在本机 data/ 数据库中，页面不会再显示；用于上面选了 DeepSeek 的两项任务。"}
                   </span>
                 </label>
                 {health?.deepseek && (
