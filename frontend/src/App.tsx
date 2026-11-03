@@ -44,7 +44,8 @@ import {
   ListTree,
   ClipboardList,
 } from "lucide-react";
-import { api, materialFileUrl } from "./api";
+import { api } from "./api";
+import { MaterialsPanel } from "./MaterialsPanel";
 import { cn } from "./lib/utils";
 import { generateWithReading, indexAllMaterials, indexProgress } from "./materialIndex";
 import { Badge } from "./components/ui/badge";
@@ -1035,69 +1036,8 @@ export function App() {
               onExitReview={() => void saveReviewScope(false).then(() => setModal("course-notes"))}
               onOpen={(node, noteId = "") => openMapNote(node, noteId)} />}
             {modal === "materials" && course && (
-              <div className="modal-body">
-                {course.materials.length ? (
-  <div className="materials-list">
-                    {course.materials.map((material) => (
-                      <details className="material-card" key={material.id}>
-                        <summary>
-                          <FilePlus2 size={14} />
-                          <span>{material.name}</span>
-                          <small>
-                            {material.week || "未分周"} · {material.pages.length}{" "}
-                            页
-                          </small>
-                        </summary>
-                        {material.warnings.length > 0 && (
-                          <ul className="warning-list">
-                            {material.warnings.map((warning, index) => (
-                              <li key={`${material.id}-warning-${index}`}>
-                                {warning}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                        <div className="material-pages">
-                          {material.pages.map((page) => (
-                            <details key={`${material.id}-${page.number}`}>
-                              <summary>
-                                第 {page.number} 页 · {page.method}
-                                {page.uncertain ? " · 识别不确定" : ""}
-                              </summary>
-                              <p>
-                                {page.text ||
-                                  "此页未提取到文字；请核对原始页面图像。"}
-                              </p>
-                              {page.warnings.map((warning, index) => (
-                                <span
-                                  className="page-warning"
-                                  key={`${page.number}-warning-${index}`}
-                                >
-                                  {warning}
-                                </span>
-                              ))}
-                              <a
-                                href={materialFileUrl(course.id, material.id, page.number)}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                打开原始文件第 {page.number} 页
-                              </a>
-                              <img
-                                loading="lazy"
-                                src={`/api/courses/${course.id}/materials/${material.id}/pages/${page.number}`}
-                                alt={`${material.name} 第 ${page.number} 页原始页面`}
-                              />
-                            </details>
-                          ))}
-                        </div>
-                      </details>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="muted">还没有导入材料。</p>
-                )}
-              </div>
+              <MaterialsPanel course={course} busy={busy} run={run} onCourse={refreshCourse}
+                doclingAvailable={health?.parser.docling === true} />
             )}
             {modal === "create" && (
               <div className="modal-body">

@@ -26,6 +26,15 @@ class ReviewScope(Input):
     ai_scope: Literal["selected", "course"] = "selected"
 
 
+class MaterialReparse(Input):
+    parser: Literal["basic", "docling"]
+
+
+class MaterialUpdate(Input):
+    name: str | None = Field(default=None, max_length=240)
+    week: str | None = Field(default=None, max_length=100)
+
+
 class Resolve(Input):
     decision: Literal["pass", "supplement", "review"]
 
