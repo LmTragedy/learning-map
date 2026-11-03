@@ -58,7 +58,7 @@ export function GoalBoard({ course, initialGoalId = "", busy, aiEnabled, run, on
   }
   return <div className="modal-body goal-dashboard">
     <div className="goal-toolbar">
-      <div><h3><Target size={20} />{course.title}</h3><p className="goal-muted">{goals.length} 个目标 · {goals.filter((goal) => goal.status === "done").length} 个已确认完成</p></div>
+      <div><p className="text-sm text-foreground">{goals.length} 个目标 · {goals.filter((goal) => goal.status === "done").length} 个已确认完成</p><p className="goal-muted">节点进度是学习证据。小目标逐项勾选；目标达成由你确认。</p></div>
       <div className="goal-actions">
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => void perform(() => api.course(course.id)).then((updated) => updated && onRefresh(updated))} title="读取最新节点进度"><RefreshCw />刷新进度</Button>
         {/* With no goals yet these live in the first-run block below instead. */}
@@ -69,7 +69,6 @@ export function GoalBoard({ course, initialGoalId = "", busy, aiEnabled, run, on
         </>}
       </div>
     </div>
-    <p className="goal-muted">节点进度是学习证据。小目标逐项勾选；目标达成由你确认。</p>
     {error && <p className="goal-error" role="alert">{error}</p>}
     {editor && editor.revision !== course.revision && <p className="goal-muted" role="status">课程已变化。请保留当前编辑内容，取消编辑后重新打开目标再保存。</p>}
     {preview && <GoalCandidates key={preview.token} course={course} preview={preview} busy={busy} onAccept={accept} onCancel={() => setPreview(undefined)} />}
