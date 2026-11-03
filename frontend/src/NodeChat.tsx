@@ -5,7 +5,7 @@ import { Button } from "./components/ui/button";
 import { cn } from "./lib/utils";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { TaskCards, useCourseTasks } from './aiTasks';
-import { taskTime } from './aiTaskModel';
+import { ACTIVE_STATES, taskTime } from './aiTaskModel';
 import type { AiTask } from './aiTaskModel';
 import type { LearningNode } from "./types";
 
@@ -35,7 +35,8 @@ export function NodeChat({ node, busy, aiEnabled, message, fieldRef, context, on
     .sort((left,right)=>left.created_at.localeCompare(right.created_at));
   const thinking=pending.length;
   const blocking=pending.some(t=>['prepared','sending','running','processing'].includes(t.state));
-  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [node.chats.length, thinking]);
+  const streamed=pending.reduce((sum,t)=>sum+(t.partial_reply?.length||0),0);
+  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [node.chats.length, thinking, streamed]);
   const send = () => {
     if (busy || pending.length || resettingConversation || !message.trim() || !aiEnabled) return;
     setSent(message.trim());
@@ -88,6 +89,8 @@ export function NodeChat({ node, busy, aiEnabled, message, fieldRef, context, on
         {task.inputs?.message!==sent&&<span className="self-end text-[13px] text-muted-foreground">刷新前发出 · {taskTime(task.created_at)}</span>}
         <div className="flex flex-col gap-1">
           <span className="text-[13px] text-muted-foreground">AI 导师</span>
+          {/* Text streamed so far; the saved reply replaces it once the turn completes. */}
+          {task.partial_reply && ACTIVE_STATES.has(task.state) && <ChatMarkdown text={task.partial_reply} />}
           <TaskCards kind="chat" target={node.id} taskId={task.id} limit={1} />
         </div>
       </div>)}

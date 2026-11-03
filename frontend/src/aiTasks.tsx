@@ -62,13 +62,16 @@ function useTaskLedger(course: Course | null, onCourse: (course: Course) => void
         const kind=route.endsWith('/lessons')?'lesson':route.endsWith('/chat')?'chat':route.endsWith('/question')?'question':route.endsWith('/attempts')?'assessment':'unknown';
         return {id:`missing-${hint.id}`,course_id:cid,kind,target,state:'prepared',request_id:hint.id,created_at:hint.createdAt,updated_at:hint.createdAt} satisfies AiTask;
       });
+      // Read the course before showing a task as applied, so a finished chat reply never blinks out
+      // between leaving the pending list and arriving in the node's saved chats.
+      if (list.some(t=>t.state==='applied')) {
+        const updated = await api.course(cid);
+        if (epoch !== generation.current) return;
+        latest.current.onCourse(updated);
+      }
       setTasks([...full,...missing]);
       if(details.some(d=>d.status==='rejected')){failures.current++;setError('部分任务详情无法读取。');setOffline(true);}
       else {failures.current=0;setError('');setOffline(false);}
-      if (list.some(t=>t.state==='applied')) {
-        const updated = await api.course(cid);
-        if (epoch === generation.current) latest.current.onCourse(updated);
-      }
     } catch (failure) {
       if (epoch !== generation.current) return;
       failures.current++;setError(failure instanceof Error ? failure.message : '无法读取任务记录。');setOffline(true);
@@ -91,9 +94,11 @@ function useTaskLedger(course: Course | null, onCourse: (course: Course) => void
     let timer: ReturnType<typeof setTimeout>, stopped=false;
     const tick=async()=>{
       if(!stopped&&failures.current<3)await refresh();
-      if(!stopped&&failures.current<3)timer=setTimeout(tick,document.hidden?10000:2000);
+      if(!stopped&&failures.current<3)timer=setTimeout(tick,delay());
     };
-    if(tasks.some(t=>ACTIVE_STATES.has(t.state))||AI_KEYS.has(activity.key)||regenerating.length)timer=setTimeout(tick,document.hidden?10000:2000);
+    // A chat reply streams into the page, so it is polled faster than other work.
+    const delay=()=>document.hidden?10000:tasks.some(t=>t.kind==='chat'&&ACTIVE_STATES.has(t.state))?600:2000;
+    if(tasks.some(t=>ACTIVE_STATES.has(t.state))||AI_KEYS.has(activity.key)||regenerating.length)timer=setTimeout(tick,delay());
     const changed=()=>{if(failures.current<3)void refresh();};
     window.addEventListener('lm:ai-tasks-changed',changed);
     return ()=>{stopped=true;clearTimeout(timer);window.removeEventListener('lm:ai-tasks-changed',changed);};
