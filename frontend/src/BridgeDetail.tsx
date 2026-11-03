@@ -46,7 +46,10 @@ export function BridgeDetail({
   const synthesisInScope = Boolean(synthesisNode && course.review_scope?.node_ids.includes(synthesisNode.id));
   const contrast = edge.kind === "对比";
   const taskLedger=useCourseTasks();
-  const pendingBridge=taskLedger.tasks.some(t=>t.kind==='bridge'&&(t.target===edge.id||t.target==='batch')&&t.state!=='applied');
+  const pendingEdge=taskLedger.tasks.some(t=>t.kind==='bridge'&&t.target===edge.id&&t.state!=='applied');
+  // The batch run reports in the page banner; here it is only a tag, not a second copy of its card.
+  const batch=taskLedger.tasks.find(t=>t.kind==='bridge'&&t.target==='batch'&&['active','attention'].includes(taskLedger.viewFor(t).group));
+  const batchGroup=batch&&taskLedger.viewFor(batch).group;
   return <section className="rounded-xl border border-border bg-card p-3.5" aria-label="知识桥详情">
     <div className="flex items-start gap-2">
       <div className="min-w-0 flex-1">
@@ -78,7 +81,9 @@ export function BridgeDetail({
           {course.materials.find((material) => material.id === entry.material_id)?.name || "课程材料"} · 第 {entry.page} 页{entry.quote ? ` · ${entry.quote}` : ""}</a>)}
       </div>)}
       {!bridges.length && <p className="t-meta">这条联系没有知识桥。</p>}
-      {pendingBridge ? <><TaskCards kind="bridge" target={edge.id} /><TaskCards kind="bridge" target="batch" /></> : needsBridges(edge) && <Button size="sm" variant="outline" className="self-start" disabled={busy}
+      {pendingEdge && <TaskCards kind="bridge" target={edge.id} />}
+      {batch && needsBridges(edge) && <Badge variant={batchGroup==='attention'?'warning':'secondary'} className="self-start">{batchGroup==='attention'?'批量补充未完成 · 见页首':'批量补充中'}</Badge>}
+      {!pendingEdge && !batch && needsBridges(edge) && <Button size="sm" variant="outline" className="self-start" disabled={busy}
         onClick={() => void act("backfill-relations", () => api.backfillRelation(course.id, edge.id, course.revision))}><Sparkles /> 用 AI 补充知识桥</Button>}
     </div>}
     {editing === "bridges" && source && target && <BridgeEditor key={course.revision} course={course} edge={edge} source={source} target={target} busy={busy} act={act} onDone={() => setEditing("")} />}

@@ -41,7 +41,7 @@
 .gdot.role-focus .gdot-label, .gdot.is-selected .gdot-label { font-weight: 600; }
 .react-flow__edge path { transition: opacity .15s, stroke .15s; }
 .react-flow__edge.relationship-edge { cursor: var(--cursor-pointer); }
-.graph-focus-note .up { color: var(--state-new, var(--state-new)); }
+.graph-focus-note .up { color: var(--state-new); }
 .graph-focus-note .down { color: var(--state-mastered, var(--state-mastered)); }
 .graph-canvas .react-flow__controls { border: 1px solid var(--border, var(--sh-accent)); border-radius: 8px; overflow: hidden; box-shadow: none; }
 .graph-canvas .react-flow__controls-button { background: var(--card, var(--card)); border-bottom: 1px solid var(--border, var(--sh-accent)); color: var(--muted-foreground, var(--state-studied)); fill: currentColor; }

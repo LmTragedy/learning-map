@@ -36,13 +36,13 @@
   --ring: #d4d4d8;
   --sidebar: #0e0e11;
   /* learning states: always shown with a word and an icon too */
-  --state-new: var(--state-new);
+  --state-new: #fbbf24;
   --state-studied: #a1a1aa;
   --state-mastered: #60a5fa;
   --state-passed: #4ade80;
   --state-locked: #71717a;
   /* empty part of progress bars: 1.9:1 on the ground so the scale itself reads */
-  --track: var(--track);
+  --track: #3a3a41;
 }
 
 @theme inline {

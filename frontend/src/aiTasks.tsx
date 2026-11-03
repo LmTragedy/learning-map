@@ -17,6 +17,14 @@ function useTaskLedger(course: Course | null, onCourse: (course: Course) => void
   const [openedAt]=useState(()=>Date.now());
   const [open,setOpen] = useState(false), [dismissed,setDismissed] = useState(false), [clock,setClock] = useState(()=>Date.now());
   const [activeEntry,setActiveEntry]=useState('header');
+  const [trayFilter,setTrayFilter]=useState<'all'|'attention'>('all');
+  // Tasks currently showing in their own place (an inline card or a status slot), so the page reminder never repeats them.
+  const [onScreen,setOnScreen]=useState<Record<string,number>>({});
+  const markOnScreen=useCallback((ids:string[])=>{
+    if(!ids.length)return ()=>{};
+    setOnScreen(current=>{const next={...current};ids.forEach(id=>{next[id]=(next[id]||0)+1;});return next;});
+    return ()=>setOnScreen(current=>{const next={...current};ids.forEach(id=>{if(--next[id]<=0)delete next[id];});return next;});
+  },[]);
   // Cards closed inline, keyed by id@updated_at so a task that changes state shows again. The tray still lists them.
   const [hiddenCards,setHiddenCards]=useState<string[]>(()=>{try{return JSON.parse(localStorage.getItem(HIDDEN_KEY)||'[]');}catch{return [];}});
   const hideCard=(task:AiTask)=>setHiddenCards(current=>{const next=[...current.filter(key=>!key.startsWith(task.id+'@')),cardKey(task)].slice(-200);try{localStorage.setItem(HIDDEN_KEY,JSON.stringify(next));}catch{/* per-viewer convenience only */}return next;});
@@ -159,7 +167,7 @@ function useTaskLedger(course: Course | null, onCourse: (course: Course) => void
     return updated;
   };
   const select=(task:AiTask)=>{setOpen(false);navigate(task);};
-  return {tasks,loading,error,open,setOpen,activeEntry,setActiveEntry,dismissed,setDismissed,refresh,recover,regenerate,collect,organize,readResult,importHistory,importingHistory,importMessage,newConversation,viewFor,navigate:select,clock,openedAt,hiddenCards,hideCard};
+  return {tasks,loading,error,open,setOpen,activeEntry,setActiveEntry,trayFilter,setTrayFilter,onScreen,markOnScreen,dismissed,setDismissed,refresh,recover,regenerate,collect,organize,readResult,importHistory,importingHistory,importMessage,newConversation,viewFor,navigate:select,clock,openedAt,hiddenCards,hideCard};
 }
 type Ledger=ReturnType<typeof useTaskLedger>;
 const Context=createContext<Ledger|null>(null);
@@ -168,7 +176,7 @@ export function AiTaskProvider({course,onCourse,onNavigate,aiEnabled,children}:{
 }
 export function useCourseTasks(){const value=useContext(Context);if(!value)throw new Error('缺少 AI 任务上下文');return value;}
 export function useTask(requestId:string){return useCourseTasks().tasks.find(t=>t.request_id===requestId);}
-const trayProps=(l:Ledger,location:string)=>({tasks:l.tasks,viewFor:l.viewFor,loading:l.loading,error:l.error,open:l.open&&l.activeEntry===location,onOpenChange:(open:boolean)=>{l.setActiveEntry(location);l.setOpen(open);},onRefresh:l.refresh,onRecover:l.recover,onRegenerate:l.regenerate,onCollect:l.collect,onOrganize:l.organize,onReadResult:l.readResult,onImportHistory:l.importHistory,importingHistory:l.importingHistory,importMessage:l.importMessage,onNavigate:l.navigate});
+const trayProps=(l:Ledger,location:string)=>({tasks:l.tasks,viewFor:l.viewFor,loading:l.loading,error:l.error,open:l.open&&l.activeEntry===location,onOpenChange:(open:boolean)=>{l.setActiveEntry(location);l.setOpen(open);if(!open)l.setTrayFilter('all');},filter:l.trayFilter,onShowAll:()=>l.setTrayFilter('all'),onRefresh:l.refresh,onRecover:l.recover,onRegenerate:l.regenerate,onCollect:l.collect,onOrganize:l.organize,onReadResult:l.readResult,onImportHistory:l.importHistory,importingHistory:l.importingHistory,importMessage:l.importMessage,onNavigate:l.navigate});
 export function TaskEntry({location='header'}:{location?:string}){const l=useCourseTasks();return <TaskTray {...trayProps(l,location)}/>;}
 type InlineQuery={kind:string|string[];target?:string;taskId?:string};
 /** Tasks a TaskCards slot shows, oldest ancestor first; shared with the banner so it never repeats them. */
@@ -181,15 +189,26 @@ function inlineTasks(l:Ledger,{kind,target,taskId}:InlineQuery){
   relevant.forEach(append);
   return tasks;
 }
+function useOnScreen(l:Ledger,ids:string[]){
+  const key=ids.join(' ');
+  useEffect(()=>l.markOnScreen(key?key.split(' '):[]),[l.markOnScreen,key]);
+}
 export function TaskCards({limit=2,...query}:InlineQuery&{limit?:number}) {
   const l=useCourseTasks(), tasks=inlineTasks(l,query);
+  useOnScreen(l,tasks.slice(0,limit).map(t=>t.id));
   return <div className="task-stack">{tasks.slice(0,limit).map(task=><TaskCard key={task.id} task={task} view={l.viewFor(task)} onRefresh={l.refresh} onRecover={()=>l.recover(task)} onRegenerate={()=>l.regenerate(task)} onCollect={()=>l.collect(task)} onOrganize={()=>l.organize(task)} onReadResult={()=>l.readResult(task)} onOpen={()=>l.navigate(task)} onDismiss={query.taskId||ACTIVE_STATES.has(task.state)?undefined:()=>l.hideCard(task)} onNewTask={rid=>{const child=l.tasks.find(t=>t.request_id===rid);if(child)l.navigate(child);else l.setOpen(true);}}/>)}{tasks.length>limit&&<button type="button" className="task-more" onClick={()=>l.setOpen(true)}>还有 {tasks.length-limit} 个 AI 任务<span aria-hidden="true">→</span></button>}</div>;
 }
 /** Course-wide work with no panel of its own shows as cards under the header. */
 const GLOBAL_KINDS=['map','lines','recall','retell','goals','bridge_history'];
+/** A status slot for one kind of task (e.g. the batch bridge run), drawn by the caller where that task was started. */
+export function TaskSlot({kind,target,children}:{kind:string;target:string;children:(task:AiTask|undefined,view:ReturnType<Ledger['viewFor']>|undefined,dismiss:()=>void)=>ReactNode}){
+  const l=useCourseTasks();
+  const task=l.tasks.find(t=>t.kind===kind&&t.target===target&&!l.hiddenCards.includes(cardKey(t))&&(ACTIVE_STATES.has(t.state)||l.viewFor(t).group==='attention'||t.state==='applied'&&Date.parse(t.updated_at)>=l.openedAt));
+  useOnScreen(l,task?[task.id]:[]);
+  return <>{children(task,task&&l.viewFor(task),()=>task&&l.hideCard(task))}</>;
+}
 export function TaskBanners(){
   const l=useCourseTasks();
-  // The banner summarises only what is not already shown as a card right below it.
-  const cards=inlineTasks(l,{kind:GLOBAL_KINDS}), shown=new Set(cards.slice(0,2).map(t=>t.id));
-  return <>{!l.dismissed&&<TaskNotice {...trayProps(l,'header')} tasks={l.tasks.filter(t=>!shown.has(t.id))} onDismiss={()=>l.setDismissed(true)}/>}{cards.length>0&&<div className="task-global"><TaskCards kind={GLOBAL_KINDS} /></div>}</>;
+  const cards=inlineTasks(l,{kind:GLOBAL_KINDS});
+  return <>{!l.dismissed&&<TaskNotice tasks={l.tasks.filter(t=>!l.onScreen[t.id])} viewFor={l.viewFor} onNavigate={l.navigate} onViewAll={()=>{l.setTrayFilter('attention');l.setActiveEntry('header');l.setOpen(true);}} onDismiss={()=>l.setDismissed(true)}/>}{cards.length>0&&<div className="task-global"><TaskCards kind={GLOBAL_KINDS} /></div>}</>;
 }

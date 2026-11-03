@@ -67,7 +67,7 @@ import { CourseNotes } from "./CourseNotes";
 import { hasUnsavedNotes } from "./noteDrafts";
 import { hasVolatileAnswerDrafts } from "./answerDrafts";
 import { RecallPanel } from "./RecallPanel";
-import { AiTaskProvider, TaskBanners, TaskEntry } from './aiTasks';
+import { AiTaskProvider, TaskBanners, TaskCards, TaskEntry, TaskSlot } from './aiTasks';
 import type { AiTask } from './aiTaskModel';
 import type {
   Course,
@@ -727,16 +727,37 @@ export function App() {
                   {aiEnabled ? "分析课程材料并生成知识地图。" : "请先在设置中启用 AI，并确认数据发送说明。"}
                 </Callout>
               )}
-              {bridgeGapCount > 0 && !hints.hidden(`bridges:${course.id}`, bridgeGapCount) && (
-                <Callout tone="neutral" icon={<Waypoints />} title={`${bridgeGapCount} 条联系还没有知识桥`}
-                  dismissLabel="不再提示（新增缺口时再提醒）" onDismiss={() => hints.dismiss(`bridges:${course.id}`, bridgeGapCount)}
-                  actions={aiOn ? <Button size="sm" variant="outline" disabled={busy}
-                    onClick={() => void run("backfill-relations", () => api.backfillRelations(course.id, course.revision)).then((v) => v && refreshCourse(v))}>
-                    <Sparkles /> 用 AI 补充知识桥
-                  </Button> : <Button size="sm" variant="outline" onClick={() => void openSettings()}>先在设置中开启 AI</Button>}>
-                  <span className="max-[781px]:hidden">让 AI 根据材料写清“后一个知识点的哪一步用到了前一个的哪一块”，并配一道检验题。每次处理 12 条，结果标为待核对，不改变进度和解锁。</span>
-                </Callout>
-              )}
+              {/* The batch bridge run reports here, where it was started: running, needing attention, or done. */}
+              <TaskSlot kind="bridge" target="batch">{(task, view, dismissTask) => {
+                const backfill = () => void run("backfill-relations", () => api.backfillRelations(course.id, course.revision)).then((v) => v && refreshCourse(v));
+                if (task && view?.group === "active") return (
+                  <Callout tone="neutral" icon={<LoaderCircle className="animate-spin" />} title={view.title}
+                    actions={<Button size="sm" variant="outline" disabled>补充中</Button>}>
+                    {bridgeGapCount} 条联系待补充，每次处理 12 条，结果标为待核对。
+                  </Callout>);
+                // Checked before "attention": a finished batch has no single result object, so the model files it as unverified.
+                if (task?.state === "applied") {
+                  const review = course.edges.find((edge) => !edge.confirmed && !needsBridges(edge));
+                  const reviewTarget = review && course.nodes.find((node) => node.id === review.target);
+                  return (
+                    <Callout tone="success" icon={<CircleCheck />} title="已补充知识桥，结果待核对" dismissLabel="关闭" onDismiss={dismissTask}
+                      actions={<>
+                        {reviewTarget && <Button size="sm" variant="outline" onClick={() => openNode(reviewTarget, review!.id)}>去核对</Button>}
+                        {bridgeGapCount > 0 && aiOn && <Button size="sm" variant="ghost" disabled={busy} onClick={backfill}>继续补充</Button>}
+                      </>}>
+                      {bridgeGapCount > 0 ? `还有 ${bridgeGapCount} 条联系没有知识桥。` : "所有联系都有知识桥了。"}
+                    </Callout>);
+                }
+                if (task && view?.group === "attention") return <TaskCards kind="bridge" target="batch" limit={1} />;
+                return bridgeGapCount > 0 && !hints.hidden(`bridges:${course.id}`, bridgeGapCount) && (
+                  <Callout tone="neutral" icon={<Waypoints />} title={`${bridgeGapCount} 条联系还没有知识桥`}
+                    dismissLabel="不再提示（新增缺口时再提醒）" onDismiss={() => hints.dismiss(`bridges:${course.id}`, bridgeGapCount)}
+                    actions={aiOn ? <Button size="sm" variant="outline" disabled={busy} onClick={backfill}>
+                      <Sparkles /> 用 AI 补充知识桥
+                    </Button> : <Button size="sm" variant="outline" onClick={() => void openSettings()}>先在设置中开启 AI</Button>}>
+                    <span className="max-[781px]:hidden">让 AI 根据材料写清“后一个知识点的哪一步用到了前一个的哪一块”，并配一道检验题。每次处理 12 条，结果标为待核对，不改变进度和解锁。</span>
+                  </Callout>);
+              }}</TaskSlot>
               {course.review_scope?.enabled && activeNodes.length === 0 && (
                 <Callout tone="neutral" icon={<FileSearch />} title="所选 PDF 暂无匹配知识点">
                   这份材料当前没有关联到已生成的节点。可以更换复习资料，或退出复习；无需重新导入文件。

@@ -1,9 +1,10 @@
 import * as React from "react";
 import {
   AlertCircle, ArrowRight, CircleCheck, CircleHelp, Download, FileQuestion,
-  GitCompare, History, Inbox, RefreshCw, RotateCcw, WifiOff, X,
+  ChevronDown, GitCompare, History, Inbox, RefreshCw, RotateCcw, WifiOff, X,
 } from "lucide-react";
 import { Button } from "./components/ui/button";
+import { cn } from "./lib/utils";
 import type { AiTask, TaskView } from "./aiTaskModel";
 import { taskTime } from "./aiTaskModel";
 import "./taskUi.css";
@@ -38,14 +39,18 @@ function getCardIcon(view: TaskView) {
   return statusIcons[view.semantic];
 }
 
-function getCardClass(view: TaskView) {
-  if (view.semantic === "failed") return "task-card task-card-failed";
-  if (view.semantic === "offline") return "task-card task-card-unknown";
-  if (view.group === "attention") return "task-card task-card-attention";
-  if (view.group === "superseded") return "task-card task-card-superseded";
-  if (view.group === "history") return "task-card task-card-history";
-  if (view.semantic === "unknown") return "task-card task-card-unknown";
-  return "task-card";
+/** Same tones as the page Callout, so a task card reads as one of the page's own messages. */
+function cardTone(view: TaskView) {
+  if (view.semantic === "failed") return "border-destructive/40 bg-destructive/10";
+  if (view.group === "superseded" || view.group === "history" || view.semantic === "offline") return "border-dashed border-border bg-transparent";
+  if (view.group === "attention") return "border-st-new/40 bg-st-new/8";
+  return "border-border bg-card";
+}
+
+function iconTone(view: TaskView) {
+  if (view.semantic === "failed") return "text-destructive";
+  if (view.group === "attention") return "text-st-new";
+  return "text-muted-foreground";
 }
 
 function formatSavedObject(savedObject: unknown) {
@@ -130,69 +135,74 @@ export function TaskCard({
   const refreshButton = view.semantic === "prepared" || view.semantic === "running"
     || view.semantic === "processing" || view.semantic === "offline";
   const showRegenerate = (view.canRegenerate || view.semantic === "recovering") && !view.newRequestId;
-  const hasActions = refreshButton || view.canRecover || showRegenerate || view.canOpen
-    || Boolean(view.newRequestId) || view.canCollect || view.canOrganize
-    || (displayedTask.result_ref?.available && !hasStoredObject);
+  // Raw reply and IDs are for checking a task, not for learning; they stay behind one quiet toggle.
+  const showDetails = rawAvailable || hasStoredObject || Boolean(displayedTask.result_ref);
+  const detailsOpen = rawExpanded || resultExpanded;
   const organization = displayedTask.organization;
   const checkedAt = organization?.checked_at ? taskTime(organization.checked_at) || organization.checked_at : "未知";
 
+  const busy = busyAction !== null;
+  // Some descriptions already carry the time ("回复于 20:12"); never print it twice.
+  const meta = [view.description, view.time && !view.description?.includes(view.time) ? view.time : ""].filter(Boolean).join(" · ");
   return (
-    <article className={getCardClass(view)} data-task-id={task.id} role="status" aria-live="polite" aria-label={view.title}>
-      <span className={`task-card-icon task-icon-${view.semantic}`} aria-hidden="true">{getCardIcon(view)}</span>
-      <div className="task-card-heading">
-        <h3 className="task-card-title">{view.title}</h3>
-        {view.time && <time className="task-card-time">{view.time}</time>}
-        {onDismiss && <Button size="icon-sm" variant="ghost" className="task-card-dismiss" aria-label="关闭这张卡片（仍可在 AI 任务中查看）" title="关闭（仍可在 AI 任务中查看）" onClick={onDismiss}><X /></Button>}
+    <article className={cn("task-card flex w-full flex-col gap-2 rounded-lg border px-3 py-2.5 text-left text-sm", cardTone(view))}
+      data-task-id={task.id} role="status" aria-live="polite" aria-label={view.title}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className={cn("flex size-4 shrink-0 items-center justify-center [&_svg]:size-4", iconTone(view))} aria-hidden="true">{getCardIcon(view)}</span>
+        <div className="min-w-0 flex-1">
+          <strong className="block font-semibold text-foreground">{view.title}</strong>
+          {meta && <p className="line-clamp-2 text-[13px] leading-relaxed text-muted-foreground" title={meta}>{meta}</p>}
+        </div>
+        {!confirming && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 empty:hidden">
+            {view.canRecover && <Button size="sm" variant="outline" disabled={busy || view.semantic === "recovering"} onClick={() => void runAction("recover", onRecover)}><Download />恢复并应用</Button>}
+            {view.canCollect && onCollect && <Button size="sm" variant="outline" disabled={busy} onClick={() => void runAction("collect", onCollect)}><Download />只读取回</Button>}
+            {view.canOpen && <Button size="sm" variant="outline" onClick={onOpen}>打开结果<ArrowRight /></Button>}
+            {view.newRequestId && <Button size="sm" variant="outline" onClick={() => onNewTask ? onNewTask(view.newRequestId!) : onOpen()}>查看新任务<ArrowRight /></Button>}
+            {showRegenerate && <Button size="sm" variant="ghost" disabled={busy || view.semantic === "recovering"} onClick={() => setConfirming(true)}><RotateCcw />重新生成…</Button>}
+            {view.canOrganize && onOrganize && <Button size="sm" variant="ghost" disabled={busy} onClick={() => void runAction("organize", onOrganize)}><RefreshCw />重试原生归类</Button>}
+            {displayedTask.result_ref?.available && !hasStoredObject && onReadResult && <Button size="sm" variant="ghost" disabled={busy} onClick={() => void runAction("result", onReadResult)}><FileQuestion />读取已保存对象</Button>}
+            {showDetails && <Button size="sm" variant="ghost" className="text-muted-foreground" aria-expanded={detailsOpen} onClick={() => { setRawExpanded(!detailsOpen); if (detailsOpen) setResultExpanded(false); }}>
+              {detailsOpen ? "收起原文" : "原文"}<ChevronDown className={cn("transition-transform", detailsOpen && "rotate-180")} />
+            </Button>}
+          </div>
+        )}
+        {refreshButton && <Button size="icon-sm" variant="ghost" className="-my-1 shrink-0 text-muted-foreground" aria-label="刷新状态" title="刷新状态" disabled={busy} onClick={() => void runAction("refresh", onRefresh)}><RefreshCw className={busyAction === "refresh" ? "task-refreshing" : undefined} /></Button>}
+        {onDismiss && <Button size="icon-sm" variant="ghost" className="-my-1 -mr-1 shrink-0 text-muted-foreground" aria-label="关闭这张卡片（仍可在 AI 任务中查看）" title="关闭（仍可在 AI 任务中查看）" onClick={onDismiss}><X /></Button>}
       </div>
-      {view.description && <p className="task-card-description" title={view.description}>{view.description}</p>}
-      {confirming ? (
-        <div className="task-card-confirm">
-          <p>会新建一个 AI 任务。原任务和已有结果都会保留；如果原任务之后也写入，两份结果都在。</p>
-          <div className="task-card-actions task-card-confirm-actions">
-            <Button size="sm" onClick={() => void runAction("regenerate", onRegenerate)} disabled={busyAction !== null}>
-              <RotateCcw />确认重新生成
-            </Button>
+      {(view.error || actionError || displayedTask.organization_error) && <div className="flex flex-col gap-1 pl-7">
+        {displayedTask.organization_error && <p className="flex items-start gap-1.5 text-[13px] leading-relaxed text-destructive"><AlertCircle className="mt-[3px] size-3.5 shrink-0" aria-hidden="true" />原生归类错误：{displayedTask.organization_error}</p>}
+        {(view.error || actionError) && <p className="flex items-start gap-1.5 text-[13px] leading-relaxed text-destructive"><AlertCircle className="mt-[3px] size-3.5 shrink-0" aria-hidden="true" />{actionError || view.error}</p>}
+      </div>}
+      {view.semantic === "unknown" && !view.canRecover && !view.error && <p className="pl-7 text-[13px] text-muted-foreground">这个任务没有可恢复并应用的回复。</p>}
+      {confirming && (
+        <div className="flex flex-col gap-2 rounded-md bg-muted/60 px-3 py-2 ml-7">
+          <p className="text-[13px] leading-relaxed">会新建一个 AI 任务。原任务和已有结果都会保留；如果原任务之后也写入，两份结果都在。</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => void runAction("regenerate", onRegenerate)} disabled={busy}><RotateCcw />确认重新生成</Button>
             <Button ref={cancelRef} size="sm" variant="ghost" onClick={() => setConfirming(false)}>取消</Button>
           </div>
         </div>
-      ) : hasActions && (
-        <div className="task-card-actions">
-          {view.canRecover && <Button size="sm" variant="outline" disabled={busyAction !== null || view.semantic === "recovering"} onClick={() => void runAction("recover", onRecover)}><Download />恢复并应用</Button>}
-          {view.canCollect && onCollect && <Button size="sm" variant="outline" disabled={busyAction !== null} onClick={() => void runAction("collect", onCollect)}><Download />只读取回</Button>}
-          {refreshButton && <Button size="sm" variant={view.semantic === "offline" ? "outline" : "ghost"} disabled={busyAction !== null} onClick={() => void runAction("refresh", onRefresh)}><RefreshCw className={busyAction === "refresh" ? "task-refreshing" : undefined} />刷新状态</Button>}
-          {view.canOpen && <Button size="sm" variant="ghost" onClick={onOpen}>打开课程结果<ArrowRight /></Button>}
-          {view.newRequestId && <button type="button" className="task-new-link" onClick={() => onNewTask ? onNewTask(view.newRequestId!) : onOpen()}>已重新生成 → 查看新任务<ArrowRight /></button>}
-          {showRegenerate && <Button className="task-regenerate" size="sm" variant="ghost" disabled={busyAction !== null || view.semantic === "recovering"} onClick={() => setConfirming(true)}><RotateCcw />重新生成…</Button>}
-          {view.canOrganize && onOrganize && <Button size="sm" variant="ghost" disabled={busyAction !== null} onClick={() => void runAction("organize", onOrganize)}><RefreshCw />重试原生归类</Button>}
-          {displayedTask.result_ref?.available && !hasStoredObject && onReadResult && <Button size="sm" variant="ghost" disabled={busyAction !== null} onClick={() => void runAction("result", onReadResult)}><FileQuestion />读取已保存对象</Button>}
-        </div>
       )}
-      <details open={rawExpanded || resultExpanded} onToggle={(event) => { setRawExpanded(event.currentTarget.open); if (!event.currentTarget.open) setResultExpanded(false); }} className="task-inspection">
-        <summary>{rawAvailable ? "详情 · 原文与 ID" : "详情 · ID（原文尚未取回）"}</summary>
-        <div className="task-inspection-body">
-          <dl className="task-identity-list">
-            <dt>任务 ID</dt><dd>{displayedTask.id}</dd>
-            <dt>会话 ID</dt><dd>{displayedTask.thread_id || "未取得"}</dd>
-            <dt>轮次 ID</dt><dd>{displayedTask.turn_id || "未取得"}</dd>
-            {organization && <>
-              <dt>Codex 分区</dt><dd>{nativeStatusText(organization.native_status)}</dd>
-              <dt>桌面侧栏</dt><dd>{desktopStatusText(organization.desktop_status)}</dd>
-              <dt>最后核对</dt><dd>{checkedAt}（非持续同步）</dd>
-            </>}
-          </dl>
-          <h4>原文</h4>
-          {rawText ? <pre>{rawText}</pre> : <p>当前没有可显示的原始文本。</p>}
-          {(displayedTask.result_ref || hasStoredObject) && <>
-            <h4>结果引用与保存对象</h4>
-            {displayedTask.result_ref && <pre>{formatSavedObject(displayedTask.result_ref)}</pre>}
-            {hasStoredObject ? <pre>{formatSavedObject(storedObject)}</pre> : <p>后端已确认保存对象可用；可读取对象后查看。</p>}
+      {detailsOpen && <div className="task-inspection ml-7 flex flex-col gap-1.5 border-l border-border pl-3">
+        {rawText ? <pre>{rawText}</pre> : <p>当前没有可显示的原始文本。</p>}
+        {(displayedTask.result_ref || hasStoredObject) && <>
+          <h4>结果引用与保存对象</h4>
+          {displayedTask.result_ref && <pre>{formatSavedObject(displayedTask.result_ref)}</pre>}
+          {hasStoredObject ? <pre>{formatSavedObject(storedObject)}</pre> : <p>后端已确认保存对象可用；可读取对象后查看。</p>}
+        </>}
+        <dl className="task-identity-list">
+          <dt>任务 ID</dt><dd>{displayedTask.id}</dd>
+          <dt>会话 ID</dt><dd>{displayedTask.thread_id || "未取得"}</dd>
+          <dt>轮次 ID</dt><dd>{displayedTask.turn_id || "未取得"}</dd>
+          {organization && <>
+            <dt>Codex 分区</dt><dd>{nativeStatusText(organization.native_status)}</dd>
+            <dt>桌面侧栏</dt><dd>{desktopStatusText(organization.desktop_status)}</dd>
+            <dt>最后核对</dt><dd>{checkedAt}（非持续同步）</dd>
           </>}
-        </div>
-      </details>
-      {displayedTask.organization_error && <p className="task-card-error"><AlertCircle aria-hidden="true" />原生归类错误：{displayedTask.organization_error}</p>}
-      {(view.error || actionError) && <p className="task-card-error"><AlertCircle aria-hidden="true" />{actionError || view.error}</p>}
-      {view.semantic === "unknown" && !view.canRecover && !view.error && <p className="task-card-hint">这个任务没有可恢复并应用的回复。</p>}
-      {busyAction && <span className="task-card-sr-only" role="status">{busyAction === "recover" ? "正在恢复并应用…" : busyAction === "collect" ? "正在只读取回…" : busyAction === "organize" ? "正在重试原生归类…" : busyAction === "result" ? "正在读取保存对象…" : busyAction === "refresh" ? "正在刷新状态…" : "正在创建新任务…"}</span>}
+        </dl>
+      </div>}
+      {busyAction && <span className="sr-only" role="status">{busyAction === "recover" ? "正在恢复并应用…" : busyAction === "collect" ? "正在只读取回…" : busyAction === "organize" ? "正在重试原生归类…" : busyAction === "result" ? "正在读取保存对象…" : busyAction === "refresh" ? "正在刷新状态…" : "正在创建新任务…"}</span>}
     </article>
   );
 }
