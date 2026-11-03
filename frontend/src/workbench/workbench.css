@@ -6,17 +6,17 @@
 .wb-tab { display: flex; align-items: center; min-width: 0; max-width: 260px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--muted-foreground); transition: color .15s, border-color .15s; }
 .wb-tab:hover { color: var(--foreground); }
 .wb-tab[data-active] { color: var(--foreground); border-bottom-color: var(--foreground); }
-.wb-tab-label { display: flex; align-items: center; gap: 7px; min-width: 0; height: 100%; padding: 0 4px 0 12px; font-size: 13px; color: inherit; background: none; border: 0; cursor: pointer; }
+.wb-tab-label { display: flex; align-items: center; gap: 7px; min-width: 0; height: 100%; padding: 0 4px 0 12px; font-size: 13px; color: inherit; background: none; border: 0; cursor: var(--cursor-pointer); }
 .wb-tab-label span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.wb-tab-close { display: grid; place-items: center; width: 20px; height: 20px; margin-right: 6px; border: 0; border-radius: 4px; color: inherit; background: none; opacity: 0; cursor: pointer; transition: opacity .15s, background .15s; }
+.wb-tab-close { display: grid; place-items: center; width: 20px; height: 20px; margin-right: 6px; border: 0; border-radius: 4px; color: inherit; background: none; opacity: 0; cursor: var(--cursor-pointer); transition: opacity .15s, background .15s; }
 .wb-tab:hover .wb-tab-close, .wb-tab[data-active] .wb-tab-close, .wb-tab-close:focus-visible { opacity: .65; }
 .wb-tab-close:hover { opacity: 1; background: var(--sh-accent); }
-.wb-add { position: relative; display: flex; align-items: center; gap: 6px; padding: 0 10px; font-size: 13px; color: var(--muted-foreground); cursor: pointer; }
+.wb-add { position: relative; display: flex; align-items: center; gap: 6px; padding: 0 10px; font-size: 13px; color: var(--muted-foreground); cursor: var(--cursor-pointer); }
 .wb-add:hover, .wb-add:focus-within { color: var(--foreground); }
-.wb-add select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.wb-add select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: var(--cursor-pointer); }
 .wb-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; flex-shrink: 0; }
 .wb-seg { display: flex; padding: 2px; margin-right: 4px; border-radius: 8px; background: var(--secondary); }
-.wb-seg button { height: 26px; padding: 0 10px; border: 0; border-radius: 4px; font-size: 12px; color: var(--muted-foreground); background: none; cursor: pointer; }
+.wb-seg button { height: 26px; padding: 0 10px; border: 0; border-radius: 4px; font-size: 12px; color: var(--muted-foreground); background: none; cursor: var(--cursor-pointer); }
 .wb-seg button[aria-pressed="true"] { color: var(--foreground); background: var(--background); }
 
 /* Panes share the page background; a hairline is the only seam. */
@@ -33,7 +33,7 @@
 .wb-pager { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--foreground); background: var(--popover);  opacity: .8; transition: opacity .15s; }
 .wb-pager:hover, .wb-pager:focus-within { opacity: 1; }
 .wb-pager span { padding: 0 6px; }
-.wb-pager button { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 999px; color: inherit; background: none; cursor: pointer; }
+.wb-pager button { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 999px; color: inherit; background: none; cursor: var(--cursor-pointer); }
 .wb-pager button:hover:not(:disabled) { background: var(--sh-accent); }
 .wb-pager button:disabled { opacity: .35; cursor: default; }
 
@@ -42,11 +42,11 @@
 .wb-excerpt { position: sticky; bottom: 56px; display: flex; gap: 8px; width: fit-content; margin: 12px auto 0; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--popover); box-shadow: 0 6px 20px rgb(0 0 0 / .35); }
 
 /* Back to the map, then the two study modes. */
-.wb-back { display: flex; align-items: center; gap: 4px; align-self: center; height: 30px; padding: 0 10px 0 6px; border: 0; border-radius: 8px; font-size: 13px; color: var(--muted-foreground); background: none; cursor: pointer; white-space: nowrap; }
+.wb-back { display: flex; align-items: center; gap: 4px; align-self: center; height: 30px; padding: 0 10px 0 6px; border: 0; border-radius: 8px; font-size: 13px; color: var(--muted-foreground); background: none; cursor: var(--cursor-pointer); white-space: nowrap; }
 .wb-back:hover { color: var(--foreground); background: var(--sh-accent); }
 .wb-sep { align-self: center; width: 1px; height: 18px; background: var(--border); }
 .wb-mode { display: flex; align-self: center; gap: 2px; padding: 3px; border-radius: 8px; background: var(--secondary); flex-shrink: 0; }
-.wb-mode button { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border: 0; border-radius: 8px; font-size: 13px; color: var(--muted-foreground); background: none; cursor: pointer; white-space: nowrap; }
+.wb-mode button { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border: 0; border-radius: 8px; font-size: 13px; color: var(--muted-foreground); background: none; cursor: var(--cursor-pointer); white-space: nowrap; }
 .wb-mode button:hover { color: var(--foreground); }
 .wb-mode button[aria-selected="true"] { color: var(--foreground); background: var(--background); box-shadow: 0 1px 2px rgb(0 0 0 / .4); }
 
@@ -54,7 +54,7 @@
 .lesson-study { display: flex; flex-direction: column; min-height: 0; background: var(--background); }
 .lesson-study iframe { flex: 1; width: 100%; min-height: 0; border: 0; background: #f4f4f5; }
 .lesson-tabs { display: flex; gap: 6px; padding: 10px 16px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.lesson-tab { display: flex; align-items: center; gap: 7px; max-width: 240px; height: 30px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; font-size: 13px; color: var(--muted-foreground); background: none; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+.lesson-tab { display: flex; align-items: center; gap: 7px; max-width: 240px; height: 30px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; font-size: 13px; color: var(--muted-foreground); background: none; cursor: var(--cursor-pointer); white-space: nowrap; flex-shrink: 0; }
 .lesson-tab:hover { color: var(--foreground); }
 .lesson-tab[aria-selected="true"] { color: var(--foreground); background: var(--card); border-color: var(--border); }
 .lesson-tab-n { font: 500 11px var(--font-mono); color: var(--muted-foreground); }
@@ -75,7 +75,7 @@
 .practice-question > p { margin: 0; font-size: 15px; line-height: 1.8; white-space: pre-wrap; color: var(--foreground); }
 .practice-question > p.muted { font-size: 14px; color: var(--muted-foreground); }
 .practice-question > button { align-self: flex-start; }
-.link-button { display: flex; align-items: center; gap: 5px; height: auto !important; padding: 2px 4px !important; border: 0; font-size: 12px !important; color: var(--muted-foreground); background: none !important; cursor: pointer; }
+.link-button { display: flex; align-items: center; gap: 5px; height: auto !important; padding: 2px 4px !important; border: 0; font-size: 12px !important; color: var(--muted-foreground); background: none !important; cursor: var(--cursor-pointer); }
 .link-button:hover:not(:disabled) { color: var(--foreground); }
 .practice-editor { display: flex; flex-direction: column; border: 1px solid var(--input); border-radius: 12px; background: var(--field); overflow: hidden; }
 .practice-editor:focus-within { border-color: #71717a; }

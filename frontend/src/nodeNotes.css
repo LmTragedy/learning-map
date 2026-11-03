@@ -56,13 +56,13 @@
 }
 /* Notion-style formatting tools */
 .note-toolbar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-bottom: 12px; padding: 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
-.note-tool { display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 6px; color: var(--muted-foreground); cursor: pointer; }
+.note-tool { display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 6px; color: var(--muted-foreground); cursor: var(--cursor-pointer); }
 .note-tool:hover, .note-tool:focus-visible { background: var(--accent); color: var(--foreground); outline: none; }
 .note-tool-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--border); }
-.note-swatch { width: 22px; height: 22px; border-radius: 999px; border: 2px solid var(--background); box-shadow: 0 0 0 1px var(--border); cursor: pointer; }
+.note-swatch { width: 22px; height: 22px; border-radius: 999px; border: 2px solid var(--background); box-shadow: 0 0 0 1px var(--border); cursor: var(--cursor-pointer); }
 .note-bubble { position: absolute; z-index: 5; display: flex; gap: 1px; padding: 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--popover); box-shadow: 0 6px 20px rgb(0 0 0 / .35); }
 .note-bubble .note-tool { min-width: 26px; height: 26px; }
-.node-note-code .cm-note-task { width: 15px; height: 15px; margin: 0 8px 0 2px; vertical-align: -2px; cursor: pointer; accent-color: var(--state-passed); }
+.node-note-code .cm-note-task { width: 15px; height: 15px; margin: 0 8px 0 2px; vertical-align: -2px; cursor: var(--cursor-pointer); accent-color: var(--state-passed); }
 .node-note-code .cm-note-done { color: var(--muted-foreground); text-decoration: line-through; }
 .node-note-code .cm-tooltip-autocomplete { border: 1px solid var(--border); border-radius: 8px; background: var(--popover); padding: 4px; font-family: var(--font-sans); }
 .node-note-code .cm-tooltip-autocomplete > ul > li { padding: 4px 10px !important; border-radius: 6px; font-size: 13px; }

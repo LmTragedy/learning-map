@@ -11,7 +11,7 @@
 .graph-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--border, #27272a); border-radius: 8px;
   background: var(--card, #131316); font-size: 12px; color: var(--muted-foreground, #a1a1aa); }
 .graph-focus-note { position: absolute; z-index: 10; right: 12px; bottom: 12px; font-size: 13px; }
-.graph-canvas .react-flow__node-dot { cursor: pointer; }
+.graph-canvas .react-flow__node-dot { cursor: var(--cursor-pointer); }
 .graph-canvas .react-flow__handle { left: 50% !important; top: 50% !important; right: auto !important; bottom: auto !important;
   width: 1px; height: 1px; min-width: 0; min-height: 0; border: 0; opacity: 0; transform: translate(-50%, -50%); }
 
@@ -40,7 +40,7 @@
 .gdot.role-focus .gdot-label, .gdot.role-up .gdot-label, .gdot.role-down .gdot-label, .gdot.is-selected .gdot-label { opacity: 1; color: #fafafa; }
 .gdot.role-focus .gdot-label, .gdot.is-selected .gdot-label { font-weight: 600; }
 .react-flow__edge path { transition: opacity .15s, stroke .15s; }
-.react-flow__edge.relationship-edge { cursor: pointer; }
+.react-flow__edge.relationship-edge { cursor: var(--cursor-pointer); }
 .graph-focus-note .up { color: var(--state-new, #fbbf24); }
 .graph-focus-note .down { color: var(--state-mastered, #60a5fa); }
 .graph-canvas .react-flow__controls { border: 1px solid var(--border, #27272a); border-radius: 8px; overflow: hidden; box-shadow: none; }

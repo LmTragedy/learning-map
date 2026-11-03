@@ -145,7 +145,7 @@
   .decision-row button, .mastered-note button, .suggestion-card button {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px;
     border: 1px solid transparent; border-radius: 8px; background: var(--control); color: var(--foreground);
-    font-size: 13px; font-weight: 500; cursor: pointer; transition: background .15s;
+    font-size: 13px; font-weight: 500; cursor: var(--cursor-pointer); transition: background .15s;
   }
   .modal button:not([class*="inline-flex"]):hover, .practice-panel button:hover, .recall-panel button:hover,
   .lesson-reader button:hover, .decision-row button:hover { background: var(--control-hover); }
@@ -210,3 +210,15 @@
 .t-item { font-size: 14px; font-weight: 600; line-height: 1.5; }
 .t-label { font-size: 13px; font-weight: 600; line-height: 1.5; letter-spacing: 0.04em; color: var(--muted-foreground); }
 .t-meta { font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--muted-foreground); }
+
+/* Cartoon cursors: a chunky white arrow, and an amber one with a spark for anything clickable.
+   Unlayered so they win over the kit and the utilities; text fields keep the system I-beam. */
+:root {
+  --cursor-default: url("./cursors/arrow.svg") 5 3, default;
+  --cursor-pointer: url("./cursors/pointer.svg") 9 7, pointer;
+}
+html { cursor: var(--cursor-default); }
+a[href], button:not(:disabled), [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="switch"],
+[role="checkbox"], summary, select, label:has(> input[type="checkbox"]), .cursor-pointer { cursor: var(--cursor-pointer); }
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), textarea,
+[contenteditable="true"], .cm-content { cursor: text; }

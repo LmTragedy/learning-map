@@ -36,7 +36,7 @@ select {
   color: inherit;
 }
 button {
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
 }
 button:disabled {
   opacity: 0.48;
@@ -474,7 +474,7 @@ a {
 .review-select-actions { display: flex; align-items: center; gap: 8px; }
 .review-select-actions strong { flex: 1; }
 .review-material-list { max-height: 310px; overflow: auto; display: grid; gap: 7px; }
-.review-material-option { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface); cursor: pointer; }
+.review-material-option { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface); cursor: var(--cursor-pointer); }
 .review-material-option span { display: flex; flex-direction: column; gap: 4px; }
 .review-material-option small { color: #a1a1aa; }
 .review-ai-option { display: flex; align-items: center; gap: 8px; padding: 10px 0 2px; }
@@ -539,7 +539,7 @@ a {
 .lesson-reader iframe { display: block; width: 100%; flex: 1; min-height: 0; border: none; background: #f4f4f5; }
 .lesson-reader > footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 16px; }
 .lesson-reader > footer > span { margin-right: auto; font-size: var(--fs-xs); color: #b7b7bd; }
-.source-box > summary { cursor: pointer; }
+.source-box > summary { cursor: var(--cursor-pointer); }
 @media (max-width: 720px) {
   .path-next { flex-direction: column; align-items: stretch; }
   .path-node-top { flex-direction: column; gap: 5px; }
@@ -871,7 +871,7 @@ a {
   padding-top: 4px;
 }
 .reference-answer summary {
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
   list-style: none;
   font-size: var(--fs-xs);
   color: var(--muted);
@@ -912,7 +912,7 @@ a {
 .upload-inline {
   font-size: var(--fs-xs);
   color: var(--accent-hover);
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
 }
 .upload-inline input,
 .dropzone input {
@@ -1154,7 +1154,7 @@ a {
   border-radius: var(--r-md);
   background: var(--surface);
   color: var(--text-2);
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
 }
 .dropzone svg {
   color: var(--accent);
@@ -1559,7 +1559,7 @@ a {
 .recall-originals > summary {
   color: var(--accent-hover);
   font-size: var(--fs-xs);
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
 }
 .recall-evidence-entry {
   margin-top: 7px;
@@ -1854,7 +1854,7 @@ a {
   align-items: center;
   gap: 8px;
   padding: 9px 12px;
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
   color: var(--text-2);
   font-size: var(--fs-xs);
   list-style: none;
@@ -1904,7 +1904,7 @@ a {
 .material-pages summary {
   font-size: var(--fs-xs);
   color: var(--text-2);
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
 }
 .material-pages p {
   max-height: 240px;
@@ -2028,7 +2028,7 @@ a {
 .map-wrap { position: relative; min-height: 560px; }
 
 /* knowledge node card */
-.react-flow__node-knowledge { cursor: pointer; }
+.react-flow__node-knowledge { cursor: var(--cursor-pointer); }
 .react-flow__node-stage { pointer-events: none !important; }
 .react-flow__handle { opacity: 0; width: 1px; height: 1px; min-width: 0; min-height: 0; border: 0; }
 .kn { --tone: var(--amber); position: relative; width: 208px; height: 64px; display: flex; flex-direction: column; justify-content: center; gap: 3px;
@@ -2286,7 +2286,7 @@ a {
 .modal-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--r-md); background: var(--raised); color: var(--accent); flex: none; }
 .modal { width: min(100%, 520px); }
 .modal-wide { width: min(100%, 720px); }
-.toggle-row input[type="checkbox"] { appearance: none; -webkit-appearance: none; position: relative; width: 36px; height: 20px; flex: none; border-radius: 999px; background: var(--border-strong); cursor: pointer; transition: background 0.15s; }
+.toggle-row input[type="checkbox"] { appearance: none; -webkit-appearance: none; position: relative; width: 36px; height: 20px; flex: none; border-radius: 999px; background: var(--border-strong); cursor: var(--cursor-pointer); transition: background 0.15s; }
 .toggle-row input[type="checkbox"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #ffffff; transition: transform 0.15s; }
 .toggle-row input[type="checkbox"]:checked { background: var(--accent); }
 .toggle-row input[type="checkbox"]:checked::after { transform: translateX(16px); }
