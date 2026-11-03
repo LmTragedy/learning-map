@@ -1,0 +1,21 @@
+:root { color-scheme: light; font: 17px/1.85 system-ui, "Microsoft YaHei", sans-serif; color: #24322e; background: #f8f7f2; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 820px; margin: auto; padding: 42px clamp(20px, 5vw, 64px) 64px; }
+header { border-bottom: 1px solid #ccd6ce; margin-bottom: 32px; padding-bottom: 22px; }
+.eyebrow { color: #467963; font-size: 11px; letter-spacing: .16em; font-weight: 700; }
+h1 { font-size: clamp(26px, 4vw, 38px); line-height: 1.4; letter-spacing: -.03em; }
+h2 { margin-top: 32px; font-size: 23px; } h3 { font-size: 19px; }
+p, li, td { overflow-wrap: anywhere; white-space: pre-wrap; }
+.goal { color: #53685c; }
+pre { overflow: auto; padding: 20px; background: #e9eee7; border-radius: 8px; }
+code { font-size: .9em; }
+blockquote { border-left: 3px solid #51816a; margin-left: 0; padding: 8px 20px; background: #eef1e9; }
+table { display: block; overflow-x: auto; border-collapse: collapse; width: 100%; }
+th, td { padding: 10px 14px; border: 1px solid #ccd6ce; text-align: left; }
+th { background: #e7ede4; }
+.check { border: 1px solid #afc3b2; border-radius: 12px; padding: 6px 24px 24px; background: #f0f4ea; margin: 32px 0; }
+details { margin: 18px 0; border-top: 1px solid #ccd6ce; padding-top: 14px; }
+summary { cursor: pointer; color: #2c654a; font-weight: 600; }
+footer { color: #627269; font-size: 13px; border-top: 1px solid #ccd6ce; margin-top: 40px; }
+@media print { main { max-width: none; padding: 0; } details > * { display: block; } .check { break-inside: avoid; } }

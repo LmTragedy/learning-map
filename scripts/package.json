@@ -1,0 +1,11 @@
+{
+  "name": "learning-map-local-ocr",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "ocr": "node ocr.mjs"
+  },
+  "dependencies": {
+    "tesseract.js": "6.0.1"
+  }
+}

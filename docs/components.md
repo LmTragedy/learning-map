@@ -1,0 +1,43 @@
+# Document parsing components
+
+This document records the document-processing choices in this application. It does not claim that optional engines have been installed or tested.
+
+## Integrated adapters
+
+| Component | Use | License and source |
+| --- | --- | --- |
+| pypdf `>=6.1,<7` | Extract selectable PDF text without uploading files. The application retains page numbers and marks extracted PDF text uncertain so formulas, tables, and layout can be checked against the rendered source page. | BSD-3-Clause; [official pypdf project](https://github.com/py-pdf/pypdf) |
+| pypdfium2 `>=4.30,<6` | Render an original PDF page for source review and OCR input. PDFium is protected by a global process lock because the renderer is not treated as thread-safe. | pypdfium2 offers Apache-2.0 or BSD-3-Clause terms; bundled PDFium and build dependencies have additional notices. See [official license notes](https://github.com/pypdfium2-team/pypdfium2#licensing). |
+| Pillow `>=11,<13` | Validate and convert local raster images under a 40-megapixel limit. | HPND / PIL Software License; [official Pillow project](https://github.com/python-pillow/Pillow). |
+| Tesseract.js `6.0.1` | Optional local OCR for images and PDF pages without selectable text. Language data defaults to `eng+chi_sim`, is configurable with `LEARNING_MAP_OCR_LANGUAGES`, and is cached in `data/ocr-cache`. The first OCR use may download language data from the Tesseract.js data CDN; parsing reports this when the configured data is missing. OCR is marked uncertain even when text is returned. | Apache-2.0; [official Tesseract.js project](https://github.com/naptha/tesseract.js). Tesseract.js language-data packages are separate data assets; verify their licenses before redistributing cached model files. |
+
+The parser enforces a 50 MB input limit, a 200-page PDF limit, a 40-megapixel image/render limit, a 10-million-character PDF text limit, and a 180-second cumulative OCR budget per document. Each OCR page receives only the time left in that shared budget, including time waiting for the serialized OCR worker. If time runs out, every remaining page is preserved with empty text and an explicit warning to split the file into smaller documents. It does not write to or modify the imported original. Requested page renders are written to the caller's output directory; temporary renders used only for OCR are removed when parsing ends. OCR failures return empty extracted text with an explicit warning; they are not presented as successful recognition. To enable the optional OCR worker, run `npm install` from `scripts/`; first use may still need network access for language data.
+
+## Optional Docling adapter
+
+Selecting `parser="docling"` invokes the installed Python `DocumentConverter` in a subprocess with a 120-second limit and a 40 MB JSON-output ceiling. Text is limited to 10 million characters. The adapter returns every source page in order; pages with no Docling text remain present with empty text and a warning. It validates page provenance and rejects duplicate or out-of-range page numbers. This repository does not add Docling to the default dependencies. If installed separately in the backend environment, the documented command is `pip install docling`. Results are uncertain and should be checked against original pages. Model downloads and first-run initialization can exceed the adapter timeout; in that case it raises an explicit parse error.
+
+Docling's codebase is MIT-licensed, but its models retain the licenses of their original packages. See the [official Docling repository](https://github.com/docling-project/docling) and [installation guide](https://docling-project.github.io/docling/getting_started/installation/). The optional adapter has not been installed or validated as part of this change.
+
+## Related source review
+
+DeepTutor was considered as a learning-path reference, not integrated as a runtime dependency. The reviewed version is the [v1.7.1 release](https://github.com/HKUDS/DeepTutor/releases/tag/v1.7.1). Its Mastery Path policy is in [`deeptutor/learning/policy.py`](https://github.com/HKUDS/DeepTutor/blob/v1.7.1/deeptutor/learning/policy.py); path construction is an agent tool in [`deeptutor/capabilities/mastery/tools.py`](https://github.com/HKUDS/DeepTutor/blob/v1.7.1/deeptutor/capabilities/mastery/tools.py). The latter's LLM-driven tool flow and application-owned persistence do not provide a standalone parser API for this application.
+
+## Application components and alternatives (checked 2026-11-03)
+
+Matt Pocock's [Teach skill](https://github.com/mattpocock/skills/tree/main/skills/productivity/teach) is bundled under `backend/vendor/teach/`, with its original MIT license and companion format documents. The adapter loads the original skill and learning-record format as instructions; it maps mission/resources/history to the existing course and node records. Each saved lesson records the skill file's SHA-256. No global Codex skill installation is required.
+
+This application adaptation uses structured model output and shared HTML/CSS rather than granting Teach workspace file writes or arbitrary JavaScript. The model supplies lesson content and one self-check; native HTML disclosure controls reveal hints and reference reasoning. The app owns sanitization, saved HTML, read markers and course snapshots. A real model generated one lesson using only the built-in synthetic database course; this verifies the integration path, not teaching quality across all subjects. Saved lessons can be read with AI disabled.
+
+| Project | Decision and evidence |
+| --- | --- |
+| [React Flow](https://github.com/xyflow/xyflow), MIT | Integrated `@xyflow/react` for interactive graph rendering, pan/zoom, node selection and attribution. It does not own learner progress or generate teaching prerequisites. |
+| [FastAPI](https://github.com/fastapi/fastapi), MIT; [React](https://github.com/facebook/react), MIT; SQLite, public domain | Integrated local API, frontend and persistent course transactions. Runtime versions are recorded in the Python and npm lockfiles. |
+| [Codex app-server](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server) | Integrated the installed CLI's JSON-RPC initialize/thread/start/thread/resume/turn/start interfaces, local images and outputSchema. Real synthetic requests verified; needs the user's working Codex installation and provider access. Codex source is Apache-2.0; provider/model terms are separate. Current protocol is experimental and may change. |
+| [DeepTutor](https://github.com/HKUDS/DeepTutor), Apache-2.0 | Actual Mastery Path service/store and API startup source were reviewed. Reusing its whole runtime is a viable alternative foundation, but brings its own course database, identity, migrations and background container. This version uses no DeepTutor runtime or copied code, avoiding two owners of course restoration state. |
+| [NSA SkillTree Platform](https://github.com/NationalSecurityAgency/skills-service), Apache-2.0 | Its REST/JavaScript clients provide application gamification. Its Java/PostgreSQL deployment and organization identity are a larger operational dependency than this single-user SQLite app needs. Not installed; progress policy is implemented locally for the requested evidence distinction. |
+| [SkillTreeOSS](https://github.com/Preptics/SkillTreeOSS), MIT | A separate Next.js/Supabase application; its default signed-in persistence does not satisfy the requested entirely local course ownership. Not installed or reused. |
+| [LightRAG](https://github.com/HKUDS/LightRAG), MIT | Real graph retrieval APIs exist, with LLM/embedding and index/storage configuration. Retrieval edges do not establish teaching prerequisites. Not introduced as a second index/database in this bounded first version; large-corpus retrieval remains future work. |
+| [MinerU](https://github.com/opendatalab/MinerU/blob/master/LICENSE.md) | Its current custom license, model requirements and local SDK/API were reviewed. It is not presented as plain Apache-2.0: additional conditions and weight licenses apply. Not bundled or installed; the lighter text/OCR path is the tested default. |
+
+The original candidate list was evaluated using official source/docs; except the explicitly integrated components, these are source-level suitability findings, not installation or interoperability tests. No GitHub stars are used as acceptance evidence.
