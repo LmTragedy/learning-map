@@ -235,3 +235,19 @@ def test_empty_route_and_completed_route_have_no_false_next_step():
     assert learning_route([])["stages"] == []
     route = learning_route([dict(id="done", prerequisites=[], status="mastered")])
     assert route["next_node_id"] is None and route["completed_count"] == route["total"] == 1
+
+
+def test_served_lesson_links_citations_to_the_original_page(session):
+    client, _, model, course = session
+    model.replies.append(lesson_draft())
+    lesson = generate(client, course).json()["nodes"][0]["lessons"][0]
+    source = lesson["sources"][0]
+    response = client.get(lesson_path(course) + f"/{lesson['id']}/html")
+    url = f"/api/courses/{course['id']}/materials/{source['material_id']}/file#page={source['page']}"
+    assert f'<a href="{url}" target="_blank" rel="noopener noreferrer">' in response.text
+    assert "allow-popups" in response.headers["content-security-policy"]
+    assert "allow-scripts" not in response.headers["content-security-policy"]
+    assert "<script" not in response.text
+    # A download has no app to link back to, so its citations stay plain text.
+    download = client.get(lesson_path(course) + f"/{lesson['id']}/html?download=true")
+    assert "<a href" not in download.text and source["name"] in download.text

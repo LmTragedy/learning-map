@@ -18,4 +18,5 @@ th { background: #e7ede4; }
 details { margin: 18px 0; border-top: 1px solid #ccd6ce; padding-top: 14px; }
 summary { cursor: pointer; color: #2c654a; font-weight: 600; }
 footer { color: #627269; font-size: 13px; border-top: 1px solid #ccd6ce; margin-top: 40px; }
+footer a { color: #2f6b4f; text-decoration: underline; text-underline-offset: 2px; }
 @media print { main { max-width: none; padding: 0; } details > * { display: block; } .check { break-inside: avoid; } }

@@ -3,10 +3,13 @@
 from html import escape
 from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import quote
 
 LESSON_CSP = (
     "default-src 'none'; style-src 'unsafe-inline'; script-src 'none'; "
-    "img-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'; sandbox"
+    "img-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'; "
+    # Popups only, so source links can open the original page in a new tab; scripts stay off.
+    "sandbox allow-popups allow-popups-to-escape-sandbox"
 )
 _TAGS = frozenset(
     "article section header footer h1 h2 h3 h4 p div span strong em b i "
@@ -59,6 +62,26 @@ class LessonMarkup(HTMLParser):
         return "".join(self.parts) + "".join(f"</{tag}>" for tag in reversed(self.stack))
 
 
+def _citation(source):
+    return f"<li>{escape(source['name'])} · 第 {source['page']} 页</li>"
+
+
+def link_citations(html, course_id, sources, material_ids):
+    """Turn the saved footer citations into links that open the original page in a new tab.
+
+    Done when serving, so lessons saved earlier get links too; downloads keep plain text, because a
+    relative link means nothing outside this app.
+    """
+    for source in sources:
+        if source["material_id"] not in material_ids:
+            continue
+        url = f"/api/courses/{quote(course_id)}/materials/{quote(source['material_id'])}/file#page={int(source['page'])}"
+        linked = (f'<li><a href="{escape(url, quote=True)}" target="_blank" rel="noopener noreferrer">'
+                  f"{escape(source['name'])} · 第 {source['page']} 页</a></li>")
+        html = html.replace(_citation(source), linked, 1)
+    return html
+
+
 def render_lesson(draft, sources):
     parser = LessonMarkup()
     parser.feed(draft["html"])
@@ -67,8 +90,8 @@ def render_lesson(draft, sources):
         raise ValueError("小课没有足够的可阅读内容，未保存，请重新生成。")
     css = Path(__file__).with_name("lesson.css").read_text(encoding="utf-8")
     # Browsers accept sandbox only in HTTP headers; downloads still forbid all scripts/resources.
-    meta_policy = LESSON_CSP.removesuffix("; sandbox")
-    citations = "".join(f"<li>{escape(source['name'])} · 第 {source['page']} 页</li>" for source in sources)
+    meta_policy = LESSON_CSP.split("; sandbox", 1)[0]
+    citations = "".join(_citation(source) for source in sources)
     return (
         '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'

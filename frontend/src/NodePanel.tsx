@@ -258,7 +258,6 @@ export function NodePanel({
           study={bench.study ? {
             downloadUrl: studyLesson && lessonHtmlUrl(course.id, node.id, studyLesson.id),
             lesson: <LessonStudy course={course} node={node} lessonId={bench.lessonId} busy={busy} aiEnabled={aiEnabled} act={act}
-              onMaterial={openMaterial} onExcerpt={appendToNote}
               onSelect={bench.selectLesson} onAsk={askInChat} onPractice={bench.openPractice} />,
             practice: <PracticePanel course={course} node={node} busy={busy} aiEnabled={aiEnabled} run={run} onRefresh={onRefresh} onRatingSubmitted={onRatingSubmitted} onNavigate={onNavigateNode} />,
           } : null}
