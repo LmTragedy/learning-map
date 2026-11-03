@@ -241,11 +241,41 @@ def test_ai_links_problems_to_nodes_but_keeps_manual_links(session):
     latest = client.get(base).json()
     manual = [dict(first, node_ids=[nodes[2]]), second]
     client.put(base + f"/problem-sets/{problem_set['id']}", json={"revision": latest["revision"], "title": "t", "problems": manual})
-    model.reply = {"links": [{"problem_id": first["id"], "node_ids": [nodes[0]]},
-                             {"problem_id": second["id"], "node_ids": [nodes[1], "missing"]}]}
+    model.reply = {"links": [{"problem_id": first["id"], "node_id": nodes[0], "related_node_ids": []},
+                             {"problem_id": second["id"], "node_id": nodes[1], "related_node_ids": [nodes[3], "missing", nodes[1]]}]}
     linked = client.post(base + f"/problem-sets/{problem_set['id']}/link")
     assert linked.status_code == 200, linked.text
     problems = linked.json()["problem_sets"][0]["problems"]
     assert problems[0]["node_ids"] == [nodes[2]] and problems[0]["link_origin"] == "user"
     assert problems[1]["node_ids"] == [nodes[1]] and problems[1]["link_origin"] == "ai"
+    assert problems[1]["related_node_ids"] == [nodes[3]]
     assert "知识点" in model.prompts[-1] and nodes[0] in model.prompts[-1]
+
+
+def test_one_main_node_and_nearest_problems_as_benchmark(session):
+    client, store, model, course, base = session
+    nodes = course["nodes"]
+    created = client.post(base + "/problem-sets", data={"title": "Exam", "text": "1. own\n2. related\n3. far"}).json()
+    problem_set = created["problem_sets"][0]
+    own, related, far = problem_set["problems"]
+    # Several ids sent for one problem: the first is its home, the rest become related references.
+    latest = client.get(base).json()
+    saved = client.put(base + f"/problem-sets/{problem_set['id']}", json={"revision": latest["revision"], "title": "Exam", "problems": [
+        dict(own, node_ids=[nodes[1]["id"], nodes[2]["id"]]),
+        dict(related, node_ids=[nodes[3]["id"]], related_node_ids=[nodes[0]["id"]]),
+        dict(far, node_ids=[])]}).json()
+    stored = saved["problem_sets"][0]["problems"]
+    assert stored[0]["node_ids"] == [nodes[1]["id"]] and stored[0]["related_node_ids"] == [nodes[2]["id"]]
+
+    from backend.problem_bank import benchmark_for_node
+    current = store.course(course["id"])
+    ranked = benchmark_for_node(current, current["nodes"][0])
+    levels = {pair[1]["id"]: level for pair, level in ranked}
+    assert levels[related["id"]] == 1
+    # Node 0 has no problem of its own, yet the neighbour's (node 1 follows it) comes before unrelated ones.
+    assert levels[own["id"]] == 2 and levels[far["id"]] == 3
+    assert [pair[1]["id"] for pair, _ in ranked][:2] == [related["id"], own["id"]]
+
+    model.reply = {"prompt": "新题", "kind": "变体", "rubric": "要点"}
+    client.post(base + f"/nodes/{nodes[0]['id']}/question")
+    assert "相邻知识点的真题" in model.prompts[-1] and "与本知识点相关的真题" in model.prompts[-1]

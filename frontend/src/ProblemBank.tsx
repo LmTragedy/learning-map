@@ -33,6 +33,7 @@ function payload(course: Course, set: ProblemSet, problems: Problem[]) {
     revision: course.revision, title: set.title, instructions: set.instructions || "",
     problems: problems.map((problem) => ({
       id: problem.id, number: problem.number, text: problem.text, answer: problem.answer, node_ids: problem.node_ids,
+      related_node_ids: problem.related_node_ids || [],
       images: (problem.images || []).map((image) => image.id), answer_images: (problem.answer_images || []).map((image) => image.id),
     })),
   };
@@ -416,7 +417,11 @@ function ProblemCard({ course, set, problem, status, busy, canCrop, actions, pra
   const [draft, setDraft] = useState({ number: problem.number, text: problem.text, answer: problem.answer });
   const upload = useRef<HTMLInputElement>(null);
   const [uploadTarget, setUploadTarget] = useState<"images" | "answer_images">("images");
-  const nodes = problem.node_ids.map((id) => course.nodes.find((node) => node.id === id)).filter((node) => node !== undefined);
+  const main = problem.node_ids.map((id) => course.nodes.find((node) => node.id === id)).find((node) => node !== undefined);
+  const related = (problem.related_node_ids || []).map((id) => course.nodes.find((node) => node.id === id)).filter((node) => node !== undefined);
+  // Moving the main node keeps the old one as a related reference, so no link is silently lost.
+  const setMain = (nodeId: string) => onChange({ node_ids: [nodeId],
+    related_node_ids: [...(main ? [main.id] : []), ...(problem.related_node_ids || [])].filter((id) => id !== nodeId) });
   const images = problem.images || [];
   const answerImages = problem.answer_images || [];
   const hasAnswer = Boolean(problem.answer || answerImages.length);
@@ -430,21 +435,21 @@ function ProblemCard({ course, set, problem, status, busy, canCrop, actions, pra
       {problem.kind && <span className="pb-kind">{problem.kind}</span>}
       {showSource && <span className="pb-kind" title="来自哪份题">{set.origin === "ai" ? "AI · " : ""}{set.title}</span>}
       <div className="pb-nodes">
-        {nodes.map((node) => <span className="pb-chip" key={node.id}>{node.title}
-          <button aria-label={`取消关联 ${node.title}`} disabled={busy} onClick={() => void onChange({ node_ids: problem.node_ids.filter((id) => id !== node.id) })}><X size={11} /></button></span>)}
-        <label className="pb-chip pb-chip-add"><Link2 size={12} />{nodes.length ? "" : "关联知识点"}
-          <select aria-label="关联知识点" value="" disabled={busy} onChange={(event) => event.target.value && void onChange({ node_ids: [...problem.node_ids, event.target.value] })}>
-            <option value="">选择知识点…</option>
-            {course.nodes.filter((node) => !problem.node_ids.includes(node.id)).map((node) => <option key={node.id} value={node.id}>{node.title}</option>)}
+        <label className={`pb-chip ${main ? "pb-chip-main" : "pb-chip-add"}`} title={main ? "这道题属于这个知识点；点一下可以改挂到别的知识点" : undefined}>
+          <Link2 size={12} />{main ? main.title : "挂到知识点"}
+          <select aria-label={main ? `改挂到其他知识点（现在：${main.title}）` : "挂到知识点"} value="" disabled={busy} onChange={(event) => event.target.value && void setMain(event.target.value)}>
+            <option value="">{main ? "改挂到…" : "选择知识点…"}</option>
+            {course.nodes.filter((node) => node.id !== main?.id).map((node) => <option key={node.id} value={node.id}>{node.title}</option>)}
           </select></label>
+        {main && <button className="pb-chip-x" aria-label={`取消挂到 ${main.title}`} title="取消归属" disabled={busy} onClick={() => void onChange({ node_ids: [] })}><X size={11} /></button>}
+        {related.length > 0 && <span className="pb-related" title="这些知识点出题时会参考这道题，但不算它们的题">
+          也作参考：{related.map((node, index) => <span key={node.id}>{index > 0 && "、"}{node.title}
+            <button aria-label={`不再作为 ${node.title} 的参考`} disabled={busy} onClick={() => void onChange({ related_node_ids: (problem.related_node_ids || []).filter((id) => id !== node.id) })}><X size={10} /></button></span>)}
+        </span>}
       </div>
       <div className="pb-card-actions">
         {practiseNode ? <Button size="sm" variant={status === "passed" ? "outline" : "default"} disabled={busy} onClick={() => onPractise(practiseNode)}><Play />练这道</Button>
-        : nodes.length === 1 && <Button size="sm" variant={status === "passed" ? "outline" : "default"} disabled={busy} onClick={() => onPractise(nodes[0].id)}><Play />练这道</Button>}
-        {!practiseNode && nodes.length > 1 && <DropdownMenu>
-          <DropdownMenuTrigger asChild><Button size="sm" variant={status === "passed" ? "outline" : "default"} disabled={busy}><Play />练这道</Button></DropdownMenuTrigger>
-          <DropdownMenuContent align="end">{nodes.map((node) => <DropdownMenuItem key={node.id} onSelect={() => onPractise(node.id)}>在「{node.title}」练</DropdownMenuItem>)}</DropdownMenuContent>
-        </DropdownMenu>}
+        : main && <Button size="sm" variant={status === "passed" ? "outline" : "default"} disabled={busy} onClick={() => onPractise(main.id)}><Play />练这道</Button>}
         {hasAnswer && <Button size="sm" variant="ghost" onClick={() => setShowAnswer((value) => !value)} aria-pressed={showAnswer}>{showAnswer ? <EyeOff /> : <Eye />}答案</Button>}
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label="题目操作"><Ellipsis /></Button></DropdownMenuTrigger>

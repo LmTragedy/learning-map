@@ -99,7 +99,9 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
           ? <><p className="muted">本知识点有 {realCount} 道真题，直接从真题开始练。</p>
             <div className="decision-row"><Button onClick={() => practiseProblem(nextProblem.set.id, nextProblem.problem.id)} disabled={busy}><Play size={15}/>练真题</Button>
               <Button variant="outline" onClick={askQuestion} disabled={busy || !aiEnabled}><Sparkles size={15}/>AI 按真题出一道</Button></div></>
-          : <><p className="muted">生成一道基于当前节点的验收题，检查理解和应用。</p>
+          : <><p className="muted">{(course.problem_sets || []).some(set => set.origin === 'real' && set.problems.length)
+              ? '本知识点还没有自己的真题。AI 出题时会参考相关和相邻知识点的真题，按同样的题型和难度出。'
+              : '生成一道基于当前节点的验收题，检查理解和应用。'}</p>
             <Button  onClick={askQuestion} disabled={busy || !aiEnabled}><Sparkles size={15}/>生成验收题</Button></>}
         {!asking && linkedProblems.length > 0 && <div className="practice-real">
           <div className="practice-real-head"><span>本知识点的题目 · {linkedProblems.length} 道{realCount ? `（真题 ${realCount}）` : ''}</span><span>通过 {passedCount}</span></div>

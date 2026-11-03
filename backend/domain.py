@@ -37,6 +37,12 @@ def project_course(course):
     for problem_set in course.get("problem_sets", []):
         for source in problem_set.get("files", []):
             source.pop("pages", None)
+        for problem in problem_set.get("problems", []):
+            # One main node per problem; extra ids from older records read as related references.
+            extra = problem.get("node_ids", [])[1:]
+            if extra:
+                problem["related_node_ids"] = [*extra, *problem.get("related_node_ids", [])]
+                problem["node_ids"] = problem["node_ids"][:1]
     completed = {node["id"] for node in course["nodes"] if is_complete(node)}
     for node in course["nodes"]:
         node["unlocked"] = is_complete(node) or set(node["prerequisites"]).issubset(completed)

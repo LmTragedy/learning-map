@@ -167,3 +167,14 @@
 .pb-node-title { font-size: var(--fs-md); font-weight: 650; cursor: pointer; text-align: left; }
 button.pb-node-title:hover { text-decoration: underline; text-underline-offset: 3px; }
 .pb-node-head .pb-actions { margin-left: auto; }
+
+/* one main node per problem; related nodes only reference it */
+.pb-chip-main { position: relative; padding: 0 10px 0 8px; background: color-mix(in srgb, var(--state-passed) 12%, var(--control)); color: var(--foreground); cursor: pointer; }
+.pb-chip-main:hover { background: color-mix(in srgb, var(--state-passed) 20%, var(--control)); }
+.pb-chip-main select { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.pb-chip-x { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: -2px; border-radius: 99px; color: var(--muted-foreground); cursor: pointer; }
+.pb-chip-x:hover { background: var(--control); color: var(--foreground); }
+.pb-related { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-left: 6px; font-size: 11px; color: var(--muted-foreground); }
+.pb-related > span { display: inline-flex; align-items: center; gap: 1px; }
+.pb-related button { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 99px; cursor: pointer; opacity: .6; }
+.pb-related button:hover { opacity: 1; background: var(--control); }

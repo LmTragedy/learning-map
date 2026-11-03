@@ -199,7 +199,10 @@ export type Problem = {
   number: string;
   text: string;
   answer: string;
+  /** The one main node this problem belongs to (practice and progress count there). */
   node_ids: string[];
+  /** Nodes that only use this problem as a reference when AI writes their questions. */
+  related_node_ids?: string[];
   /** HD screenshots of the problem (cut from the PDF, pasted or framed by hand). */
   images?: ProblemImage[];
   answer_images?: ProblemImage[];
