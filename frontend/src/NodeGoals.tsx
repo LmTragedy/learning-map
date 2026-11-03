@@ -22,10 +22,10 @@ function RouteTrack({ course, entry, nodeId }: { course: Course; entry: NodeGoal
     {path.length <= MAX_SEGMENTS
       ? <div className="flex gap-[3px]" aria-hidden>{path.map((id) => {
         const node = nodes.get(id)!;
-        return <span key={id} title={node.unlocked ? node.title : "未解锁知识点"} className={cn("h-1.5 flex-1 rounded-full bg-st-locked/40",
+        return <span key={id} title={node.unlocked ? node.title : "未解锁知识点"} className={cn("h-1.5 flex-1 rounded-full bg-track",
           id === nodeId ? "bg-st-new ring-2 ring-st-new/30" : finished(node) && "bg-st-passed")} />;
       })}</div>
-      : <div className="h-1.5 overflow-hidden rounded-full bg-st-locked/40" aria-hidden>
+      : <div className="h-1.5 overflow-hidden rounded-full bg-track" aria-hidden>
         <span className="block h-full bg-st-passed" style={{ width: `${completed / path.length * 100}%` }} />
       </div>}
     <div className="flex justify-between gap-2 text-[11px] tabular-nums text-muted-foreground">

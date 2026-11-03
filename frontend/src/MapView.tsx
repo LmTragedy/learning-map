@@ -210,7 +210,7 @@ export function MapView({
       const onGoal = Boolean(focusIds?.includes(edge.source) && focusIds.includes(edge.target));
       // Without an explicit goal focus, quietly outline the selected node's goal route.
       const hinted = !focusIds && role === "none" && Boolean(hintIds?.includes(edge.source) && hintIds.includes(edge.target));
-      const color = weak ? "#f87171" : onGoal || hinted ? "#fbbf24" : role === "up" ? "#fbbf24" : role === "down" ? "#60a5fa" : line ? lineColor(line) : "#52525b";
+      const color = weak ? "#f87171" : onGoal || hinted ? "#fbbf24" : role === "up" ? "#fbbf24" : role === "down" ? "#60a5fa" : line ? lineColor(line) : "#71717a";
       // Solid = a required bridge; dashed = only suggested or extension bridges.
       const optional = edge.strength ? edge.strength !== "required" : edge.kind !== "用到";
       const source = byId.get(edge.source);
@@ -235,7 +235,7 @@ export function MapView({
         style: {
           stroke: color,
           strokeWidth: onGoal ? 3 : hinted ? 2 : lit ? 1.8 : line ? 2.4 : 1,
-          opacity: focusIds && !onGoal ? 0.06 : onGoal ? 1 : hinted ? 0.6 : role === "dim" ? 0.06 : role === "none" ? (line ? 0.75 : edge.uncertain && !edge.confirmed ? 0.25 : 0.38) : 0.9,
+          opacity: focusIds && !onGoal ? 0.06 : onGoal ? 1 : hinted ? 0.6 : role === "dim" ? 0.06 : role === "none" ? (line ? 0.75 : edge.uncertain && !edge.confirmed ? 0.4 : 0.6) : 0.9,
           strokeDasharray: optional ? "4 3" : undefined,
         },
         markerEnd: lit ? { type: "arrowclosed", color, width: 12, height: 12 } : undefined,

@@ -12,35 +12,37 @@
   --radius: 0.625rem;
   --background: #09090b;
   --foreground: #fafafa;
-  --card: #0f0f11;
+  --card: #131316;
   --card-foreground: #fafafa;
   --popover: #141416;
   --popover-foreground: #fafafa;
   --primary: #fafafa;
   --primary-foreground: #18181b;
-  --secondary: #27272a;
+  --secondary: #2a2a2f;
   --secondary-foreground: #fafafa;
-  --sh-muted: #1f1f23;
-  --muted-foreground: #a1a1aa;
+  --sh-muted: #222226;
+  --muted-foreground: #a8a8b2;
   --sh-accent: #27272a;
   --accent-foreground: #fafafa;
   --destructive: #f87171;
-  --border: #27272a;
+  --border: #34343b;
   /* Fields sit recessed (dark fill, visible border); buttons are raised fills with no border. */
-  --input: #3f3f46;
-  --input-hover: #52525b;
+  --input: #4a4a53;
+  --input-hover: #5f5f69;
   --field: #111113;
-  --control: #27272a;
-  --control-hover: #323238;
-  --control-active: #3f3f46;
+  --control: #2a2a2f;
+  --control-hover: #35353b;
+  --control-active: #44444c;
   --ring: #d4d4d8;
-  --sidebar: #0c0c0e;
+  --sidebar: #0e0e11;
   /* learning states: always shown with a word and an icon too */
   --state-new: #fbbf24;
   --state-studied: #a1a1aa;
   --state-mastered: #60a5fa;
   --state-passed: #4ade80;
-  --state-locked: #52525b;
+  --state-locked: #71717a;
+  /* empty part of progress bars: 1.9:1 on the ground so the scale itself reads */
+  --track: #3a3a41;
 }
 
 @theme inline {
@@ -74,6 +76,7 @@
   --color-st-mastered: var(--state-mastered);
   --color-st-passed: var(--state-passed);
   --color-st-locked: var(--state-locked);
+  --color-track: var(--track);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -92,9 +95,9 @@
 @layer kit {
   /* Older screens read these names; point them at the shadcn palette. */
   :root {
-    --bg: var(--background); --surface: var(--sidebar); --raised: #18181b; --hover: #27272a;
-    --border: #27272a; --border-strong: #3f3f46;
-    --text: #fafafa; --text-2: #d4d4d8; --muted: #a1a1aa;
+    --bg: var(--background); --surface: var(--sidebar); --raised: #1a1a1e; --hover: #2a2a2f;
+    --border: #34343b; --border-strong: #46464e;
+    --text: #fafafa; --text-2: #d4d4d8; --muted: #a8a8b2;
     --accent: #fafafa; --accent-hover: #ffffff; --accent-ink: #18181b; --accent-soft: rgba(250, 250, 250, 0.08);
     --danger: #f87171; --danger-soft: rgba(248, 113, 113, 0.1);
     --amber: #fbbf24; --amber-text: #fcd34d; --amber-soft: rgba(251, 191, 36, 0.1);
@@ -157,7 +160,8 @@
     padding: 7px 11px; font-size: 13px; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .45);
   }
   input:hover, textarea:hover, select:hover { border-color: var(--input-hover); }
-  input::placeholder, textarea::placeholder { color: #71717a; }
+  /* 5:1 on --field: a hint you have to squint at is no hint */
+  input::placeholder, textarea::placeholder { color: #8b8b95; }
   input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; border-color: #71717a; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .45), 0 0 0 3px rgba(212, 212, 216, .16); }
   select option { background: #18181b; color: #fafafa; }
   /* Group labels in native dropdowns otherwise fall back to the light system style. */

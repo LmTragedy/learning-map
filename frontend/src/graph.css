@@ -5,11 +5,11 @@
 /* Tools float on the canvas (top-left), the chain count sits bottom-right; both opaque, one tone step off the ground. */
 .graph-overlay { position: absolute; z-index: 10; left: 12px; top: 12px; right: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; pointer-events: none; }
 .graph-overlay > * { pointer-events: auto; }
-.graph-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--border, #27272a); border-radius: 10px; background: var(--card, #0f0f11); }
+.graph-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--border, #27272a); border-radius: 10px; background: var(--card, #131316); }
 .graph-tools > button { height: 30px; padding-inline: 8px; }
 .graph-tools-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--border, #27272a); }
 .graph-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--border, #27272a); border-radius: 8px;
-  background: var(--card, #0f0f11); font-size: 12px; color: var(--muted-foreground, #a1a1aa); }
+  background: var(--card, #131316); font-size: 12px; color: var(--muted-foreground, #a1a1aa); }
 .graph-focus-note { position: absolute; z-index: 10; right: 12px; bottom: 12px; font-size: 13px; }
 .graph-canvas .react-flow__node-dot { cursor: pointer; }
 .graph-canvas .react-flow__handle { left: 50% !important; top: 50% !important; right: auto !important; bottom: auto !important;
@@ -22,7 +22,7 @@
 .gdot.tone-mastered { --tone: var(--state-mastered, #60a5fa); }
 .gdot.tone-studied { --tone: var(--state-studied, #a1a1aa); }
 .gdot.tone-available { --tone: var(--state-new, #fbbf24); }
-.gdot.tone-locked { --tone: #3f3f46; cursor: not-allowed; }
+.gdot.tone-locked { --tone: var(--state-locked, #71717a); cursor: not-allowed; }
 .react-flow__node-dot:hover .gdot:not(.tone-locked) .gdot-core { transform: scale(1.25); }
 .gdot.is-selected .gdot-core { box-shadow: 0 0 0 2px #09090b, 0 0 0 4px #fafafa; }
 .gdot.is-next:not(.is-selected) .gdot-core { box-shadow: 0 0 0 2px #09090b, 0 0 0 4px #fbbf2466; }
@@ -44,7 +44,7 @@
 .graph-focus-note .up { color: var(--state-new, #fbbf24); }
 .graph-focus-note .down { color: var(--state-mastered, #60a5fa); }
 .graph-canvas .react-flow__controls { border: 1px solid var(--border, #27272a); border-radius: 8px; overflow: hidden; box-shadow: none; }
-.graph-canvas .react-flow__controls-button { background: var(--card, #0f0f11); border-bottom: 1px solid var(--border, #27272a); color: var(--muted-foreground, #a1a1aa); fill: currentColor; }
+.graph-canvas .react-flow__controls-button { background: var(--card, #131316); border-bottom: 1px solid var(--border, #27272a); color: var(--muted-foreground, #a1a1aa); fill: currentColor; }
 .graph-canvas .react-flow__controls-button:hover { background: var(--secondary, #27272a); color: var(--foreground, #fafafa); }
 
 /* Main lines and knowledge-bridge labels. */

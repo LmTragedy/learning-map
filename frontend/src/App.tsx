@@ -619,7 +619,7 @@ export function App() {
                   <span className="flex items-center gap-1"><FileText aria-hidden /> {course.materials.length} 份材料</span>
                   <span className="flex items-center gap-1 max-[1100px]:hidden"><Layers aria-hidden /> {course.nodes.length} 个知识点</span>
                   {course.route && <span className="flex items-center gap-1.5 text-foreground/80">
-                    <span className="h-1 w-14 overflow-hidden rounded-full bg-secondary"><span className="block h-full bg-st-passed" style={{ width: `${(course.progress?.ratio ?? (course.route.total ? course.route.completed_count / course.route.total : 0)) * 100}%` }} /></span>
+                    <span className="h-1 w-14 overflow-hidden rounded-full bg-track"><span className="block h-full bg-st-passed" style={{ width: `${(course.progress?.ratio ?? (course.route.total ? course.route.completed_count / course.route.total : 0)) * 100}%` }} /></span>
                     {course.progress?.pieces.total ? `${course.progress.pieces.known}/${course.progress.pieces.total} 知识块已掌握` : `${course.route.completed_count}/${course.route.total} 站已掌握`}
                   </span>}
                 </div>
