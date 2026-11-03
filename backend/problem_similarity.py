@@ -2,8 +2,9 @@
 
 Local and deterministic: TF-IDF over Chinese character bigrams and English words, cosine similarity.
 It needs no model call, so every question can use it. A node is described by its title, summary
-and the pages it cites; a problem by its text and answer. Screenshot-only problems without text
-have nothing to compare and score zero.
+and the pages it cites; a problem by its text, answer and the bilingual key points AI writes once
+when it links the problem ("主键 / primary key"). The key points bridge Chinese and English and
+give screenshot-only problems something to compare; without them such problems score zero.
 """
 
 import math
@@ -43,7 +44,9 @@ def node_document(course, node):
 
 
 def problem_document(problem):
-    return f"{problem.get('text', '')} {problem.get('answer', '')[:800]}"
+    # Key points carry both languages and also describe screenshot-only problems, so they weigh most.
+    points = " ".join(problem.get("key_points", []))
+    return f"{problem.get('text', '')} {problem.get('answer', '')[:800]} {points} {points} {points}"
 
 
 def _vectors(documents):

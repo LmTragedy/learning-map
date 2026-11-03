@@ -232,6 +232,14 @@ def test_pdf_problems_are_cut_into_hd_screenshots_with_matching_answers(session)
     assert len(model.images) == 2 and "参考答案截图" in model.prompts[-1]
 
 
+def editable(problem, **change):
+    """Only the fields the update route accepts, as the client sends them."""
+    fields = ("id", "number", "text", "answer", "node_ids", "related_node_ids", "key_points")
+    return {key: problem[key] for key in fields if key in problem} | dict(
+        images=[image["id"] for image in problem.get("images", [])],
+        answer_images=[image["id"] for image in problem.get("answer_images", [])]) | change
+
+
 def test_ai_links_problems_to_nodes_but_keeps_manual_links(session):
     client, store, model, course, base = session
     nodes = [node["id"] for node in course["nodes"]]
@@ -241,14 +249,23 @@ def test_ai_links_problems_to_nodes_but_keeps_manual_links(session):
     latest = client.get(base).json()
     manual = [dict(first, node_ids=[nodes[2]]), second]
     client.put(base + f"/problem-sets/{problem_set['id']}", json={"revision": latest["revision"], "title": "t", "problems": manual})
-    model.reply = {"links": [{"problem_id": first["id"], "node_id": nodes[0], "related_node_ids": []},
-                             {"problem_id": second["id"], "node_id": nodes[1], "related_node_ids": [nodes[3], "missing", nodes[1]]}]}
+    model.reply = {"links": [{"problem_id": first["id"], "node_id": nodes[0], "related_node_ids": [], "key_points": ["主键 / primary key"]},
+                             {"problem_id": second["id"], "node_id": nodes[1], "related_node_ids": [nodes[3], "missing", nodes[1]],
+                              "key_points": [" 原子性 / atomicity ", ""]}]}
     linked = client.post(base + f"/problem-sets/{problem_set['id']}/link")
     assert linked.status_code == 200, linked.text
     problems = linked.json()["problem_sets"][0]["problems"]
     assert problems[0]["node_ids"] == [nodes[2]] and problems[0]["link_origin"] == "user"
     assert problems[1]["node_ids"] == [nodes[1]] and problems[1]["link_origin"] == "ai"
     assert problems[1]["related_node_ids"] == [nodes[3]]
+    # Key points fill in even where the learner chose the node, and stay once the learner edits them.
+    assert problems[0]["key_points"] == ["主键 / primary key"] and problems[1]["key_points"] == ["原子性 / atomicity"]
+    latest = client.get(base).json()
+    client.put(base + f"/problem-sets/{problem_set['id']}", json={"revision": latest["revision"], "title": "t",
+        "problems": [editable(problems[0], key_points=["外键 / foreign key"]), editable(problems[1])]})
+    model.reply["links"][0]["key_points"] = ["别的 / other"]
+    relinked = client.post(base + f"/problem-sets/{problem_set['id']}/link").json()["problem_sets"][0]["problems"]
+    assert relinked[0]["key_points"] == ["外键 / foreign key"]
     assert "知识点" in model.prompts[-1] and nodes[0] in model.prompts[-1]
 
 
@@ -301,3 +318,25 @@ def test_content_similarity_prefers_matching_topic():
     isolation = similarities(course, course["nodes"][3], problems)
     assert keys[0] > 0.1 and keys[0] > keys[1] and keys[0] > keys[2] and keys[3] == 0
     assert isolation[1] > isolation[0] and isolation[1] > isolation[2]
+
+
+def test_bilingual_key_points_match_across_languages():
+    from backend.problem_similarity import similarities
+    # A node described only in Chinese, problems written only in English.
+    course = dict(materials=[], nodes=[
+        dict(id="k", title="主键与外键", summary="用主键唯一标识一行，用外键引用另一张表。", sources=[]),
+        dict(id="t", title="事务的原子性", summary="一组修改要么全部生效，要么全部不生效。", sources=[])])
+    keys_problem = dict(text="Why can a primary key never be null? Give a table example.")
+    transfer = dict(text="A transfer debits A and credits B; the credit fails. What must happen?")
+    plain = similarities(course, course["nodes"][0], [keys_problem, transfer])
+    assert plain == [0, 0]
+    tagged = [dict(keys_problem, key_points=["主键 / primary key", "外键 / foreign key"]),
+              dict(transfer, key_points=["原子性 / atomicity", "事务 / transaction"])]
+    keys_scores = similarities(course, course["nodes"][0], tagged)
+    atomic_scores = similarities(course, course["nodes"][1], tagged)
+    assert keys_scores[0] > 0.05 and keys_scores[0] > keys_scores[1]
+    assert atomic_scores[1] > atomic_scores[0]
+    # Screenshot-only problems become comparable through their key points too.
+    shots = similarities(course, course["nodes"][0], [dict(text="", key_points=["主键 / primary key"]),
+                                                      dict(text="", key_points=["积分 / integral"]), dict(text="")])
+    assert shots[0] > shots[1] and shots[1] == shots[2] == 0

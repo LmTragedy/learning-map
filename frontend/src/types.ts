@@ -203,6 +203,8 @@ export type Problem = {
   node_ids: string[];
   /** Nodes that only use this problem as a reference when AI writes their questions. */
   related_node_ids?: string[];
+  /** What it tests, "中文 / English", written by AI when linking; used to find content-close nodes. */
+  key_points?: string[];
   /** HD screenshots of the problem (cut from the PDF, pasted or framed by hand). */
   images?: ProblemImage[];
   answer_images?: ProblemImage[];

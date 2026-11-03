@@ -33,7 +33,7 @@ function payload(course: Course, set: ProblemSet, problems: Problem[]) {
     revision: course.revision, title: set.title, instructions: set.instructions || "",
     problems: problems.map((problem) => ({
       id: problem.id, number: problem.number, text: problem.text, answer: problem.answer, node_ids: problem.node_ids,
-      related_node_ids: problem.related_node_ids || [],
+      related_node_ids: problem.related_node_ids || [], key_points: problem.key_points || [],
       images: (problem.images || []).map((image) => image.id), answer_images: (problem.answer_images || []).map((image) => image.id),
     })),
   };
@@ -414,7 +414,8 @@ function ProblemCard({ course, set, problem, status, busy, canCrop, actions, pra
   const onCrop = (target: "images" | "answer_images") => actions.openCrop(problem, target);
   const [showAnswer, setShowAnswer] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState({ number: problem.number, text: problem.text, answer: problem.answer });
+  const blankDraft = () => ({ number: problem.number, text: problem.text, answer: problem.answer, keyPoints: (problem.key_points || []).join("\n") });
+  const [draft, setDraft] = useState(blankDraft);
   const upload = useRef<HTMLInputElement>(null);
   const [uploadTarget, setUploadTarget] = useState<"images" | "answer_images">("images");
   const main = problem.node_ids.map((id) => course.nodes.find((node) => node.id === id)).find((node) => node !== undefined);
@@ -458,7 +459,7 @@ function ProblemCard({ course, set, problem, status, busy, canCrop, actions, pra
             {canCrop && <DropdownMenuItem onSelect={() => onCrop("answer_images")}><Crop />在原页截答案</DropdownMenuItem>}
             <DropdownMenuItem onSelect={() => pick("images")}><ImagePlus />上传题目截图</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => pick("answer_images")}><ImagePlus />上传答案截图</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => { setDraft({ number: problem.number, text: problem.text, answer: problem.answer }); setEditing(true); }}><Pencil />编辑题号和文字</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => { setDraft(blankDraft()); setEditing(true); }}><Pencil />编辑题号、文字和考点</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={() => { if (window.confirm("删除这道题？")) void onChange(null); }}><Trash2 />删除这道题</DropdownMenuItem>
           </DropdownMenuContent>
@@ -466,10 +467,12 @@ function ProblemCard({ course, set, problem, status, busy, canCrop, actions, pra
         <input ref={upload} type="file" accept=".png,.jpg,.jpeg,.webp" multiple hidden onChange={(event) => { const chosen = Array.from(event.target.files || []); event.target.value = ""; if (chosen.length) void onAddImages(chosen, uploadTarget); }} />
       </div>
     </header>
-    {editing ? <form className="pb-edit" onSubmit={async (event) => { event.preventDefault(); if (await onChange(draft)) setEditing(false); }}>
+    {editing ? <form className="pb-edit" onSubmit={async (event) => { event.preventDefault(); const { keyPoints, ...fields } = draft;
+      if (await onChange({ ...fields, key_points: keyPoints.split(/\n|；|;/).map((point) => point.trim()).filter(Boolean).slice(0, 8) })) setEditing(false); }}>
       <label className="pb-field pb-count">题号<input value={draft.number} onChange={(event) => setDraft({ ...draft, number: event.target.value })} maxLength={40} /></label>
       <label className="pb-field">题目文字（截图为准，文字用于搜索和 AI 提示）<textarea rows={4} value={draft.text} onChange={(event) => setDraft({ ...draft, text: event.target.value })} /></label>
       <label className="pb-field">答案文字<textarea rows={3} value={draft.answer} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} /></label>
+      <label className="pb-field">考点（每行一个，中英都写更好对上知识点，例如“主键 / primary key”）<textarea rows={3} value={draft.keyPoints} onChange={(event) => setDraft({ ...draft, keyPoints: event.target.value })} /></label>
       <div className="pb-actions"><Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>取消</Button><Button type="submit" size="sm" disabled={busy || (!draft.text.trim() && !images.length)}>保存</Button></div>
     </form>
     : images.length ? <Shots course={course} set={set} images={images} busy={busy} label="题目" onRemove={(id) => void onChange({ images: images.filter((image) => image.id !== id) })} />
@@ -479,6 +482,8 @@ function ProblemCard({ course, set, problem, status, busy, canCrop, actions, pra
       {answerImages.length > 0 && <Shots course={course} set={set} images={answerImages} busy={busy} label="答案" onRemove={(id) => void onChange({ answer_images: answerImages.filter((image) => image.id !== id) })} />}
       {problem.answer && (!answerImages.length ? <p className="pb-text">{problem.answer}</p> : <details><summary>答案文字</summary><p className="pb-text">{problem.answer}</p></details>)}
     </div>}
+    {!editing && !!problem.key_points?.length && <div className="pb-points" title="AI 关联时提炼的考点，用来给其他知识点找内容相近的参考题">
+      <span>考点</span>{problem.key_points.map((point) => <span key={point} className="pb-point">{point}</span>)}</div>}
     {!!problem.sources?.length && <p className="pb-hint">依据：{problem.sources.map((source) => `${course.materials.find((material) => material.id === source.material_id)?.name || "材料"} 第 ${source.page} 页`).join("；")}</p>}
   </article>;
 }

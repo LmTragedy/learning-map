@@ -178,3 +178,6 @@ button.pb-node-title:hover { text-decoration: underline; text-underline-offset: 
 .pb-related > span { display: inline-flex; align-items: center; gap: 1px; }
 .pb-related button { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 99px; cursor: pointer; opacity: .6; }
 .pb-related button:hover { opacity: 1; background: var(--control); }
+.pb-points { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 11px; color: var(--muted-foreground); }
+.pb-points > span:first-child { margin-right: 2px; }
+.pb-point { padding: 1px 8px; border-radius: 99px; border: 1px solid var(--border); color: var(--foreground); }

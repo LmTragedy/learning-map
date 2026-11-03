@@ -106,7 +106,7 @@ export const api = {
     value.answer_files.forEach((file) => body.append("answer_files", file));
     return request<Course>(`/courses/${cid}/problem-sets`, { method: "POST", body });
   },
-  updateProblemSet: (cid: string, sid: string, value: { revision: number; title: string; instructions: string; problems: { id: string; number: string; text: string; answer: string; node_ids: string[]; related_node_ids: string[]; images: string[]; answer_images: string[] }[] }) =>
+  updateProblemSet: (cid: string, sid: string, value: { revision: number; title: string; instructions: string; problems: { id: string; number: string; text: string; answer: string; node_ids: string[]; related_node_ids: string[]; key_points: string[]; images: string[]; answer_images: string[] }[] }) =>
     request<Course>(`/courses/${cid}/problem-sets/${sid}`, json("PUT", value)),
   addProblemImages: (cid: string, sid: string, pid: string, images: File[], target: "images" | "answer_images" = "images") => {
     const body = new FormData();
