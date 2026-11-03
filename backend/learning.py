@@ -431,10 +431,11 @@ def _append_prerequisites(course, specifications, key_to_node, fresh):
 def _map_relation(specification, key_to_node):
     source = key_to_node[specification["source"]]["id"]
     target = key_to_node[specification["target"]]["id"]
-    raw_related_ids = [source, target, *(key_to_node[key]["id"] for key in specification.get("related_keys", []))]
-    related_ids = list(dict.fromkeys(raw_related_ids))
-    if len(related_ids) < 2 or len(related_ids) != len(raw_related_ids):
-        raise LearningError("知识联系的端点合并为同一知识节点，地图未应用，请重新生成")
+    # Keys merged into the same existing node (same title) collapse into one end.
+    related_ids = list(dict.fromkeys(
+        [source, target, *(key_to_node[key]["id"] for key in specification.get("related_keys", []))]))
+    if source == target:
+        return None
     candidate = dict(specification)
     candidate.pop("related_keys", None)
     candidate.update(source=source, target=target, related_node_ids=related_ids)
@@ -457,6 +458,8 @@ def _append_generated_relations(course, specifications, key_to_node):
     edges = course.setdefault("edges", [])
     for specification in specifications:
         edge = _map_relation(specification, key_to_node)
+        if edge is None:
+            continue
         if any(_same_relation(existing, edge) for existing in edges):
             continue
         bridges = edge.pop("bridges", [])

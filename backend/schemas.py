@@ -118,6 +118,12 @@ class MapNode(Input):
     steps: list[str] = Field(default_factory=list, max_length=8)
     bridges: list[NodeBridge] = Field(default_factory=list, max_length=12)
 
+    @model_validator(mode="after")
+    def drop_repeated_prerequisites(self):
+        # A node listed as its own prerequisite, or the same prerequisite twice, says nothing more.
+        self.prerequisites = [key for key in dict.fromkeys(self.prerequisites) if key != self.key]
+        return self
+
 
 class MapRelation(Input):
     source: str = Field(min_length=1, max_length=100)
@@ -148,10 +154,12 @@ class MapRelation(Input):
         for name in ("explanation", "when_to_use", "basis", "forward_difficulty", "reverse_difficulty"):
             if not getattr(self, name).strip():
                 raise ValueError(f"{name} 不能为空")
+        # Without source pages a relation is the AI's own inference; label it so instead of dropping the map.
         if self.evidence_kind != "ai_inference" and not self.sources:
-            raise ValueError("材料依据的关系必须提供来源页")
+            self.evidence_kind, self.uncertain = "ai_inference", True
+        # Without a title and content there is no synthesis node to make; keep it as a plain relation.
         if self.presentation == "synthesis" and (not self.synthesis_title.strip() or not self.synthesis_summary.strip()):
-            raise ValueError("综合关系必须提供综合节点标题和内容")
+            self.presentation, self.synthesis_title, self.synthesis_summary = "simple", "", ""
         return self
 
 
@@ -169,6 +177,8 @@ class MapDraft(Input):
 
     @model_validator(mode="after")
     def unique_keys(self):
+        # A relation from a node to itself links nothing.
+        self.relations = [relation for relation in self.relations if relation.source != relation.target]
         keys = [node.key for node in self.nodes]
         if len(set(keys)) != len(keys):
             raise ValueError("AI 返回了重复节点标识")

@@ -348,19 +348,34 @@ def test_same_title_new_meaning_is_saved_as_scoped_variant_without_replacing_nod
     assert "VARIANT_EXCLUDED_PAGE_SENTINEL" not in model.prompts[-1]
 
 
-def test_relation_endpoints_collapsing_to_same_title_roll_back_map_generation(relation_session):
+def test_relation_endpoints_collapsing_to_same_title_skip_only_that_relation(relation_session):
     client, store, model, course = relation_session
     before = store.course(course["id"])
-    draft = draft_for(course, [relation_spec("node-0", "node-1")])
+    draft = draft_for(course, [relation_spec("node-0", "node-1"), relation_spec("node-1", "node-2")])
     draft["nodes"][1]["title"] = draft["nodes"][0]["title"]
     model.replies.append(draft)
     response = client.post(f"/api/courses/{course['id']}/generate")
-    assert response.status_code == 400
-    assert "知识联系的端点合并为同一知识节点" in response.json()["detail"]
+    assert response.status_code == 200, response.text
     after = store.course(course["id"])
-    assert after["nodes"] == before["nodes"]
-    assert after["edges"] == before["edges"]
-    assert after["revision"] == before["revision"]
+    assert after["revision"] > before["revision"]
+    # node-0 and node-1 became one node: that relation is skipped, the other one is kept.
+    assert [(edge["source"], edge["target"]) for edge in relation_edges(after)] == [
+        (course["nodes"][0]["id"], course["nodes"][2]["id"])]
+
+
+def test_map_drafts_fix_small_slips_instead_of_rejecting_the_whole_map():
+    from backend.schemas import MapDraft
+    source = {"material_id": "m", "page": 1, "quote": "q"}
+    node = lambda key, *parents: dict(key=key, title=key, summary="s", week="", sources=[source],
+                                      prerequisites=list(parents), uncertain=False)
+    relation = relation_spec("a", "b", sources=[], evidence_kind="material_quote", presentation="synthesis")
+    draft = MapDraft.model_validate(dict(
+        nodes=[node("a", "a"), node("b", "a", "a")],
+        relations=[relation, relation_spec("a", "a", sources=[])])).model_dump()
+    assert [item["prerequisites"] for item in draft["nodes"]] == [[], ["a"]]
+    assert len(draft["relations"]) == 1
+    kept = draft["relations"][0]
+    assert (kept["evidence_kind"], kept["uncertain"], kept["presentation"]) == ("ai_inference", True, "simple")
 
 
 def test_map_generation_keeps_user_relation_edit_made_while_model_is_waiting(relation_session):
