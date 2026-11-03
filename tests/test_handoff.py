@@ -24,15 +24,25 @@ def session(tmp_path):
     return client, app.state.store, model, course
 
 
-def test_neighbours_follow_the_route_then_the_line_and_off_line_nodes_keep_course_order():
-    nodes = [dict(id=key, prerequisites=[], status="new") for key in "abcd"]
+def test_neighbours_follow_prerequisite_links_and_main_lines():
+    nodes = [dict(id=key, prerequisites=[], status="new") for key in "abcde"]
     nodes[1]["prerequisites"], nodes[2]["prerequisites"] = ["a"], ["b"]
     course = dict(nodes=nodes, lines=[])
-    # Route order: roots first (a, d), then b, c — the same order the side list shows.
-    assert neighbours(course, "b") == dict(line_name="", prev="d", next="c")
+    # Route order is a, d, e, b, c, but d is unrelated to b: neighbours only follow links.
+    assert neighbours(course, "b") == dict(line_name="", prev="a", next="c")
+    assert neighbours(course, "a") == dict(line_name="", prev=None, next="b")
+    assert neighbours(course, "d") == dict(line_name="", prev=None, next=None)
+    # Prefer a prerequisite already studied, and a follower whose other prerequisites are done.
+    nodes[4]["prerequisites"] = ["a", "d"]
+    nodes[2]["prerequisites"] = ["b", "d"]
+    nodes[3]["status"] = "studied"
+    assert neighbours(course, "c")["prev"] == "d"
+    nodes[1]["prerequisites"], nodes[4]["prerequisites"], nodes[3]["status"] = ["a", "d"], ["a"], "new"
+    assert neighbours(course, "a")["next"] == "e"
+    nodes[1]["prerequisites"] = ["a"]
     course["lines"] = [dict(id="l", name="主线", node_ids=["c", "a", "gone"])]
     assert neighbours(course, "a") == dict(line_name="主线", prev="c", next=None)
-    assert neighbours(course, "b") == dict(line_name="", prev=None, next="d")
+    assert neighbours(course, "b") == dict(line_name="", prev="a", next="c")
 
 
 def test_links_write_concrete_transitions_that_hide_when_the_order_changes(session):
