@@ -22,6 +22,8 @@ type MapProps = {
   prerequisiteNodes?: LearningNode[];
   /** Nodes of the goal in focus; the rest are faded. */
   focusIds?: string[];
+  /** Route of the selected node's active goal; outlined without fading anything. */
+  hintIds?: string[];
   /** Opens a main line's own panel (its story, retelling and notes). */
   onOpenLine?: (lineId: string) => void;
 };
@@ -51,14 +53,14 @@ export function CourseMap({ toolbar, ...props }: MapProps & { toolbar?: ReactNod
         title="图旁边按学习顺序列出的知识点，和图同步">
         <ListOrdered /> 按顺序看
       </Button>
-      <LegendPopover count={filtered.length} edges={visibleEdges} hasLines={Boolean(props.course.lines?.length)} />
       <div className="flex-1" />
       {toolbar}
     </div>
     <div className="relative mx-4 mb-4 flex min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-background max-[780px]:mx-2 max-[780px]:mb-2">
       {listOpen && props.course.nodes.length > 0 && <RouteList {...props} onClose={() => toggleList(false)} />}
       <div className="graph-frame flex min-w-0 flex-1 flex-col">
-        <MapView {...props} course={{ ...props.course, nodes: filtered }} />
+        <MapView {...props} course={{ ...props.course, nodes: filtered }}
+          legend={<LegendPopover count={filtered.length} edges={visibleEdges} hasLines={Boolean(props.course.lines?.length)} />} />
       </div>
     </div>
   </>;
@@ -68,7 +70,7 @@ function LegendPopover({ count, edges, hasLines }: { count: number; edges: Cours
   const pending = edges.filter((edge) => edge.uncertain || !edge.confirmed).length;
   return <Popover>
     <PopoverTrigger asChild>
-      <Button variant="ghost" size="sm" className="text-muted-foreground"><Info /> 图例</Button>
+      <Button variant="ghost" size="sm" aria-label="图例" title="图例"><Info /><span className="graph-tool-label">图例</span></Button>
     </PopoverTrigger>
     <PopoverContent align="start" className="w-80 text-[13px]">
       <div className="mb-2 text-xs font-medium text-muted-foreground">学习状态</div>
@@ -137,7 +139,7 @@ function RouteList({ course, selected, directEntryId, directWeek, onSelect, revi
   }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <aside ref={listRef} aria-label="按顺序看"
-    className="route-list flex w-[300px] shrink-0 flex-col gap-2 overflow-y-auto border-r border-border bg-sidebar/60 p-2.5 max-[780px]:absolute max-[780px]:inset-y-0 max-[780px]:left-0 max-[780px]:z-20 max-[780px]:w-[86%] max-[780px]:shadow-2xl">
+    className="route-list flex w-[300px] shrink-0 max-[1279px]:w-[256px] flex-col gap-2 overflow-y-auto border-r border-border bg-sidebar/60 p-2.5 max-[780px]:absolute max-[780px]:inset-y-0 max-[780px]:left-0 max-[780px]:z-20 max-[780px]:w-[86%] max-[780px]:shadow-2xl">
     <div className="flex items-center gap-2 px-1">
       <strong className="t-label flex-1">{lines.length ? `${lines.length} 条主线` : "学习顺序"}</strong>
       <span className="t-meta tabular-nums">{course.progress ? `知识块 ${course.progress.pieces.known}/${course.progress.pieces.total}` : route ? `${route.completed_count}/${route.total}` : ""}</span>

@@ -1,5 +1,16 @@
 /* Obsidian-style knowledge graph (完整关系图). Owned by MapView.tsx. */
-.graph-canvas { background: radial-gradient(circle at 50% 45%, #111113 0%, var(--background, #09090b) 70%); }
+.graph-canvas { background: var(--background, #09090b); container-type: inline-size; }
+/* On a narrow canvas the tools fold to icons; each keeps its name as aria-label and tooltip. */
+@container (max-width: 480px) { .graph-tool-label { display: none; } }
+/* Tools float on the canvas (top-left), the chain count sits bottom-right; both opaque, one tone step off the ground. */
+.graph-overlay { position: absolute; z-index: 10; left: 12px; top: 12px; right: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; pointer-events: none; }
+.graph-overlay > * { pointer-events: auto; }
+.graph-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--border, #27272a); border-radius: 10px; background: var(--card, #0f0f11); }
+.graph-tools > button { height: 30px; padding-inline: 8px; }
+.graph-tools-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--border, #27272a); }
+.graph-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--border, #27272a); border-radius: 8px;
+  background: var(--card, #0f0f11); font-size: 12px; color: var(--muted-foreground, #a1a1aa); }
+.graph-focus-note { position: absolute; z-index: 10; right: 12px; bottom: 12px; font-size: 13px; }
 .graph-canvas .react-flow__node-dot { cursor: pointer; }
 .graph-canvas .react-flow__handle { left: 50% !important; top: 50% !important; right: auto !important; bottom: auto !important;
   width: 1px; height: 1px; min-width: 0; min-height: 0; border: 0; opacity: 0; transform: translate(-50%, -50%); }
@@ -21,7 +32,7 @@
 .gdot.role-dim { opacity: .18; }
 
 .gdot-label { position: absolute; left: 50%; top: calc(100% + 4px); transform: translateX(-50%) scale(var(--label-scale, 1)); transform-origin: 50% 0; white-space: nowrap;
-  font-size: 11px; line-height: 1.3; color: #d4d4d8; pointer-events: none; text-shadow: 0 0 4px #09090b, 0 0 2px #09090b;
+  font-size: 12px; line-height: 1.3; color: #d4d4d8; pointer-events: none; text-shadow: 0 0 4px #09090b, 0 0 2px #09090b;
   opacity: 0; transition: opacity .15s; }
 .labels-all .gdot-label, .labels-key .gdot-label { opacity: 1; }
 .labels-key .gdot-label { color: #a1a1aa; }

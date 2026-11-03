@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   BaseEdge,
   Controls,
@@ -77,9 +77,13 @@ export function MapView({
   onSelect,
   onRelationSelect,
   focusIds,
+  hintIds,
   onOpenLine,
+  legend,
 }: {
   course: Course;
+  /** Sits with the graph tools on the canvas, so it costs no row of its own. */
+  legend?: ReactNode;
   selected?: LearningNode;
   directEntryId?: string;
   directWeek?: string;
@@ -87,6 +91,7 @@ export function MapView({
   reviewStrict?: boolean;
   prerequisiteNodes?: LearningNode[];
   focusIds?: string[];
+  hintIds?: string[];
   onOpenLine?: (lineId: string) => void;
   onSelect: (node: LearningNode) => void;
   onRelationSelect?: (edge: Course["edges"][number]) => void;
@@ -203,7 +208,9 @@ export function MapView({
       const lit = role !== "none" && role !== "dim";
       const line = segments.get(`${edge.source}>${edge.target}`);
       const onGoal = Boolean(focusIds?.includes(edge.source) && focusIds.includes(edge.target));
-      const color = weak ? "#f87171" : onGoal ? "#fbbf24" : role === "up" ? "#fbbf24" : role === "down" ? "#60a5fa" : line ? lineColor(line) : "#52525b";
+      // Without an explicit goal focus, quietly outline the selected node's goal route.
+      const hinted = !focusIds && role === "none" && Boolean(hintIds?.includes(edge.source) && hintIds.includes(edge.target));
+      const color = weak ? "#f87171" : onGoal || hinted ? "#fbbf24" : role === "up" ? "#fbbf24" : role === "down" ? "#60a5fa" : line ? lineColor(line) : "#52525b";
       // Solid = a required bridge; dashed = only suggested or extension bridges.
       const optional = edge.strength ? edge.strength !== "required" : edge.kind !== "用到";
       const source = byId.get(edge.source);
@@ -227,8 +234,8 @@ export function MapView({
         },
         style: {
           stroke: color,
-          strokeWidth: onGoal ? 3 : lit ? 1.8 : line ? 2.4 : 1,
-          opacity: focusIds && !onGoal ? 0.06 : onGoal ? 1 : role === "dim" ? 0.06 : role === "none" ? (line ? 0.75 : edge.uncertain && !edge.confirmed ? 0.25 : 0.38) : 0.9,
+          strokeWidth: onGoal ? 3 : hinted ? 2 : lit ? 1.8 : line ? 2.4 : 1,
+          opacity: focusIds && !onGoal ? 0.06 : onGoal ? 1 : hinted ? 0.6 : role === "dim" ? 0.06 : role === "none" ? (line ? 0.75 : edge.uncertain && !edge.confirmed ? 0.25 : 0.38) : 0.9,
           strokeDasharray: optional ? "4 3" : undefined,
         },
         markerEnd: lit ? { type: "arrowclosed", color, width: 12, height: 12 } : undefined,
@@ -249,11 +256,12 @@ export function MapView({
     }
 
     return { nodes: dots, edges: lines };
-  }, [course, centres, degree, links, prerequisiteEdgeIds, focusId, chain, selected?.id, isVisible, filtering, inRelatedContext, focusIds,
+  }, [course, centres, degree, links, prerequisiteEdgeIds, focusId, chain, selected?.id, isVisible, filtering, inRelatedContext, focusIds, hintIds,
     stationLines, segments, transfers, onRelationSelect, overview, overviewStops, onOpenLine]);
 
+  // A small course fills its canvas instead of sitting as a cluster in the middle.
   const fitAll = useCallback((duration = 300) => {
-    void flow.current?.fitView({ padding: 0.18, maxZoom: 1.4, duration });
+    void flow.current?.fitView({ padding: 0.2, maxZoom: 2.2, duration });
   }, []);
   const focusSelected = useCallback((duration = 300) => {
     const target = selected?.id ?? course.route?.next_node_id ?? course.nodes[0]?.id;
@@ -276,6 +284,20 @@ export function MapView({
     requestAnimationFrame(() => void flow.current?.fitView({ nodes: ids, padding: 0.2, maxZoom: 1.6, duration: 300 }));
   }, [filtering]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Refit when the canvas changes size (list or workbench opened, window resized), unless a view is filtered.
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let last = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (Math.abs(el.clientWidth - last) < 40) return;
+      last = el.clientWidth;
+      if (!filtering) fitAll(0);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [filtering, fitAll, course.nodes.length]);
+
   if (!course.nodes.length)
     return (
       <div className="map-empty">
@@ -288,35 +310,40 @@ export function MapView({
   const labelMode = overview || alwaysLabels || zoom >= 1.15 ? "labels-all" : zoom >= 0.75 ? "labels-key" : "labels-none";
   return (
     <div className="map-wrap">
-      <div className="graph-tools flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-        <Button variant="outline" size="sm" onClick={() => focusSelected()} disabled={!selected} title="放大到当前节点">
-          <Crosshair /> 定位当前
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => fitAll()} title="缩放到能看到全部节点">
-          <Maximize /> 看全图
-        </Button>
-        <Button variant="outline" size="sm" className={cn(filtering && "border-zinc-500 bg-accent text-foreground")} aria-pressed={filtering}
-          disabled={!selected} onClick={() => setFocusOnly((value) => !value)} title="显示当前先修链及其一跳关系">
-          <Focus /> 只看相关
-        </Button>
-        <Button variant="outline" size="sm" className={cn(alwaysLabels && "border-zinc-500 bg-accent text-foreground")} aria-pressed={alwaysLabels}
-          onClick={() => setAlwaysLabels((value) => !value)} title="缩小时也显示全部名称">
-          <Tags /> 显示名称
-        </Button>
-        {overview && <span className="text-xs text-muted-foreground">整体视图 · 主线与换乘站（放大返回知识点）</span>}
+      <div className={`map-canvas graph-canvas ${labelMode} ${focusId ? "has-focus" : ""}`} ref={canvasRef} style={{ "--label-scale": labelScale(zoom) } as CSSProperties}>
+        {/* Canvas tools float on the graph like a map's controls instead of taking a row above it. */}
+        <div className="graph-overlay" role="toolbar" aria-label="图工具">
+          <div className="graph-tools">
+            <Button variant="ghost" size="sm" onClick={() => focusSelected()} disabled={!selected} aria-label="定位当前" title="定位当前：放大到当前节点">
+              <Crosshair /><span className="graph-tool-label">定位当前</span>
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => fitAll()} aria-label="看全图" title="看全图：缩放到能看到全部节点">
+              <Maximize /><span className="graph-tool-label">看全图</span>
+            </Button>
+            <span className="graph-tools-sep" aria-hidden />
+            <Button variant="ghost" size="sm" className={cn(filtering && "bg-accent text-foreground")} aria-pressed={filtering}
+              disabled={!selected} onClick={() => setFocusOnly((value) => !value)} aria-label="只看相关" title="只看相关：显示当前先修链及其一跳关系">
+              <Focus /><span className="graph-tool-label">只看相关</span>
+            </Button>
+            <Button variant="ghost" size="sm" className={cn(alwaysLabels && "bg-accent text-foreground")} aria-pressed={alwaysLabels}
+              onClick={() => setAlwaysLabels((value) => !value)} aria-label="显示名称" title="显示名称：缩小时也显示全部名称">
+              <Tags /><span className="graph-tool-label">显示名称</span>
+            </Button>
+            {legend && <><span className="graph-tools-sep" aria-hidden />{legend}</>}
+          </div>
+          {overview && <div className="flex max-w-full flex-wrap gap-2" aria-label="整体视图主线">
+            <span className="graph-chip">整体视图 · 主线与换乘站（放大返回知识点）</span>
+            {(course.lines || []).map((line) => <Button key={line.id} size="sm" variant="outline" className="bg-card" onClick={() => onOpenLine?.(line.id)}>
+              <i className="h-1 w-5 rounded" style={{ background: lineColor(line) }} />{line.name}
+            </Button>)}
+          </div>}
+        </div>
         {selected && (
-          <span className="graph-focus-note ml-auto flex items-center gap-1.5 text-[13px] text-muted-foreground">
+          <span className="graph-focus-note graph-chip">
             <Sparkles className="size-3.5" aria-hidden />
             <span><b className="up">{selectedChain.up.size}</b> 个先修 · <b className="down">{selectedChain.down.size}</b> 个后续</span>
           </span>
         )}
-      </div>
-      <div className={`map-canvas graph-canvas ${labelMode} ${focusId ? "has-focus" : ""}`} ref={canvasRef} style={{ "--label-scale": labelScale(zoom) } as CSSProperties}>
-        {overview && <div className="absolute left-3 top-3 z-10 flex max-w-[90%] flex-wrap gap-2" aria-label="整体视图主线">
-          {(course.lines || []).map((line) => <Button key={line.id} size="sm" variant="outline" onClick={() => onOpenLine?.(line.id)}>
-            <i className="h-1 w-5 rounded" style={{ background: lineColor(line) }} />{line.name}
-          </Button>)}
-        </div>}
         <ReactFlow
           key={`${course.id}:${directWeek ?? ""}`}
           nodes={nodes}

@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { CheckSquare, ChevronRight, Flag, Plus, Square, Target } from "lucide-react";
+import { ArrowRight, CheckCircle2, CheckSquare, ChevronRight, Flag, Plus, Route, Square, Target, X } from "lucide-react";
 import { api } from "./api";
 import { Button } from "./components/ui/button";
-import { editableGoal } from "./goalFields";
+import { useGoalActions } from "./goalActions";
+import { editableGoal, readyToFinish } from "./goalFields";
 import { finished, goalsForNode, type NodeGoalContext } from "./goalContext";
 import { cn } from "./lib/utils";
 import type { Course, LearningNode } from "./types";
@@ -35,10 +36,35 @@ function RouteTrack({ course, entry, nodeId }: { course: Course; entry: NodeGoal
   </div>;
 }
 
-function GoalCard({ course, node, entry, onOpenGoal }: {
-  course: Course; node: LearningNode; entry: NodeGoalContext; onOpenGoal: (goalId: string) => void;
+/** Goal progress that moved with the last save, shown where the learner is working. */
+function GoalChanges({ course, onOpenGoal }: { course: Course; onOpenGoal: (goalId: string) => void }) {
+  const actions = useGoalActions();
+  const changes = (actions?.changes || []).filter((change) => course.goals?.some((goal) => goal.id === change.goalId));
+  if (!actions || !changes.length) return null;
+  return <div className="flex items-start gap-2 rounded-xl border border-st-passed/40 bg-st-passed/10 p-3 text-xs" role="status">
+    <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-st-passed" aria-hidden />
+    <div className="flex min-w-0 flex-1 flex-col gap-1">
+      {changes.map((change) => {
+        const goal = course.goals!.find((entry) => entry.id === change.goalId)!;
+        return <div key={change.goalId} className="flex flex-col gap-0.5">
+          <span className="text-[13px] text-foreground">目标「{change.title}」{change.verified ? <>验收 {change.verified[0]}/{change.total} → <strong className="font-semibold">{change.verified[1]}/{change.total}</strong></> : "有新进展"}</span>
+          {change.subtasks.map((title) => <span key={title} className="text-muted-foreground">小目标「{title}」已完成</span>)}
+          {readyToFinish(goal) && <button className="w-fit cursor-pointer text-st-new hover:underline" onClick={() => onOpenGoal(goal.id)}>条件已全部满足，去看板确认完成 →</button>}
+        </div>;
+      })}
+    </div>
+    <Button size="icon-sm" variant="ghost" className="-mr-1 -mt-1 size-6" aria-label="关闭进度提示" onClick={actions.onDismissChanges}><X /></Button>
+  </div>;
+}
+
+function GoalCard({ course, node, entry, busy, onOpenGoal }: {
+  course: Course; node: LearningNode; entry: NodeGoalContext; busy: boolean; onOpenGoal: (goalId: string) => void;
 }) {
+  const actions = useGoalActions();
   const { goal, roles, step, path, remaining, subtasks, next } = entry;
+  const scope = course.review_scope;
+  const nextOutside = Boolean(next && scope?.enabled && !scope.node_ids.includes(next.id));
+  const focused = actions?.focusedGoal === goal.id;
   return <div className="flex flex-col gap-2.5 rounded-xl border border-st-passed/35 bg-st-passed/[0.05] p-3">
     <div className="flex items-start gap-2">
       <Target size={15} className="mt-0.5 shrink-0 text-st-passed" aria-hidden />
@@ -66,7 +92,16 @@ function GoalCard({ course, node, entry, onOpenGoal }: {
       <span className="min-w-0 flex-1 truncate text-muted-foreground">
         {next ? <>下一步：<span className="text-foreground">{next.unlocked ? next.title : "未解锁知识点"}</span></> : "路线上没有其他待学节点"}
       </span>
-      <Button size="sm" variant="ghost" className="h-7 shrink-0 px-2 text-xs" onClick={() => onOpenGoal(goal.id)} title="在目标看板中打开">
+      {next && actions && <Button size="sm" variant="outline" className="h-7 shrink-0 px-2 text-xs" disabled={busy || nextOutside}
+        title={nextOutside ? "不在当前 PDF 复习范围，请先调整范围或退出复习" : undefined} onClick={() => actions.onOpenNode(next.id)}>
+        {next.unlocked ? "进入" : "临时直达"} <ArrowRight />
+      </Button>}
+    </div>
+    <div className="-mx-1 -mb-1 flex flex-wrap gap-1">
+      {actions && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" aria-pressed={focused} onClick={() => actions.onFocusGoal(goal.id)}>
+        <Route /> {focused ? "取消路线显示" : "在地图上显示路线"}
+      </Button>}
+      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onOpenGoal(goal.id)} title="在目标看板中打开">
         打开目标 <ChevronRight />
       </Button>
     </div>
@@ -100,13 +135,17 @@ export function NodeGoals({ course, node, busy, act, onOpenGoal }: {
     </select>
   </label>;
 
-  if (!primary) return <div className="flex flex-wrap items-center gap-1.5 text-xs">
-    <span className="flex items-center gap-1 text-muted-foreground"><Target size={13} aria-hidden /> 不在任何目标路线上</span>
-    {addToGoal}
+  if (!primary) return <div className="flex flex-col gap-2">
+    <GoalChanges course={course} onOpenGoal={onOpenGoal} />
+    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+      <span className="flex items-center gap-1 text-muted-foreground"><Target size={13} aria-hidden /> 不在任何目标路线上</span>
+      {addToGoal}
+    </div>
   </div>;
 
   return <section className="flex flex-col gap-2" aria-label="这个知识点所属的目标">
-    <GoalCard key={primary.goal.id} course={course} node={node} entry={primary} onOpenGoal={onOpenGoal} />
+    <GoalChanges course={course} onOpenGoal={onOpenGoal} />
+    <GoalCard key={primary.goal.id} course={course} node={node} entry={primary} busy={busy} onOpenGoal={onOpenGoal} />
     {!!rest.length && <div className="flex flex-col gap-1">
       <span className="text-[11px] text-muted-foreground">另有 {rest.length} 个目标经过这里</span>
       {rest.map((entry) => <button key={entry.goal.id} onClick={() => setExpanded(entry.goal.id)}

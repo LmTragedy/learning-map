@@ -50,6 +50,8 @@ import { recommendedNode } from "./learningNavigation";
 import { isRelationVisible } from "./relationVisibility";
 import { NodePanel } from "./NodePanel";
 import { GoalBoard } from "./GoalBoard";
+import { GoalActionsContext } from "./goalActions";
+import { goalProgressDiff, goalsForNode, type GoalChange } from "./goalContext";
 import { needsBridges } from "./bridges";
 import { LinesPanel } from "./LinesPanel";
 import { CourseNotes } from "./CourseNotes";
@@ -94,6 +96,14 @@ export function App() {
   const [explainHidden, setExplainHidden] = useState(false);
   const [lineFocus, setLineFocus] = useState("");
   const [mapGoal, setMapGoal] = useState("");
+  const [goalChanges, setGoalChanges] = useState<{ courseId: string; changes: GoalChange[] }>();
+  // Compare each new read of the course with the last one to surface goal progress where the learner is.
+  const [goalBaseline, setGoalBaseline] = useState<Course | null>(null);
+  if (course !== goalBaseline) {
+    const changes = course && goalBaseline?.id === course.id && goalBaseline.revision < course.revision ? goalProgressDiff(goalBaseline, course) : [];
+    if (changes.length) setGoalChanges({ courseId: course!.id, changes });
+    setGoalBaseline(course);
+  }
   const [activeRelationId, setActiveRelationId] = useState("");
   const [relationContextNodeId, setRelationContextNodeId] = useState("");
   const [relationBackStack, setRelationBackStack] = useState<{ nodeId: string; scopeKey: string }[]>([]);
@@ -266,6 +276,9 @@ export function App() {
   }) : null, [course, activeNodes]);
   const selectedNode = selected && activeNodes.find((node) => node.id === selected.id)
     || (course ? recommendedNode(course, activeNodes) : undefined);
+  const selectedNodeId = selectedNode?.id;
+  const goalHintIds = useMemo(() => course && selectedNodeId && !mapGoal
+    ? goalsForNode(course, selectedNodeId).find((entry) => entry.goal.status !== "done")?.path : undefined, [course, selectedNodeId, mapGoal]);
   const selectedRelation = activeRelationId ? course?.edges.find((edge) => edge.id === activeRelationId) : undefined;
   const activeRelation = selectedRelation && course && isRelationVisible(course, selectedRelation, reviewStrict)
     && activeNodes.some((node) => node.id === selectedRelation.source)
@@ -467,7 +480,16 @@ export function App() {
     const latest = await run("course-notes", () => api.course(course.id));
     if (latest) refreshCourse(latest);
   }, [course, run, refreshCourse]);
+  const openGoalNode = (id: string, destination: "node" | "chat" = "node") => {
+    const node = course?.nodes.find((item) => item.id === id);
+    if (!node) return;
+    setGoalChatTarget(destination === "chat" ? node.id : "");
+    setNoteTarget(""); setDirectWeek(""); setDirectQuery("");
+    setActiveRelationId(""); setRelationBackStack([]);
+    setSelected(node); setDirectNodeId(node.id); setModal(null); setSheetOpen(true);
+  };
   const sideTools = [
+    { label: "目标看板", Icon: Target, onClick: () => { setGoalFocus(""); setModal("goals"); }, disabled: !course || busy },
     { label: "课程笔记", Icon: BookMarked, onClick: openCourseNotes, disabled: !course },
     { label: "学习档案", Icon: Archive, onClick: () => void openProfile() },
     { label: "Obsidian 导入导出", Icon: NotebookPen, onClick: () => void showObsidian() },
@@ -600,17 +622,9 @@ export function App() {
                     <span className="h-1 w-14 overflow-hidden rounded-full bg-secondary"><span className="block h-full bg-st-passed" style={{ width: `${(course.progress?.ratio ?? (course.route.total ? course.route.completed_count / course.route.total : 0)) * 100}%` }} /></span>
                     {course.progress?.pieces.total ? `${course.progress.pieces.known}/${course.progress.pieces.total} 知识块已掌握` : `${course.route.completed_count}/${course.route.total} 站已掌握`}
                   </span>}
-                  {(() => {
-                    const current = course.goals?.find((goal) => goal.status === "doing");
-                    return current && <button className="flex min-w-0 cursor-pointer items-center gap-1 text-foreground/80 hover:text-foreground max-[780px]:hidden"
-                      onClick={() => { setGoalFocus(current.id); setModal("goals"); }} title="打开这个目标">
-                      <Target aria-hidden /><span className="truncate">当前目标：{current.title} · {current.progress?.verified || 0}/{current.node_ids.length} 节点</span>
-                    </button>;
-                  })()}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => { setGoalFocus(""); setModal("goals"); }} disabled={busy}><Target /> 目标看板</Button>
                 {course.review_scope?.enabled ? (
                   <div className="flex items-center gap-1 rounded-lg border border-st-new/30 bg-st-new/10 py-1 pl-2.5 pr-1 text-xs text-st-new">
                     <FileSearch size={14} aria-hidden />
@@ -707,13 +721,14 @@ export function App() {
                   directEntryId={directNodeId}
                   directWeek={directWeek}
                   focusIds={course.goals?.find((goal) => goal.id === mapGoal)?.route_ids}
+                  hintIds={goalHintIds}
                   onOpenLine={(id) => { setLineFocus(id); setModal("lines"); }}
                   toolbar={
                     <div className="flex min-w-0 items-center gap-2 max-[780px]:w-full">
                       <Button size="sm" variant="outline" onClick={() => { setLineFocus(""); setModal("lines"); }}>课程全貌</Button>
                       {selectedNode && <Button size="sm" variant="ghost" disabled={busy || reviewStrict} onClick={() => void lineAct("goal-endpoint", () => api.addGoal(course.id, {
                         title: `学会 ${selectedNode.title}`, description: "以图上的这个知识点为终点", kind: "personal", status: "doing", node_ids: [selectedNode.id], subtasks: [],
-                      })).then((updated) => { const goal = updated?.goals?.at(-1); if (goal) setMapGoal(goal.id); })}><Target />设为目标终点</Button>}
+                      })).then((updated) => { const goal = updated?.goals?.at(-1); if (goal) setMapGoal(goal.id); })} aria-label="设为目标终点" title="把选中的知识点设为一个目标的终点"><Target /><span className="max-[1199px]:hidden">设为目标终点</span></Button>}
 
                       {!!course.goals?.length && <label className="relative flex items-center max-[780px]:hidden">
                         <Target size={14} className="pointer-events-none absolute left-2.5 text-muted-foreground" aria-hidden />
@@ -743,7 +758,7 @@ export function App() {
                         </select>
                         <ChevronDown size={14} className="pointer-events-none absolute right-2 text-muted-foreground" aria-hidden />
                       </label>}
-                      <label className="flex h-8 w-64 min-w-0 items-center gap-2 rounded-md border border-input bg-field px-2.5 text-muted-foreground shadow-[inset_0_1px_2px_rgba(0,0,0,.45)] hover:border-zinc-600 focus-within:border-zinc-500 focus-within:ring-[3px] focus-within:ring-ring/20 max-[1100px]:w-48 max-[780px]:flex-1">
+                      <label className="flex h-8 w-56 min-w-0 items-center gap-2 rounded-md border border-input bg-field px-2.5 text-muted-foreground shadow-[inset_0_1px_2px_rgba(0,0,0,.45)] hover:border-zinc-600 focus-within:border-zinc-500 focus-within:ring-[3px] focus-within:ring-ring/20 max-[1100px]:w-44 max-[780px]:flex-1">
                         <Search size={14} className="shrink-0" aria-hidden />
                         <input
                           id="node-search"
@@ -815,6 +830,13 @@ export function App() {
                   <span className="h-1 w-10 rounded-full bg-zinc-700" />
                 </button>
                 {selectedNode ? (
+                  <GoalActionsContext.Provider value={{
+                    focusedGoal: mapGoal,
+                    onFocusGoal: (goalId) => setMapGoal((current) => current === goalId ? "" : goalId),
+                    onOpenNode: openGoalNode,
+                    changes: goalChanges?.courseId === course.id ? goalChanges.changes : [],
+                    onDismissChanges: () => setGoalChanges(undefined),
+                  }}>
                   <NodePanel
                     key={`${course.id}-${selectedNode.id}-${reviewUiKey}-${noteTarget === selectedNode.id ? noteRequest : 0}-${goalChatTarget === selectedNode.id}`}
                     course={course}
@@ -846,6 +868,7 @@ export function App() {
                     onRecall={() => void showRecall()}
                     onRatingSubmitted={() => void onRatingSubmitted()}
                   />
+                  </GoalActionsContext.Provider>
                 ) : (
                   <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
                     <span className="grid size-11 place-items-center rounded-xl border border-border bg-card"><MousePointerClick size={18} /></span>
@@ -918,15 +941,7 @@ export function App() {
             </div>
             {modal === "lines" && course && <LinesPanel key={`${course.id}:${lineFocus}`} course={course} initialLineId={lineFocus} busy={busy} aiEnabled={aiOn} act={lineAct}
               onNode={(node) => { setSelected(node); setDirectNodeId(node.id); setActiveRelationId(""); setModal(null); setSheetOpen(true); }} onNote={openMapNote} />}
-            {modal === "goals" && course && <GoalBoard key={`${course.id}:${goalFocus}`} initialGoalId={goalFocus} course={course} busy={busy} aiEnabled={aiOn} run={run} onRefresh={refreshCourse} onNode={(id, destination) => {
-              const node = course.nodes.find((item) => item.id === id);
-              if (node) {
-                setGoalChatTarget(destination === "chat" ? node.id : "");
-                setNoteTarget(""); setDirectWeek(""); setDirectQuery("");
-                setActiveRelationId(""); setRelationBackStack([]);
-                setSelected(node); setDirectNodeId(node.id); setModal(null); setSheetOpen(true);
-              }
-            }} />}
+            {modal === "goals" && course && <GoalBoard key={`${course.id}:${goalFocus}`} initialGoalId={goalFocus} course={course} busy={busy} aiEnabled={aiOn} run={run} onRefresh={refreshCourse} onNode={openGoalNode} />}
             {modal === "course-notes" && course && <CourseNotes course={course}
               onExitReview={() => void saveReviewScope(false).then(() => setModal("course-notes"))}
               onOpen={(node, noteId = "") => {

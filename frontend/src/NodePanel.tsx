@@ -19,6 +19,7 @@ import { useWorkbenchState } from "./workbench/useWorkbenchState";
 import { quoteBlock } from "./noteFormatting";
 import { NodeGoals } from "./NodeGoals";
 import { goalsForNode } from "./goalContext";
+import { useGoalActions } from "./goalActions";
 import { nodeBridges } from "./bridges";
 import { isNodeVisible } from "./nodeVisibility";
 import { splitSummary } from "./summary";
@@ -221,6 +222,7 @@ export function NodePanel({
         : "当前仅筛选地图。学习对话与验收沿用整门课程，验收通过会更新课程掌握与解锁。"
       : "";
   const goalEntries = goalsForNode(course, node.id);
+  const goalActions = useGoalActions();
   const bridges = nodeBridges(course, node);
   const bridgeCount = bridges.incoming.length + bridges.outgoing.length + bridges.contrasts.length;
   const bridgeGaps = bridges.incoming.filter((item) => item.bridge.state?.result === "missing" || item.bridge.state?.result === "unsure").length;
@@ -342,7 +344,8 @@ export function NodePanel({
         <section className="flex flex-col" aria-label="相关">
           <h3 className="t-label mb-1">相关</h3>
           {!!course.goals?.length && <Related icon={Target} label={goalEntries[0]?.goal.title || "目标"}
-            value={goalEntries.length > 1 ? `${goalEntries.length} 个目标` : goalEntries.length ? "目标" : "未加入目标"}>
+            value={goalEntries.length > 1 ? `${goalEntries.length} 个目标` : goalEntries.length ? "目标" : "未加入目标"}
+            defaultOpen={goalEntries[0]?.goal.status === "doing" || !!goalActions?.changes.length} attention={!!goalActions?.changes.length}>
             <NodeGoals course={course} node={node} busy={busy} act={act} onOpenGoal={onOpenGoal} />
           </Related>}
           {node.kind === "synthesis" && <Related icon={Shapes} label="综合关联知识点" value={`${(node.related_node_ids || []).length} 个`} defaultOpen>
