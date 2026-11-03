@@ -3,7 +3,7 @@ import { taskLessonId, type AiTask } from './aiTaskModel';
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { LucideIcon } from "lucide-react";
-import { ArrowRight, BookOpen, Check, ChevronDown, ChevronRight, CircleHelp, Clock3, ExternalLink, FileText, Info, Layers, NotebookPen, RefreshCw, Shapes, Split, Target, Waypoints } from "lucide-react";
+import { ArrowRight, BookOpen, Check, ChevronDown, ChevronRight, CircleHelp, Clock3, ExternalLink, FileText, Info, Layers, NotebookPen, RefreshCw, Shapes, Split, Target } from "lucide-react";
 import { api, lessonHtmlUrl, materialFileUrl } from "./api";
 import { cn } from "./lib/utils";
 import { Badge } from "./components/ui/badge";
@@ -16,14 +16,12 @@ import { NodeChat } from "./NodeChat";
 import { BridgeDetail } from "./BridgeDetail";
 import { PersonalNote } from "./PersonalNote";
 import { Workbench } from "./workbench/Workbench";
-import { BridgeCard } from "./BridgeCard";
 import { NodeLinks } from "./NodeLinks";
 import { useWorkbenchState } from "./workbench/useWorkbenchState";
 import { quoteBlock } from "./noteFormatting";
 import { NodeGoals } from "./NodeGoals";
 import { goalsForNode } from "./goalContext";
 import { useGoalActions } from "./goalActions";
-import { nodeBridges } from "./bridges";
 import { isNodeVisible } from "./nodeVisibility";
 import { splitSummary } from "./summary";
 import type { Course, LearningNode } from "./types";
@@ -248,9 +246,6 @@ export function NodePanel({
       : "";
   const goalEntries = goalsForNode(course, node.id);
   const goalActions = useGoalActions();
-  const bridges = nodeBridges(course, node);
-  const bridgeCount = bridges.incoming.length + bridges.outgoing.length + bridges.contrasts.length;
-  const bridgeGaps = bridges.incoming.filter((item) => item.bridge.state?.result === "missing" || item.bridge.state?.result === "unsure").length;
   return (
     <aside className="node-panel flex min-h-0 flex-1 flex-col">
       {(noteOpen || bench.study || material) && contentContainer && createPortal(
@@ -365,9 +360,10 @@ export function NodePanel({
             <NextStep node={node} onLesson={bench.openLesson} onPractice={bench.openPractice} />
           </>
         )}
-        {!reviewStrict && <NodeLinks key={`${node.id}:${course.revision}`} course={course} node={node} busy={busy} aiEnabled={aiEnabled} act={act}
-          canOpen={(entry) => isNodeVisible(entry, { reviewActive, directEntryId, directWeek })}
-          onNavigate={onNavigateNode} onOpenBridge={onOpenRelation} />}
+        <NodeLinks key={`${node.id}:${course.revision}`} course={course} node={node} busy={busy} aiEnabled={aiEnabled} reviewStrict={reviewStrict} act={act}
+          canOpen={(entry) => reviewStrict ? course.review_scope.node_ids.includes(entry.id) : isNodeVisible(entry, { reviewActive, directEntryId, directWeek })}
+          onNavigate={onNavigateNode} onOpenBridge={onOpenRelation}
+          onOpenSource={(source) => openMaterial({ materialId: source.material_id, page: source.page })} />
         <section className="flex flex-col" aria-label="相关">
           <h3 className="t-label mb-1">相关</h3>
           <Related icon={Target} label={goalEntries[0]?.goal.title || "目标"}
@@ -393,12 +389,6 @@ export function NodePanel({
                     </div>;
               })}
             </div>
-          </Related>}
-          {!!bridgeCount && <Related icon={Waypoints} label="知识桥" value={`${bridgeCount} 条${bridgeGaps ? ` · ${bridgeGaps} 条有缺口` : ""}`} attention={bridgeGaps > 0}>
-            <BridgeCard course={course} node={node} busy={busy} act={act}
-              canOpen={(entry) => reviewStrict ? course.review_scope.node_ids.includes(entry.id) : isNodeVisible(entry, { reviewActive, directEntryId, directWeek })}
-              onNavigate={onNavigateNode} onOpenBridge={onOpenRelation}
-              onOpenSource={(source) => openMaterial({ materialId: source.material_id, page: source.page })} />
           </Related>}
           {!!node.pieces?.length && <Related icon={Layers} label="知识块" title="块的自检汇总到主线与课程进度；整站验收和解锁仍按原规则。"
             value={`${node.pieces.filter((piece) => piece.state?.result === "known").length} / ${node.pieces.length} 已掌握`}>

@@ -31,7 +31,22 @@
 .nl-chip-tag { font-size: 13px; color: var(--muted-foreground); }
 .nl-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; border: 1.5px solid var(--muted-foreground); }
 .nl-dot.is-done { border-color: var(--st-passed); background: var(--st-passed); }
-.nl-next { display: flex; align-items: center; gap: 4px; padding-left: 8px; color: var(--muted-foreground); }
+.nl-chip.is-gap { border-color: var(--destructive); background: color-mix(in oklab, var(--destructive) 6%, var(--card)); }
+.nl-gaps { color: var(--destructive); font-weight: 500; }
+
+/* A chain followed further along required links: earlier roots above a used node, later uses below. */
+.nl-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding-left: 8px; color: var(--muted-foreground); }
+.nl-chain.is-before { justify-content: flex-end; padding-left: 0; padding-right: 8px; }
+.nl-chain-step { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.nl-chain-label { font-size: 12px; }
+
+/* Links that are not drawn: extensions, migrated placeholders and contrasts. */
+.nl-more { font-size: 13px; color: var(--muted-foreground); }
+.nl-more > summary { cursor: var(--cursor-pointer, pointer); }
+.nl-more-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.nl-more-item { display: flex; flex-direction: column; gap: 2px; padding: 7px 10px; border: 1px dashed var(--border-strong); border-radius: 10px; background: transparent; color: var(--foreground); text-align: left; cursor: var(--cursor-pointer, pointer); }
+.nl-more-item:hover { background: var(--hover); }
+.nl-more-item b { font-weight: 500; }
 
 /* Short arrows inside the row; dashed when every link on that side is only suggested. */
 .nl-link { position: relative; height: 2px; }
@@ -57,6 +72,7 @@
   .nl-row > .nl-step { order: -1; }
   .nl-side.is-left, .nl-side.is-right { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; text-align: left; padding-left: 31px; }
   .nl-side.is-left .nl-chip { align-items: flex-start; }
+  .nl-chain.is-before { justify-content: flex-start; padding-right: 0; }
   .nl-side:not(:has(.nl-chip)) { display: none; }
   .nl-side-label { display: inline; }
 }
