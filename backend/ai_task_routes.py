@@ -17,7 +17,7 @@ from .lines_ai import generate_lines, retell
 from .material_indexing import build_index
 from .node_links import find_links
 from .note_review import ReviewInput
-from .problem_bank import UnitRequest, generate_unit
+from .problem_bank import UnitRequest, generate_unit, link_problems
 from .recall import summarize_recall
 from .review_scope import require_review_node, scope_key, strict_scope
 from .schemas import Input
@@ -81,6 +81,7 @@ def register_ai_task_routes(app, store, learning):
             "lines": lambda: generate_lines(store, learning, cid, request_id=rid),
             "retell": lambda: retell(store, learning, cid, nid, inputs["text"], request_id=rid),
             "goals": lambda: goals(cid, rid),
+            "problem_link": lambda: link_problems(store, learning, cid, nid, rid),
             "problem_unit": lambda: generate_unit(store, learning, cid,
                 UnitRequest.model_validate(inputs | {"request_id": rid})),
             "material_index": lambda: build_index(store, learning, cid, inputs["indexed"], rid),

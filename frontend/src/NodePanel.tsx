@@ -3,7 +3,7 @@ import { taskLessonId, type AiTask } from './aiTaskModel';
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { LucideIcon } from "lucide-react";
-import { ArrowRight, BookOpen, Check, ChevronDown, ChevronRight, CircleHelp, Clock3, ExternalLink, FileText, Info, Layers, NotebookPen, RefreshCw, Shapes, Split, Target } from "lucide-react";
+import { ArrowRight, BookOpen, Check, ClipboardList, ChevronDown, ChevronRight, CircleHelp, Clock3, ExternalLink, FileText, Info, Layers, NotebookPen, RefreshCw, Shapes, Split, Target } from "lucide-react";
 import { api, lessonHtmlUrl, materialFileUrl } from "./api";
 import { cn } from "./lib/utils";
 import { Badge } from "./components/ui/badge";
@@ -25,6 +25,7 @@ import { useGoalActions } from "./goalActions";
 import { isNodeVisible } from "./nodeVisibility";
 import { splitSummary } from "./summary";
 import type { Course, LearningNode } from "./types";
+import { nodeProblems, STATUS_LABEL } from "./problemStatus";
 
 const labels: Record<string, string> = {
   new: "可学习",
@@ -91,6 +92,28 @@ function NextStep({ node, onLesson, onPractice }: {
     </Button>
     {!passed && lessons.length > 0 && <button className="cursor-pointer self-center text-xs text-muted-foreground hover:text-foreground"
       onClick={unread >= 0 ? onPractice : () => onLesson()}>{unread >= 0 ? "已经会了？直接验收" : "回看小课"}</button>}
+  </div>;
+}
+
+/** Real problems linked to this node: their progress, and a way straight into practising them. */
+function NodeProblems({ course, node, onPractice }: { course: Course; node: LearningNode; onPractice: () => void }) {
+  const items = nodeProblems(course, node.id);
+  if (!items.length) return null;
+  const passed = items.filter((item) => item.status === "passed").length;
+  const real = items.filter((item) => item.set.origin === "real").length;
+  return <div className="flex flex-col gap-2.5 rounded-xl border border-border bg-card p-3.5">
+    <div className="flex items-center justify-between gap-2">
+      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><ClipboardList size={13} aria-hidden />{real ? `真题 ${real} 道` : `单元题 ${items.length} 道`}{real && items.length > real ? ` · 单元题 ${items.length - real} 道` : ""}</span>
+      <span className="text-xs tabular-nums text-muted-foreground">通过 {passed}/{items.length}</span>
+    </div>
+    <span className="h-1 overflow-hidden rounded-full bg-track" aria-hidden><span className="block h-full bg-st-passed" style={{ width: `${(passed / items.length) * 100}%` }} /></span>
+    <ul className="m-0 flex list-none flex-col gap-1 p-0">{items.slice(0, 4).map(({ set, problem, status }) => <li key={problem.id} className="flex min-w-0 items-center gap-2 text-xs">
+      <span className={cn("size-1.5 shrink-0 rounded-full", status === "passed" ? "bg-st-passed" : status === "new" ? "bg-st-locked" : "bg-st-new")} aria-hidden />
+      <span className="min-w-0 flex-1 truncate">{set.title}{problem.number ? ` · 第 ${problem.number} 题` : ""}</span>
+      <span className="shrink-0 text-muted-foreground">{STATUS_LABEL[status]}</span>
+    </li>)}</ul>
+    {items.length > 4 && <span className="text-xs text-muted-foreground">还有 {items.length - 4} 道</span>}
+    <Button variant={passed === items.length ? "outline" : "default"} className="w-full" onClick={onPractice}>{passed === items.length ? "再练一遍" : passed ? "继续练真题" : "练真题"}<ArrowRight /></Button>
   </div>;
 }
 
@@ -358,6 +381,7 @@ export function NodePanel({
           <>
             {(!aiEnabled || scopeNotice) && note(!aiEnabled ? "AI 未开启：对话、出题和验收暂不可用，可在设置中开启。" : scopeNotice)}
             <NextStep node={node} onLesson={bench.openLesson} onPractice={bench.openPractice} />
+            <NodeProblems course={course} node={node} onPractice={bench.openPractice} />
           </>
         )}
         <NodeLinks key={`${node.id}:${course.revision}`} course={course} node={node} busy={busy} aiEnabled={aiEnabled} reviewStrict={reviewStrict} act={act}

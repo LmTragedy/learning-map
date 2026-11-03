@@ -1,12 +1,13 @@
 import { useState, useSyncExternalStore } from 'react'
-import { BookCheck, Paperclip, RefreshCw, Sparkles } from 'lucide-react'
-import { api } from './api'
+import { BookCheck, Paperclip, Play, RefreshCw, SkipForward, Sparkles } from 'lucide-react'
+import { api, problemImageUrl } from './api'
 import { answerDraft, completeAnswerDraft, subscribeAnswerDrafts, updateAnswerDraft } from './answerDrafts'
 import { BridgeGaps } from './BridgeGaps'
 import type { Attempt, Course, LearningNode } from './types'
 import { TaskCards, useCourseTasks } from './aiTasks'
 import { Button } from './components/ui/button'
 import './problemBank.css'
+import { nodeProblems, problemRef, STATUS_LABEL } from './problemStatus'
 
 type Props = {
   course: Course
@@ -65,11 +66,12 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
   }
 
   const askQuestion = () => void act('question', () => api.question(course.id, node.id))
-  // Real problems the learner linked to this node: practise them directly; AI questions also follow their standard.
-  const linkedProblems = (course.problem_sets || []).flatMap(set =>
-    set.problems.filter(problem => problem.node_ids.includes(node.id)).map(problem => ({ set, problem })))
-    .sort((a, b) => Number(a.set.origin === 'ai') - Number(b.set.origin === 'ai'))
+  // Real problems the learner linked to this node come first: practise them directly; AI questions follow their standard.
+  const linkedProblems = nodeProblems(course, node.id)
   const realCount = linkedProblems.filter(({ set }) => set.origin === 'real').length
+  const passedCount = linkedProblems.filter(({ status }) => status === 'passed').length
+  const currentRef = node.question?.problem_ref
+  const nextProblem = linkedProblems.find(({ set, problem, status }) => status !== 'passed' && problemRef(set, problem) !== currentRef)
   const practiseProblem = (setId: string, problemId: string) => void act('problem-practise', () => api.practiseProblem(course.id, node.id, setId, problemId))
   const tasks=useCourseTasks().tasks
   const asking=tasks.some(t=>t.kind==='question'&&t.target===node.id&&t.state!=='applied')
@@ -79,19 +81,34 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
       <div className="practice-question">
         <div className="practice-question-head">
           <span className="eyebrow">{node.question?.kind || '节点验收'}</span>
-          {node.question && <button className="link-button" onClick={askQuestion} disabled={busy || asking || !aiEnabled}><RefreshCw size={13}/>换一道题</button>}
+          {node.question && (nextProblem
+            ? <button className="link-button" onClick={() => practiseProblem(nextProblem.set.id, nextProblem.problem.id)} disabled={busy || asking || judging}><SkipForward size={13}/>下一道真题</button>
+            : <button className="link-button" onClick={askQuestion} disabled={busy || asking || !aiEnabled}><RefreshCw size={13}/>{realCount ? 'AI 按真题出一道' : '换一道题'}</button>)}
         </div>
         {asking
           ? <TaskCards kind="question" target={node.id} />
           : node.question
-          ? <p>{node.question.prompt}</p>
+          ? <><p className="practice-prompt" style={{ whiteSpace: 'pre-wrap' }}>{node.question.images?.length
+              // With screenshots the picture is the problem; show its label and the set's shared instructions only.
+              ? [node.question.prompt.split('\n')[0], course.problem_sets?.find(set => set.id === currentRef?.split('/')[0])?.instructions].filter(Boolean).join('\n')
+              : node.question.prompt}</p>
+            {!!node.question.images?.length && <Screens course={course} refs={node.question.images} label="题目" />}
+            {/* The answer stays hidden until there is an attempt on this question. */}
+            {!!node.question.answer_images?.length && latest && <details className="practice-answer"><summary>查看参考答案截图</summary><Screens course={course} refs={node.question.answer_images} label="答案" /></details>}</>
+          : nextProblem
+          ? <><p className="muted">本知识点有 {realCount} 道真题，直接从真题开始练。</p>
+            <div className="decision-row"><Button onClick={() => practiseProblem(nextProblem.set.id, nextProblem.problem.id)} disabled={busy}><Play size={15}/>练真题</Button>
+              <Button variant="outline" onClick={askQuestion} disabled={busy || !aiEnabled}><Sparkles size={15}/>AI 按真题出一道</Button></div></>
           : <><p className="muted">生成一道基于当前节点的验收题，检查理解和应用。</p>
             <Button  onClick={askQuestion} disabled={busy || !aiEnabled}><Sparkles size={15}/>生成验收题</Button></>}
         {!asking && linkedProblems.length > 0 && <div className="practice-real">
-          <p className="muted small">{realCount > 0 ? `本知识点关联了 ${realCount} 道真题，AI 出题会对齐它们的标准。` : ''}也可以直接练：</p>
-          <ul>{linkedProblems.map(({ set, problem }) => <li key={problem.id}>
-            <span title={problem.text}>{set.origin === 'real' ? '真题' : 'AI 单元题'} · {set.title}{problem.number ? ` 第${problem.number}题` : ''}：{problem.text.slice(0, 60)}</span>
-            <button className="link-button" disabled={busy || judging} onClick={() => practiseProblem(set.id, problem.id)}><BookCheck size={13}/>练这道</button>
+          <div className="practice-real-head"><span>本知识点的题目 · {linkedProblems.length} 道{realCount ? `（真题 ${realCount}）` : ''}</span><span>通过 {passedCount}</span></div>
+          <ul>{linkedProblems.map(({ set, problem, status }) => <li key={problem.id} className={problemRef(set, problem) === currentRef ? 'is-current' : ''}>
+            <span className={`pb-status is-${status}`}>{STATUS_LABEL[status]}</span>
+            <span title={problem.text}>{set.origin === 'real' ? '' : 'AI · '}{set.title}{problem.number ? ` 第${problem.number}题` : ''}{problem.text ? ` · ${problem.text.replace(/^\s*\S+\s*/, '').slice(0, 50)}` : ''}</span>
+            {problemRef(set, problem) === currentRef
+              ? <span className="muted small">正在练</span>
+              : <button className="link-button" disabled={busy || judging} onClick={() => practiseProblem(set.id, problem.id)}><BookCheck size={13}/>练这道</button>}
           </li>)}</ul>
         </div>}
       </div>
@@ -138,7 +155,9 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
 
 async function practiceQuestionKey(question: LearningNode['question']): Promise<string> {
   if (!question) return '';
-  const canonical = JSON.stringify({ kind: question.kind, prompt: question.prompt, rubric: question.rubric });
+  // Must match backend question_key: top-level keys sorted; real problems add images/answer_images/problem_ref.
+  const record = question as Record<string, unknown>;
+  const canonical = JSON.stringify(Object.fromEntries(Object.keys(record).sort().map(key => [key, record[key]])));
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
   return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('');
 }
@@ -176,4 +195,10 @@ function AttemptResult({ attempt, busy, problem, mastery, comment, onProblem, on
 
 function ScorePicker({ label, value, onChange }: { label: string; value: number | null; onChange: (score: number) => void }) {
   return <div className="score-row"><span>{label}</span><div>{[0, 1, 2, 3, 4].map(score => <button className={value === score ? 'chosen' : ''} key={score} onClick={() => onChange(score)} aria-label={`${label} ${score}分`}>{score}</button>)}</div></div>
+}
+
+function Screens({ course, refs, label }: { course: Course; refs: string[]; label: string }) {
+  return <div className="practice-shots">{refs.map((ref, index) =>
+    <a key={ref} href={problemImageUrl(course.id, ref)} target="_blank" rel="noreferrer" title="打开原图">
+      <img src={problemImageUrl(course.id, ref)} alt={`${label}截图 ${index + 1}`} loading="lazy" decoding="async" /></a>)}</div>
 }

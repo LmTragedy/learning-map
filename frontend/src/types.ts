@@ -41,7 +41,7 @@ export const RELATION_KINDS = ["前置知识", "帮助理解", "工具关系", "
 export type RelationKind = (typeof RELATION_KINDS)[number];
 export type Attempt = {
   id: string;
-  question: { prompt: string; kind: string; rubric: string };
+  question: { prompt: string; kind: string; rubric: string; images?: string[]; answer_images?: string[]; problem_ref?: string };
   answer: string;
   reference: string;
   attachments: Material[];
@@ -133,7 +133,8 @@ export type LearningNode = {
   chats: Chat[];
   attempts: Attempt[];
   practice_progress?: PracticeProgress;
-  question?: { prompt: string; kind: string; rubric: string };
+  /** images: "setId/imageId" screenshots of a real problem. */
+  question?: { prompt: string; kind: string; rubric: string; images?: string[]; answer_images?: string[]; problem_ref?: string };
   thread_id?: string;
   unlocked: boolean;
   lessons?: Lesson[];
@@ -191,12 +192,20 @@ export type CourseNote = {
   updated_at: string;
 };
 
+export type ProblemImage = { id: string; name: string; width: number; height: number };
+
 export type Problem = {
   id: string;
   number: string;
   text: string;
   answer: string;
   node_ids: string[];
+  /** HD screenshots of the problem (cut from the PDF, pasted or framed by hand). */
+  images?: ProblemImage[];
+  answer_images?: ProblemImage[];
+  /** Where a PDF-cut problem came from, so it can be framed again. */
+  file_id?: string;
+  pages?: number[];
   /** AI unit problems only. */
   kind?: string;
   sources?: { material_id: string; page: number }[];
@@ -209,7 +218,7 @@ export type ProblemSet = {
   /** real: imported by the learner; ai: generated to the standard of real sets. */
   origin: "real" | "ai";
   created_at: string;
-  files: { id: string; name: string; kind: string }[];
+  files: { id: string; name: string; kind: string; role?: "problem" | "answer"; page_count?: number }[];
   problems: Problem[];
   /** Shared instructions printed before problem 1. */
   instructions?: string;

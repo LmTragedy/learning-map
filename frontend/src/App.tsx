@@ -1013,6 +1013,7 @@ export function App() {
               onNode={(node) => openNode(node)} onNote={openMapNote} />}
             {modal === "goals" && course && <GoalBoard key={`${course.id}:${goalFocus}`} initialGoalId={goalFocus} course={course} busy={busy} aiEnabled={aiOn} run={run} onRefresh={refreshCourse} onNode={openGoalNode} />}
             {modal === "problems" && course && <ProblemBank key={course.id} course={course} busy={busy} aiEnabled={aiOn} run={run} onRefresh={refreshCourse}
+              onOpenNode={(nodeId) => { setModal(null); openGoalNode(nodeId); }}
               onPractise={(nodeId) => {
                 const node = course.nodes.find((item) => item.id === nodeId);
                 if (!node) return;

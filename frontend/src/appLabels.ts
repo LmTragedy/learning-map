@@ -54,6 +54,7 @@ export function busyLabel(key: string) {
         question: "正在生成练习…",
         "problem-import": "正在导入并切分题目…",
         "problem-unit": "正在按真题标准出单元题…",
+        "problem-link": "正在把真题关联到知识点…",
         restore: "正在恢复课程…",
         delete: "正在删除课程…",
         recall: "正在找回对话…",

@@ -64,6 +64,12 @@ const json = (method: string, value?: unknown): RequestInit => ({
 /** Direct links to files the browser opens itself (iframes, new tabs), so they skip `request`. */
 export const materialFileUrl = (cid: string, mid: string, page?: number) =>
   `/api/courses/${cid}/materials/${mid}/file${page ? `#page=${page}` : ""}`;
+/** ref is "setId/imageId", as stored on a practice question. */
+export const problemImageUrl = (cid: string, ref: string) => {
+  const [sid, iid] = ref.split("/");
+  return `/api/courses/${cid}/problem-sets/${sid}/images/${iid}`;
+};
+export const problemPageUrl = (cid: string, sid: string, fid: string, page: number) => `/api/courses/${cid}/problem-sets/${sid}/files/${fid}/pages/${page}`;
 export const problemFileUrl = (cid: string, sid: string, fid: string) => `/api/courses/${cid}/problem-sets/${sid}/files/${fid}`;
 export const lessonHtmlUrl = (cid: string, nid: string, lid: string) => `/api/courses/${cid}/nodes/${nid}/lessons/${lid}/html`;
 
@@ -90,16 +96,27 @@ export const api = {
   course: (id: string) => request<Course>(`/courses/${id}`),
   addGoal: (cid: string, goal: GoalFields) => request<Course>(`/courses/${cid}/goals`, json("POST", goal)),
   updateGoal: (cid: string, gid: string, goal: GoalFields & { revision: number }) => request<Course>(`/courses/${cid}/goals/${gid}`, json("PUT", goal)),
-  createProblemSet: (cid: string, value: { title: string; text: string; answer_text: string; files: File[] }) => {
+  createProblemSet: (cid: string, value: { title: string; text: string; answer_text: string; files: File[]; answer_files: File[]; screenshot_mode: "each" | "one" }) => {
     const body = new FormData();
     body.append("title", value.title);
     body.append("text", value.text);
     body.append("answer_text", value.answer_text);
+    body.append("screenshot_mode", value.screenshot_mode);
     value.files.forEach((file) => body.append("files", file));
+    value.answer_files.forEach((file) => body.append("answer_files", file));
     return request<Course>(`/courses/${cid}/problem-sets`, { method: "POST", body });
   },
-  updateProblemSet: (cid: string, sid: string, value: { revision: number; title: string; instructions: string; problems: { id: string; number: string; text: string; answer: string; node_ids: string[] }[] }) =>
+  updateProblemSet: (cid: string, sid: string, value: { revision: number; title: string; instructions: string; problems: { id: string; number: string; text: string; answer: string; node_ids: string[]; images: string[]; answer_images: string[] }[] }) =>
     request<Course>(`/courses/${cid}/problem-sets/${sid}`, json("PUT", value)),
+  addProblemImages: (cid: string, sid: string, pid: string, images: File[], target: "images" | "answer_images" = "images") => {
+    const body = new FormData();
+    images.forEach((file) => body.append("images", file));
+    body.append("target", target);
+    return request<Course>(`/courses/${cid}/problem-sets/${sid}/problems/${pid}/images`, { method: "POST", body });
+  },
+  cropProblem: (cid: string, sid: string, pid: string, value: { file_id: string; page: number; box: number[]; target: "images" | "answer_images"; replace: boolean }) =>
+    request<Course>(`/courses/${cid}/problem-sets/${sid}/problems/${pid}/crop`, json("POST", value)),
+  linkProblems: (cid: string, sid: string) => request<Course>(`/courses/${cid}/problem-sets/${sid}/link`, json("POST", {})),
   deleteProblemSet: (cid: string, sid: string) => request<Course>(`/courses/${cid}/problem-sets/${sid}/delete`, json("POST", {})),
   generateUnit: (cid: string, value: { material_ids: string[]; problem_set_ids: string[]; count: number; focus: string }) =>
     request<Course>(`/courses/${cid}/problem-sets/generate`, json("POST", value)),
