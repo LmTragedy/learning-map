@@ -28,7 +28,7 @@
   - 后端：`bridges.py`（块、步骤、桥、旧边迁移投影、自检）、`bridge_backfill.py`（AI 补充知识桥，取代已删除的 `relation_backfill.py`）、`lines.py`（主线与统一进度）、`lines_ai.py`（主线生成、串讲评价）、`line_routes.py`。
   - 前端：`BridgeDetail.tsx`、`BridgeEditors.tsx`、`BridgeGaps.tsx`（缺桥标红与回上一站）、`LinesPanel.tsx`（课程全貌）、`AnchoredNotes.tsx`（桥/主线笔记）、`bridges.ts`、`lines.ts`、`goalContext.ts`。`RelationPanel.tsx`、`RelationsSection.tsx` 已删除。
   - 测试：`tests/test_bridges.py`、`test_lines.py`、`test_lines_ai.py`，`frontend/tests/bridges.test.mjs`、`goalContext.test.mjs`。
-- 关键位置：关系图 `frontend/src/MapView.tsx` + `graphLayout.ts`；图旁同步列表 `CourseMap.tsx` 的 `RouteList`；节点栏 `NodePanel.tsx` + `BridgeCard.tsx`；关系数据 `backend/relations.py`、`learning.py`、`schemas.py`。
+- 关键位置：关系图 `frontend/src/MapView.tsx` + `graphLayout.ts`；图旁同步列表 `CourseMap.tsx` 的 `RouteList`；节点栏 `NodePanel.tsx` + `NodeLinks.tsx`（前后联系，含知识桥自检 `BridgeCheck.tsx`）；关系数据 `backend/relations.py`、`learning.py`、`schemas.py`。
 - 交接后修复：`CourseMap.tsx` 中图上选中后展开分组的 effect 原本同步调用 setState（lint 报错），已改到 requestAnimationFrame 里并在浏览器验证。
 - 启用新版：重启 8741 的 `start.cmd` 后刷新；旧课程先“用 AI 补充知识桥”，再在“课程全貌”生成主线。真实模型生成内容的质量尚未验收（浏览器测试用的是本地假 AI）。
 - 可能的后续：用户确认后提交；之前按默认处理的三项（按整节点解锁、每点 3–6 块、先近后远）如需改动由用户提出。

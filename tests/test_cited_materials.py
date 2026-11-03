@@ -70,7 +70,9 @@ def test_node_links_send_own_and_neighbour_pages_or_digests():
     pages = json.loads(node_links._material(course, course["nodes"][0]))
     assert [page["text"] for page in pages] == ["p2"]  # a's page; neighbour b cites nothing
     pages = json.loads(node_links._material(course, course["nodes"][1]))
-    assert [page["text"] for page in pages] == ["p2"]  # b has no pages of its own, neighbour a does
+    # b has no pages of its own; linked a and the next lesson c do.
+    assert [page["text"] for page in pages] == ["p2", "p3"]
     course["nodes"][0]["sources"] = []
+    course["nodes"][2]["sources"] = []
     pages = json.loads(node_links._material(course, course["nodes"][1]))
     assert all("digest" in page and "text" not in page for page in pages)

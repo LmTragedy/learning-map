@@ -65,3 +65,33 @@ export function needsBridges(edge: Edge) {
 }
 
 /** Bridges a failed practice or a "不确定" self-check flagged; they are what the learner should go back to. */
+export function isWeak(bridge: Bridge) {
+  return bridge.state?.result === "missing" || bridge.state?.result === "unsure";
+}
+
+/** A link worth drawing as structure: written out (not the migrated placeholder) and not a "read after" extension. */
+export function isStrong(item: ResolvedBridge) {
+  return !item.bridge.legacy && item.bridge.strength !== "extension";
+}
+
+/**
+ * Follow required links away from `start`, one node at a time, up to `depth` nodes: how far back a
+ * node's foundations go (`before`) or how far ahead it is still used (`after`). Nodes in `seen` are
+ * skipped so a chain never loops or repeats what is already on screen.
+ */
+export function chain(course: Course, start: LearningNode, direction: "before" | "after", depth: number, seen: Set<string>) {
+  const edges = course.edges.filter((edge) => !edge.synthesis_link && edge.kind !== "对比");
+  const found: ResolvedBridge[] = [];
+  const visited = new Set(seen);
+  let current = start;
+  while (found.length < depth) {
+    const candidates = resolveBridges(course, edges.filter((edge) => (direction === "after" ? edge.source : edge.target) === current.id));
+    const next = candidates.find((item) => isStrong(item) && item.bridge.strength === "required"
+      && !visited.has((direction === "after" ? item.target : item.source).id));
+    if (!next) break;
+    current = direction === "after" ? next.target : next.source;
+    visited.add(current.id);
+    found.push(next);
+  }
+  return found;
+}

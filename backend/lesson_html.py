@@ -82,6 +82,11 @@ def link_citations(html, course_id, sources, material_ids):
     return html
 
 
+def _handoff(kind, label, text):
+    text = text.strip()
+    return f'<aside class="handoff is-{kind}"><p class="handoff-k">{label}</p><p>{escape(text)}</p></aside>' if text else ""
+
+
 def render_lesson(draft, sources):
     parser = LessonMarkup()
     parser.feed(draft["html"])
@@ -99,10 +104,12 @@ def render_lesson(draft, sources):
         f"<title>{escape(draft['title'])}</title><style>{css}</style></head><body><main>"
         '<header><p class="eyebrow">LEARNING MAP · TEACH 小课</p>'
         f'<h1>{escape(draft["title"])}</h1><p class="goal">{escape(draft["goal"])}</p></header>'
+        + _handoff("previous", "上节课回顾", draft.get("previous_recap", "")) +
         f'{parser.sanitized()}<section class="check"><h2>停一下，自己试试</h2>'
         f"<p>{escape(draft['check_question'])}</p><details><summary>想好后查看参考思路</summary>"
         f"<p>{escape(draft['check_answer'])}</p></details></section>"
         f"<section><h2>随手复习</h2><p>{escape(draft['recap'])}</p></section>"
+        + _handoff("next", "下节课预告", draft.get("next_preview", "")) +
         "<footer><h2>回到资料核对</h2><ul>" + citations + "</ul>"
         "<p>以上是基于资料的 AI 教学解释；原文、公式和图表请回到节点来源核对。"
         "有疑问可回到学习对话继续提问。阅读和自测不代表已通过节点验收。</p>"
