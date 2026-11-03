@@ -15,6 +15,10 @@ _new_action = ContextVar("learning_map_new_generation", default=False)
 _client_action = ContextVar("learning_map_client_action", default=None)
 _regeneration_parent = ContextVar("learning_map_regeneration_parent", default=None)
 CHILD_MODEL = "gpt-6-luna"
+# Every state a task row can hold. frontend/src/aiTaskModel.ts renders each one and keeps the same
+# ACTIVE set; tests/test_ai_task_states.py fails when the two drift apart.
+ACTIVE_TASK_STATES = ("prepared", "sending", "running", "processing")
+TASK_STATES = (*ACTIVE_TASK_STATES, "received", "unknown", "invalid", "applied", "superseded", "rejected")
 CHILD_EFFORT = "medium"
 
 
@@ -158,7 +162,8 @@ class TaskManager:
         with self.store.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             rows = connection.execute(
-                "SELECT id FROM ai_tasks WHERE state IN ('prepared','sending','running','processing')",
+                f"SELECT id FROM ai_tasks WHERE state IN ({','.join('?' * len(ACTIVE_TASK_STATES))})",
+                ACTIVE_TASK_STATES,
             ).fetchall()
             for row in rows:
                 task = self.get(row[0], connection)

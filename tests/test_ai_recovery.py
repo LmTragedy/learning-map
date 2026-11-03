@@ -159,7 +159,7 @@ def test_stream_rejects_foreign_thread_or_turn_after_observing_raw_message(
     with (
         patch("backend.codex_installation.shutil.which", return_value="codex.exe"),
         patch("backend.ai.subprocess.Popen", return_value=server),
-        pytest.raises(AIError, match="different (thread|turn)"),
+        pytest.raises(AIError, match="另一个(会话|轮次)"),
     ):
         CodexAI(tmp_path).ask("Exact prompt", observer=lambda *event: observed.append(event))
     raw = [payload for name, payload in observed if name == "stream/message"]
@@ -177,7 +177,7 @@ def test_stream_rejects_ambiguous_delta_groups_without_final_marker(tmp_path: Pa
     with (
         patch("backend.codex_installation.shutil.which", return_value="codex.exe"),
         patch("backend.ai.subprocess.Popen", return_value=server),
-        pytest.raises(AIError, match="multiple assistant messages"),
+        pytest.raises(AIError, match="多条助手消息"),
     ):
         CodexAI(tmp_path).ask("Exact prompt")
 
@@ -192,7 +192,7 @@ def test_observer_failure_prevents_turn_send(tmp_path: Path) -> None:
     with (
         patch("backend.codex_installation.shutil.which", return_value="codex.exe"),
         patch("backend.ai.subprocess.Popen", return_value=server),
-        pytest.raises(AIError, match="observer failed during thread/opened"),
+        pytest.raises(AIError, match="thread/opened 阶段失败"),
     ):
         CodexAI(tmp_path).ask("Exact prompt", observer=fail)
     assert "turn/start" not in [json.loads(x).get("method") for x in server.stdin.getvalue().splitlines()]
@@ -208,7 +208,7 @@ def test_turn_sending_observer_failure_prevents_turn_start(tmp_path: Path) -> No
     with (
         patch("backend.codex_installation.shutil.which", return_value="codex.exe"),
         patch("backend.ai.subprocess.Popen", return_value=server),
-        pytest.raises(AIError, match="observer failed during turn/sending"),
+        pytest.raises(AIError, match="turn/sending 阶段失败"),
     ):
         CodexAI(tmp_path).ask("Exact prompt", observer=fail)
     methods = [json.loads(line).get("method") for line in server.stdin.getvalue().splitlines()]
@@ -225,7 +225,7 @@ def test_observer_requires_turn_id_before_reporting_completion(tmp_path: Path) -
     with (
         patch("backend.codex_installation.shutil.which", return_value="codex.exe"),
         patch("backend.ai.subprocess.Popen", return_value=server),
-        pytest.raises(AIError, match="turn ID required for recovery"),
+        pytest.raises(AIError, match="恢复所需的轮次 ID"),
     ):
         CodexAI(tmp_path).ask("Exact prompt", observer=lambda *event: observed.append(event))
     assert "response/completed" not in [event for event, _ in observed]
@@ -286,16 +286,16 @@ def test_read_turn_does_not_create_a_working_directory(tmp_path: Path) -> None:
         patch("backend.codex_installation.shutil.which", return_value="codex.exe"),
         patch("backend.ai.subprocess.Popen", return_value=server),
     ):
-        with pytest.raises(AIError, match="uniquely"):
+        with pytest.raises(AIError, match="唯一确定"):
             CodexAI(missing).read_turn("thread-1", turn_id="missing")
     assert not missing.exists()
 
 
 def test_read_turn_uses_only_unique_exact_prompt(tmp_path: Path) -> None:
     assert read_turn(tmp_path, [_turn("only", "Exact prompt")], prompt="Exact prompt")["turn_id"] == "only"
-    with pytest.raises(AIError, match="identified uniquely"):
+    with pytest.raises(AIError, match="唯一确定"):
         read_turn(tmp_path, [_turn("a", "Exact prompt"), _turn("b", "Exact prompt")], prompt="Exact prompt")
-    with pytest.raises(AIError, match="identified uniquely"):
+    with pytest.raises(AIError, match="唯一确定"):
         read_turn(tmp_path, [_turn("a", "exact prompt")], prompt="Exact prompt")
 
 
@@ -303,8 +303,8 @@ def test_read_turn_uses_only_unique_exact_prompt(tmp_path: Path) -> None:
     "turn,match",
     [
         (_turn("bad", "Exact prompt", status="inProgress"), None),
-        (_turn("tool", "Exact prompt", tool=True), "tool activity"),
-        (_turn("empty", "Exact prompt", assistant=""), "no recoverable final"),
+        (_turn("tool", "Exact prompt", tool=True), "含有工具调用"),
+        (_turn("empty", "Exact prompt", assistant=""), "没有可恢复的最终"),
     ],
 )
 def test_read_turn_refuses_incomplete_or_unsafe_turns(tmp_path: Path, turn, match) -> None:
@@ -318,7 +318,7 @@ def test_read_turn_refuses_incomplete_or_unsafe_turns(tmp_path: Path, turn, matc
 def test_read_turn_requires_full_item_view_and_prefers_declared_final(tmp_path: Path) -> None:
     turn = _turn("phased", "Exact prompt")
     turn["itemsView"] = "summary"
-    with pytest.raises(AIError, match="summarized turn"):
+    with pytest.raises(AIError, match="摘要轮次"):
         read_turn(tmp_path, [turn], turn_id="phased")
 
     turn["itemsView"] = "full"

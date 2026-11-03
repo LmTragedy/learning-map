@@ -2,10 +2,12 @@ import hashlib
 import shutil
 from pathlib import Path
 
-from .documents import parse_document, render_page
+from .documents import MAX_FILE_BYTES, parse_document, render_page
 from .store import identity
 
-MAX_UPLOAD = 50 * 1024 * 1024
+MAX_UPLOAD = MAX_FILE_BYTES  # one limit: a copy that passes here must also pass the parser
+# What the app accepts is a product choice, narrower than what documents.py can parse.
+# The answer picker (PracticePanel.tsx) lists the same suffixes; the material picker offers PDF first.
 ALLOWED = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".txt", ".md"}
 
 
@@ -20,7 +22,7 @@ def copy_upload(upload, directory):
         while chunk := upload.file.read(1024 * 1024):
             total += len(chunk)
             if total > MAX_UPLOAD:
-                raise ValueError("单个文件不能超过 50 MB")
+                raise ValueError(f"单个文件不能超过 {MAX_UPLOAD // (1024 * 1024)} MB")
             digest.update(chunk)
             copied.write(chunk)
     if total == 0:

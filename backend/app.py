@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -138,7 +139,24 @@ def _security(app):
         return response
 
 
+def _validation_message(errors) -> str:
+    """One readable sentence; never echo the submitted body (it may carry the DeepSeek key)."""
+    parts = []
+    for error in errors:
+        message = str(error.get("msg", "")).removeprefix("Value error, ")
+        if error.get("type") == "value_error":
+            parts.append(message)
+            continue
+        field = ".".join(str(part) for part in error.get("loc", ()) if part != "body") or "请求内容"
+        parts.append(f"{field} 不符合要求（{message}）")
+    return "；".join(dict.fromkeys(parts)) or "提交内容不符合要求"
+
+
 def _errors(app):
+    @app.exception_handler(RequestValidationError)
+    async def unprocessable(_, error):
+        return JSONResponse({"detail": _validation_message(error.errors())}, status_code=422)
+
     @app.exception_handler(KeyError)
     async def missing(_, error):
         return JSONResponse({"detail": str(error.args[0])}, status_code=404)

@@ -65,6 +65,18 @@ def test_learning_model_cannot_be_deepseek_but_goal_and_review_models_can(tmp_pa
     assert saved.json()["goal_model"] == "deepseek-chat"
 
 
+
+def test_validation_errors_are_one_readable_sentence_without_the_submitted_key(tmp_path):
+    client = TestClient(create_app(tmp_path / "data", lambda _: None), headers={"X-Learning-Map": "1"})
+    rejected = client.post("/api/settings", json={"model": "deepseek-chat", "deepseek_api_key": "sk-secret"})
+    assert rejected.status_code == 422
+    detail = rejected.json()["detail"]
+    assert detail == "DeepSeek 只用于笔记检查和目标提取；学习对话模型请使用 Codex 模型"
+    assert "sk-secret" not in rejected.text
+    too_long = client.post("/api/settings", json={"model": "x" * 500})
+    assert too_long.status_code == 422 and isinstance(too_long.json()["detail"], str)
+    assert too_long.json()["detail"].startswith("model 不符合要求")
+
 def test_goal_extraction_is_sent_to_the_goal_model(tmp_path):
     seen = []
 
@@ -100,3 +112,17 @@ def test_saved_key_is_write_only_and_used_for_requests(tmp_path, monkeypatch):
     client.post("/api/settings", json={"deepseek_api_key": ""})
     assert client.get("/api/settings").json()["deepseek_key_set"] is False
     assert client.get("/api/health").json()["deepseek"]["available"] is False
+
+
+def test_deepseek_tasks_are_not_filed_into_codex_groups(tmp_path):
+    app = create_app(tmp_path / "data", lambda _settings: None)
+    client = TestClient(app, headers={"X-Learning-Map": "1"})
+    course = client.post("/api/sample").json()
+    store = app.state.store
+    with store.connect() as connection:
+        connection.execute("INSERT INTO ai_tasks VALUES(?,?,?,?,?,?,?,?)", (
+            "deepseek-task", course["id"], "req-deepseek-0001", "goals", "course", "applied",
+            json.dumps(dict(thread_id="deepseek-abc", request=dict(conversation={"title": "t"}))), "now"))
+    response = client.post(f"/api/courses/{course['id']}/ai-tasks/deepseek-task/organize")
+    assert response.status_code == 409
+    assert "DeepSeek" in response.json()["detail"]

@@ -11,10 +11,9 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from .schemas import DraftBridge, DraftPiece, Input, PieceKind, Strength  # noqa: F401  (drafts re-exported)
+from .schemas import Input, PieceKind, Strength
 from .store import identity, timestamp
 
-PIECE_KINDS = ("定义", "记号", "性质", "方法", "例子")
 STRENGTH_ORDER = {"required": 0, "suggested": 1, "extension": 2}
 LEGACY_TEXTS = {"旧版关系未记录解释。", "旧版关系未记录适用时机。", "旧版关系未记录依据。"}
 

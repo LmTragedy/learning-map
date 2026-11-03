@@ -5,7 +5,7 @@ import { api, lessonHtmlUrl } from "./api";
 import type { Course, LearningNode } from "./types";
 import { TaskCards, useCourseTasks } from './aiTasks';
 import { taskTime } from './aiTaskModel';
-import './workbench/visuals.css';
+import './lessonLayout.css';
 
 /**
  * The lesson mode of the study workbench: saved lessons as tabs, the selected one in full, and

@@ -3,7 +3,6 @@ from fastapi.responses import HTMLResponse
 from .domain import find_node, project_course
 from .lesson_html import LESSON_CSP, link_citations
 from .lesson_math import typeset_math
-from .lesson_visuals import RecoverVisuals, recover_visuals
 from .lessons import LessonRequest, find_lesson, generate_lesson, mark_lesson_read, mark_lesson_unread
 from .review_scope import require_review_record
 
@@ -12,10 +11,6 @@ def register_lesson_routes(app, store, learning):
     @app.post("/api/courses/{cid}/nodes/{nid}/lessons")
     def generate(cid: str, nid: str, request: LessonRequest):
         return project_course(generate_lesson(learning, cid, nid, request))
-
-    @app.post("/api/courses/{cid}/nodes/{nid}/lessons/{lid}/visuals/recover")
-    def visuals(cid: str, nid: str, lid: str, request: RecoverVisuals):
-        return project_course(recover_visuals(store, cid, nid, lid, request))
 
     @app.get("/api/courses/{cid}/nodes/{nid}/lessons/{lid}/html")
     def html(cid: str, nid: str, lid: str, download: bool = False):

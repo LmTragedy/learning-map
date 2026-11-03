@@ -141,7 +141,6 @@ export type LearningNode = {
 };
 export type Lesson = {
   request_id?: string;
-  visuals?: import('./workbench/visualTypes').VisualItem[];
   id: string;
   title: string;
   goal: string;

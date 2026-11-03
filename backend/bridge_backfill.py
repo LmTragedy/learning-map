@@ -6,8 +6,6 @@ from pydantic import Field
 
 from .ai_tasks import current_task_id
 from .bridges import (
-    DraftBridge,
-    DraftPiece,
     apply_draft_bridges,
     legacy_bridge,
     needs_bridges,
@@ -18,7 +16,7 @@ from .conversation_labels import conversation_label, remember_conversation
 from .domain import project_course
 from .learning import BASE_SYSTEM, LearningError, _validate_sources, cited_material_context, structured
 from .review_scope import strict_scope
-from .schemas import Input
+from .schemas import DraftBridge, DraftPiece, Input
 from .store import Conflict, identity
 
 BATCH = 12

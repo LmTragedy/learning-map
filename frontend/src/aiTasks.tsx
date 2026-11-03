@@ -123,28 +123,22 @@ function useTaskLedger(course: Course | null, onCourse: (course: Course) => void
     if(replacement&&latest.current.course?.id===task.course_id)latest.current.navigate(replacement);
     return requestId;
   };
-  const collect=async(task:AiTask):Promise<AiTask>=>{
+  /** Run one action on a task at a time, then cache and show the task as the server now has it. */
+  const refreshAfter=async<T,>(task:AiTask,action:()=>Promise<T>,fallback?:(returned:T)=>AiTask):Promise<AiTask>=>{
     if(locked.current.has(task.id))throw new Error('该任务正在处理。');
     locked.current.add(task.id);
     try {
-      await api.collectAiTask(task.course_id,task.id);
-      const updated=await api.aiTask(task.course_id,task.id);
+      const returned=await action();
+      const reread=api.aiTask(task.course_id,task.id);
+      const updated=fallback?await reread.catch(()=>fallback(returned)):await reread;
       detailCache.current.set(task.id,updated);
       if(latest.current.course?.id===task.course_id)setTasks(current=>current.map(saved=>saved.id===task.id?updated:saved));
       return updated;
     } finally {locked.current.delete(task.id);}
   };
-  const organize=async(task:AiTask):Promise<AiTask>=>{
-    if(locked.current.has(task.id))throw new Error('该任务正在处理。');
-    locked.current.add(task.id);
-    try {
-      const organized=await api.organizeAiTask(task.course_id,task.id);
-      const updated=await api.aiTask(task.course_id,task.id).catch(()=>organized);
-      detailCache.current.set(task.id,updated);
-      if(latest.current.course?.id===task.course_id)setTasks(current=>current.map(saved=>saved.id===task.id?updated:saved));
-      return updated;
-    } finally {locked.current.delete(task.id);}
-  };
+  const collect=(task:AiTask)=>refreshAfter(task,()=>api.collectAiTask(task.course_id,task.id));
+  // Organizing already returns the task, so a failed re-read can fall back to it.
+  const organize=(task:AiTask)=>refreshAfter(task,()=>api.organizeAiTask(task.course_id,task.id),organized=>organized);
   const readResult=async(task:AiTask)=>api.aiTaskResult(task.course_id,task.id);
   const importHistory=async()=>{
     const cid=latest.current.course?.id;
@@ -176,8 +170,6 @@ export function AiTaskProvider({course,onCourse,onNavigate,aiEnabled,children}:{
 }
 // eslint-disable-next-line react-refresh/only-export-components -- the hooks read this file's context
 export function useCourseTasks(){const value=useContext(Context);if(!value)throw new Error('缺少 AI 任务上下文');return value;}
-// eslint-disable-next-line react-refresh/only-export-components -- the hooks read this file's context
-export function useTask(requestId:string){return useCourseTasks().tasks.find(t=>t.request_id===requestId);}
 const trayProps=(l:Ledger,location:string)=>({tasks:l.tasks,viewFor:l.viewFor,loading:l.loading,error:l.error,open:l.open&&l.activeEntry===location,onOpenChange:(open:boolean)=>{l.setActiveEntry(location);l.setOpen(open);if(!open)l.setTrayFilter('all');},filter:l.trayFilter,onShowAll:()=>l.setTrayFilter('all'),onRefresh:l.refresh,onRecover:l.recover,onRegenerate:l.regenerate,onCollect:l.collect,onOrganize:l.organize,onReadResult:l.readResult,onImportHistory:l.importHistory,importingHistory:l.importingHistory,importMessage:l.importMessage,onNavigate:l.navigate});
 export function TaskEntry({location='header'}:{location?:string}){const l=useCourseTasks();return <TaskTray {...trayProps(l,location)}/>;}
 type InlineQuery={kind:string|string[];target?:string;taskId?:string};
