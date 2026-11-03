@@ -15,19 +15,20 @@ export function LinesPanel({ course, initialLineId, busy, aiEnabled, act, onNode
   const strict = course.review_scope.enabled && course.review_scope.ai_scope === "selected";
   const progress = course.progress;
   return <div className="modal-body">
-    <div className="flex flex-wrap items-center gap-2">
+    {/* Tabs only once there is more than the overview to switch to. */}
+    {!!course.lines?.length && <div className="flex flex-wrap items-center gap-2">
       <Button size="sm" variant="ghost" aria-pressed={!line} onClick={() => setLineId("")}>课程全貌</Button>
       {(course.lines || []).map((entry) => <Button key={entry.id} size="sm" variant="ghost" aria-pressed={line?.id === entry.id} onClick={() => setLineId(entry.id)}>
         <i className="size-2 rounded-full" style={{ background: lineColor(entry) }} />{entry.name}
       </Button>)}
-    </div>
+    </div>}
     {strict ? <p className="text-sm text-muted-foreground">当前只复习所选材料。退出复习后查看整门课的主线与串讲。</p> : <>
       {!line ? <>
         <p>{course.overview?.summary || "把知识点沿着知识桥连成主线，看看这一门课最终在解决什么问题。"}</p>
         {progress && <p className="text-sm text-muted-foreground">已掌握知识块 {progress.pieces.known}/{progress.pieces.total} · 已完成站点 {progress.nodes.done}/{progress.nodes.total}</p>}
         {!!course.overview?.abilities.length && <ul className="list-disc pl-5">{course.overview.abilities.map((text, index) => <li key={index}>{text}</li>)}</ul>}
         <Button disabled={busy || !aiEnabled || !course.nodes.length} onClick={() => void act("generate-lines", () => api.generateLines(course.id))}>用 AI {course.lines?.length ? "更新" : "生成"}主线与课程全貌</Button>
-        <p className="text-xs text-muted-foreground">根据当前知识点和知识桥生成；AI 解释待核对。保留已编辑、有笔记或串讲记录的主线。</p>
+        <p className="text-xs text-muted-foreground">{!aiEnabled ? "需要先在设置中开启 AI 才能生成。" : !course.nodes.length ? "需要先生成知识地图。" : "根据当前知识点和知识桥生成；AI 解释待核对。保留已编辑、有笔记或串讲记录的主线。"}</p>
         {(course.lines || []).map((entry) => <button key={entry.id} className="rounded-lg border border-border p-3 text-left" onClick={() => setLineId(entry.id)}>
           <strong style={{ color: lineColor(entry) }}>{entry.name}</strong><p>{entry.goal}</p><small>{linePercent(entry)}% · {entry.node_ids.length} 站 · {entry.endpoint}</small>
         </button>)}

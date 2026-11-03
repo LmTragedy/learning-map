@@ -11,7 +11,7 @@ from pydantic import Field
 from .ai_tasks import current_task_id
 from .conversation_labels import conversation_label, remember_conversation
 from .domain import project_course
-from .learning import LearningError, StructuredReply, _local_digest, structured
+from .learning import BASE_SYSTEM, LearningError, StructuredReply, _local_digest, structured
 from .page_index import index_progress, is_indexed, set_page_index, text_pages
 from .schemas import Input
 from .store import Conflict
@@ -89,7 +89,7 @@ def build_index(store, learning, cid, indexed, request_id=None):
 
 def _read_index(learning, prompt, label):
     reply = structured(learning.ai(model="gpt-6-luna", effort="medium"),
-                       prompt, IndexDraft, {"conversation": label})
+                       prompt, IndexDraft, {"conversation": label}, system=BASE_SYSTEM)
     return dict(payload=reply.payload, thread_id=reply.thread_id)
 
 

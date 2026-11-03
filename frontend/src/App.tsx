@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { formatTime } from "./formatTime";
-import { AI_KEYS, setBusyActivity, useBusyActivity, useElapsedSeconds } from "./busyActivity";
+import { AI_KEYS, setBusyActivity } from "./busyActivity";
 import {
   AlertCircle,
   Archive,
   Check,
-  CircleHelp,
   Clock3,
   FilePlus2,
   FileSearch,
@@ -69,6 +68,8 @@ import { CourseNotes } from "./CourseNotes";
 import { hasUnsavedNotes } from "./noteDrafts";
 import { hasVolatileAnswerDrafts } from "./answerDrafts";
 import { RecallPanel } from "./RecallPanel";
+import { busyLabel, modalTitle, shortPath, type Modal } from "./appLabels";
+import { BusyIndicator, ConfirmPreview, ModalIcon } from "./AppChrome";
 import { AiTaskProvider, TaskBanners, TaskCards, TaskEntry, TaskSlot } from './aiTasks';
 import type { AiTask } from './aiTaskModel';
 import type {
@@ -81,22 +82,6 @@ import type {
   Settings,
 } from "./types";
 
-type Modal =
-  | "create"
-  | "import"
-  | "settings"
-  | "profile"
-  | "versions"
-  | "obsidian"
-  | "restore"
-  | "delete"
-  | "recall"
-  | "review"
-  | "materials"
-  | "goals"
-  | "lines"
-  | "course-notes"
-  | null;
 export function App() {
   const [courses, setCourses] = useState<CourseSummary[]>([]);
   const [course, setCourse] = useState<Course | null>(null);
@@ -123,6 +108,7 @@ export function App() {
   const [relationBackStack, setRelationBackStack] = useState<{ nodeId: string; scopeKey: string }[]>([]);
   const [health, setHealth] = useState<{
     ai: { available: boolean; reason?: string };
+    deepseek?: { available: boolean; reason?: string } | null;
     parser: Record<string, unknown>;
     data_dir: string;
   }>();
@@ -141,6 +127,8 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [notice]);
   const [settings, setSettings] = useState<Settings>();
+  // null keeps the saved DeepSeek key; "" removes it.
+  const [deepseekKey, setDeepseekKey] = useState<string | null>(null);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [profile, setProfile] = useState<Profile>();
   const [versions, setVersions] = useState<
@@ -345,6 +333,7 @@ export function App() {
     const value = await run("settings", api.settings);
     if (value) {
       setSettings(value);
+      setDeepseekKey(null);
       setModal("settings");
     }
   };
@@ -380,6 +369,8 @@ export function App() {
         ai_enabled: settings.ai_enabled,
         model: settings.model,
         note_review_model: settings.note_review_model || "gpt-6-luna",
+        goal_model: settings.goal_model || "",
+        ...(deepseekKey !== null ? { deepseek_api_key: deepseekKey.trim() } : {}),
         reasoning_effort: settings.reasoning_effort || "medium",
         obsidian_vault: settings.obsidian_vault,
         parser: settings.parser,
@@ -387,6 +378,7 @@ export function App() {
     );
     if (value) {
       setSettings(value);
+      setDeepseekKey(null);
       setAiEnabled(value.ai_enabled);
       setModal(null);
       try {
@@ -660,8 +652,7 @@ export function App() {
               <div className="min-w-0 flex-1">
                 <h1 className="t-page truncate">{course.title}</h1>
                 <div className="mt-0.5 flex items-center gap-3 overflow-hidden whitespace-nowrap text-xs text-muted-foreground [&_svg]:size-3">
-                  <span className="flex items-center gap-1"><History aria-hidden /> 版本 {course.revision}</span>
-                  <span className="flex items-center gap-1"><FileText aria-hidden /> {course.materials.length} 份材料</span>
+                  <span className="flex items-center gap-1 max-[781px]:hidden"><FileText aria-hidden /> {course.materials.length} 份材料</span>
                   <span className="flex items-center gap-1 max-[1100px]:hidden"><Layers aria-hidden /> {course.nodes.length} 个知识点</span>
                   {course.route && <span className="flex items-center gap-1.5 text-foreground">
                     <span className="h-1 w-14 overflow-hidden rounded-full bg-track"><span className="block h-full bg-st-passed" style={{ width: `${(course.progress?.ratio ?? (course.route.total ? course.route.completed_count / course.route.total : 0)) * 100}%` }} /></span>
@@ -766,12 +757,12 @@ export function App() {
                 }
                 if (task && view?.group === "attention") return <TaskCards kind="bridge" target="batch" limit={1} />;
                 return bridgeGapCount > 0 && !hints.hidden(`bridges:${course.id}`, bridgeGapCount) && (
-                  <Callout tone="neutral" icon={<Waypoints />} title={`${bridgeGapCount} 条联系还没有知识桥`}
+                  <Callout tone="neutral" compact icon={<Waypoints />}
+                    title={<span title="让 AI 根据材料写清“后一个知识点的哪一步用到了前一个的哪一块”，并配一道检验题。每次处理 12 条，结果标为待核对，不改变进度和解锁。">{bridgeGapCount} 条联系还没有知识桥<span className="ml-2 font-normal text-muted-foreground max-[1100px]:hidden">补上后能看清前后知识点具体怎么衔接</span></span>}
                     dismissLabel="不再提示（新增缺口时再提醒）" onDismiss={() => hints.dismiss(`bridges:${course.id}`, bridgeGapCount)}
                     actions={aiOn ? <Button size="sm" variant="outline" disabled={busy} onClick={backfill}>
                       <Sparkles /> 用 AI 补充知识桥
                     </Button> : <Button size="sm" variant="outline" onClick={() => void openSettings()}>先在设置中开启 AI</Button>}>
-                    <span className="max-[781px]:hidden">让 AI 根据材料写清“后一个知识点的哪一步用到了前一个的哪一块”，并配一道检验题。每次处理 12 条，结果标为待核对，不改变进度和解锁。</span>
                   </Callout>);
               }}</TaskSlot>
               {course.review_scope?.enabled && activeNodes.length === 0 && (
@@ -888,7 +879,7 @@ export function App() {
               </section>
               <div
                 className={cn(
-                  "node-dock relative flex w-[clamp(380px,22vw,460px)] shrink-0 flex-col overflow-hidden border-l border-border bg-sidebar max-[1180px]:w-[340px]",
+                  "node-dock relative flex w-[clamp(340px,24vw,420px)] shrink-0 flex-col overflow-hidden border-l border-border bg-sidebar max-[1180px]:w-[320px]",
                   dock.width && "min-[781px]:!w-[var(--dock-w)]",
                   // Hidden, not unmounted: the node panel also drives the workbench through a portal.
                   !layout.dock && "min-[781px]:hidden",
@@ -1001,7 +992,7 @@ export function App() {
           >
             {modal && <>
             <div className="modal-head">
-              <span className="modal-icon" aria-hidden>{modalIcon(modal)}</span>
+              <span className="modal-icon" aria-hidden><ModalIcon modal={modal} /></span>
               <Dialog.Title asChild><h2>{modalTitle(modal)}</h2></Dialog.Title>
               <Dialog.Close asChild>
                 <Button variant="ghost" size="icon-sm" aria-label="关闭"><X /></Button>
@@ -1216,7 +1207,7 @@ export function App() {
                   <ShieldCheck size={18} />
                   <p>
                     AI 默认关闭。开启后，课程材料节选、对话和作答会发送到 Codex
-                    提供方处理。Codex
+                    提供方处理；检查或目标提取模型填 DeepSeek 时，笔记和材料节选会发送到 DeepSeek。Codex
                     也可能在其用户目录保存会话记录；删除课程不会清除这些记录，它们由
                     Codex 与提供方的设置管理。
                   </p>
@@ -1262,8 +1253,37 @@ export function App() {
                   <input value={settings.note_review_model || "gpt-6-luna"}
                     onChange={(event) => setSettings({ ...settings, note_review_model: event.target.value })}
                     placeholder="gpt-6-luna" />
-                  <span className="text-xs text-muted-foreground">笔记检查默认 Luna／中等推理；不改变学习对话模型。</span>
+                  <span className="text-xs text-muted-foreground">笔记检查默认 Luna／中等推理；不改变学习对话模型。填 deepseek-chat 等 DeepSeek 模型时改用 DeepSeek。</span>
                 </label>
+                <label className="field-label">
+                  课程目标提取模型（独立）
+                  <input value={settings.goal_model || ""}
+                    onChange={(event) => setSettings({ ...settings, goal_model: event.target.value })}
+                    placeholder="留空则沿用学习对话模型" />
+                  <span className="text-xs text-muted-foreground">可填 DeepSeek 模型；候选目标仍需核对引用并勾选确认。</span>
+                </label>
+                <label className="field-label">
+                  DeepSeek API key
+                  <div className="flex gap-2">
+                    <input type="password" autoComplete="off" className="flex-1"
+                      value={deepseekKey ?? ""}
+                      onChange={(event) => setDeepseekKey(event.target.value || null)}
+                      placeholder={settings.deepseek_key_set ? "已保存（留空不改）" : "sk-…"} />
+                    {settings.deepseek_key_set && deepseekKey !== "" && (
+                      <Button type="button" variant="outline" size="sm" onClick={() => setDeepseekKey("")}>清除</Button>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {deepseekKey === "" && settings.deepseek_key_set
+                      ? "保存后将删除已保存的 key。"
+                      : "只保存在本机 data/ 数据库中，页面不会再显示；用于上面填了 DeepSeek 模型的两项任务。"}
+                  </span>
+                </label>
+                {health?.deepseek && (
+                  <p className="text-xs text-muted-foreground">
+                    {health.deepseek.available ? "DeepSeek API key 已设置（连接与额度未检测）。" : health.deepseek.reason}
+                  </p>
+                )}
                 <label className="field-label">
                   Obsidian 笔记库路径
                   <input
@@ -1663,125 +1683,4 @@ export function App() {
     </AiTaskProvider>
     </TooltipProvider>
   );
-}
-function ConfirmPreview({
-  preview,
-  busy,
-  onCancel,
-  onConfirm,
-  confirm,
-  icon,
-  danger = false,
-}: {
-  preview: Preview;
-  busy: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-  confirm: string;
-  icon: React.ReactNode;
-  danger?: boolean;
-}) {
-  return (
-    <div className="modal-body">
-      <div className={`warning-callout ${danger ? "danger" : ""}`}>
-        <AlertCircle size={19} />
-        <p>{preview.warning}</p>
-      </div>
-      <div className="preview-card">
-        <strong>{preview.target}</strong>
-        {preview.contents?.map((item, i) => (
-          <div className="preview-line" key={`${i}-${item}`}>
-            {item}
-          </div>
-        ))}
-      </div>
-      <div className="decision-row">
-        <Button variant="ghost" onClick={onCancel}>返回</Button>
-        <Button variant={danger ? "destructive" : "default"} disabled={busy} onClick={onConfirm}>
-          {icon}
-          {confirm}
-        </Button>
-      </div>
-    </div>
-  );
-}
-function modalIcon(m: Modal) {
-  const icons: Record<string, typeof X> = {
-    create: Plus,
-    import: Upload,
-    settings: Settings2,
-    profile: Archive,
-    versions: History,
-    obsidian: FolderSync,
-    restore: RotateCcw,
-    delete: Trash2,
-    recall: Clock3,
-    review: FileSearch,
-    materials: FolderOpen,
-    goals: Layers,
-    lines: Waypoints,
-    "course-notes": NotebookPen,
-  };
-  const Icon = icons[m || ""] || CircleHelp;
-  return <Icon size={18} />;
-}
-function modalTitle(m: Modal) {
-  return (
-    (
-      {
-        create: "创建课程",
-        import: "导入学习材料",
-        settings: "设置",
-        profile: "学习档案与反馈",
-        versions: "版本与恢复",
-        obsidian: "Obsidian 笔记",
-        restore: "恢复课程状态",
-        delete: "删除课程",
-        recall: "找回思路",
-        materials: "已导入材料",
-        goals: "课程目标看板",
-        lines: "课程全貌与主线串讲",
-        "course-notes": "课程笔记",
-        review: "选择复习资料",
-      } as Record<string, string>
-    )[m || ""] || ""
-  );
-}
-function BusyIndicator({ label }: { label: string }) {
-  const activity = useBusyActivity();
-  const seconds = useElapsedSeconds(activity.since);
-  return (
-    <div className="busy-indicator" role="status">
-      <LoaderCircle size={16} />
-      {label}
-      {seconds >= 2 && <span className="ai-thinking-time">{AI_KEYS.has(activity.key) ? `已思考 ${seconds} 秒` : `${seconds} 秒`}</span>}
-    </div>
-  );
-}
-function busyLabel(key: string) {
-  return (
-    (
-      {
-        import: "正在导入材料…",
-        generate: "正在分析并生成地图…",
-        "material-index": "正在逐批建立材料索引…",
-        lesson: "正在生成小课…",
-        "lesson-read": "正在保存阅读记录…",
-        chat: "AI 正在整理思路…",
-        attempt: "正在检查作答…",
-        question: "正在生成练习…",
-        restore: "正在恢复课程…",
-        delete: "正在删除课程…",
-        recall: "正在找回对话…",
-        "recall-summary": "正在整理学习内容…",
-        "generate-lines": "正在生成主线与课程全貌…",
-        retell: "正在检查复述…",
-      } as Record<string, string>
-    )[key] || "正在保存…"
-  );
-}
-
-function shortPath(path: string) {
-  const parts = path.split(/[\\/]/).filter(Boolean);
-  return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : path;
 }

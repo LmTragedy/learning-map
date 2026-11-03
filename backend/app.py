@@ -13,6 +13,7 @@ from .ai import AIError, AIUnavailable, CodexAI
 from .ai_task_routes import register_ai_task_routes
 from .ai_tasks import client_request_id, requested_action_id
 from .bridge_backfill import register_bridge_backfill
+from .deepseek_ai import deepseek_status, provider_for
 from .domain import (
     find_attempt,
     find_node,
@@ -79,7 +80,8 @@ def _require_same_attempt_files(uploads, saved):
 def create_app(data_dir=None, ai_factory=None):
     store = Store(Path(data_dir or os.environ.get("LEARNING_MAP_DATA", PROJECT_ROOT / "data")))
     factory = ai_factory or (
-        lambda settings: CodexAI(store.root / "ai-workspace", settings["model"], settings["reasoning_effort"])
+        lambda settings: provider_for(settings, lambda chosen: CodexAI(
+            store.root / "ai-workspace", chosen["model"], chosen["reasoning_effort"]))
     )
     learning = Learning(store, factory)
     app = FastAPI(title="Learning Map", version="0.1.0")
@@ -414,6 +416,7 @@ def _settings_routes(app, store, factory):
     def health():
         return dict(
             ai=factory(store.settings()).available(),
+            deepseek=deepseek_status(store.settings()),
             data_dir=str(store.root),
             parser=dict(basic=True, docling=importlib.util.find_spec("docling") is not None),
             runtime=app.state.runtime,
@@ -421,7 +424,11 @@ def _settings_routes(app, store, factory):
 
     @app.get("/api/settings")
     def settings():
-        return {key: val for key, val in store.settings().items() if key != "accepted_stages"}
+        saved = store.settings()
+        # The key is write-only: the page only learns whether one is saved.
+        hidden = {"accepted_stages", "deepseek_api_key"}
+        return {key: val for key, val in saved.items() if key not in hidden} | dict(
+            deepseek_key_set=bool(saved.get("deepseek_api_key")))
 
     @app.post("/api/settings")
     def update_settings(request: Settings):

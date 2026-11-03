@@ -26,6 +26,7 @@ from .bridges import (
 from .conversation_labels import conversation_label, remember_conversation
 from .domain import find_node, project_course
 from .learning import (
+    BASE_SYSTEM,
     LearningError,
     _validate_sources,
     cited_material_context,
@@ -238,7 +239,8 @@ def _find_links(store, learning, cid, nid, revision):
         raise Conflict("课程已在其他操作中改变，请刷新后重试；已有进度未覆盖")
     node = find_node(course, nid)
     label = conversation_label(course, purpose="补充知识桥")
-    reply = structured(learning.ai(), _prompt(course, node), LinksDraft, {"conversation": label})
+    reply = structured(learning.ai(), _prompt(course, node), LinksDraft, {"conversation": label},
+                       system=BASE_SYSTEM)
     draft = reply.payload
     _validate(course, node, draft)
     # Not pinned to the starting revision: a note saved while the AI works must not void the result.

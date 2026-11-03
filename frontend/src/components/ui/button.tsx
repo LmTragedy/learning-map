@@ -8,7 +8,7 @@ import { cn } from "../../lib/utils";
 // outline = other real actions; ghost = low-stakes ones (cancel, back, edit, refresh);
 // destructive = deletes, always behind a confirmation. Selection is never a variant:
 // toggles pass aria-pressed and get the shared pressed look below.
-export const buttonVariants = cva(
+const buttonVariants = cva(
   "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 cursor-pointer aria-pressed:bg-control-active aria-pressed:text-foreground",
   {
     variants: {
