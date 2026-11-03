@@ -277,6 +277,7 @@ export type Settings = {
   ai_enabled: boolean;
   model: string;
   note_review_model: string;
+  goal_model: string;
   reasoning_effort: "low" | "medium" | "high";
   obsidian_vault: string;
   parser: string;

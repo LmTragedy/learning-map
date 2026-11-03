@@ -73,6 +73,7 @@ export const api = {
   health: () =>
     request<{
       ai: { available: boolean; [key: string]: unknown };
+      deepseek: { available: boolean; reason?: string } | null;
       parser: Record<string, unknown>;
       data_dir: string;
     }>("/health"),

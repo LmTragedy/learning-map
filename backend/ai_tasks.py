@@ -66,6 +66,15 @@ def has_saved_reply():
     return bool(task and task[0].get(task[1]).get("raw_reply"))
 
 
+def task_model(settings, kind):
+    """The model a new task of this kind would be sent to."""
+    if kind == "note_review":
+        return settings["note_review_model"]
+    if kind == "goals":
+        return settings.get("goal_model", "").strip() or settings["model"]
+    return settings["model"]
+
+
 def task_ai(provider, settings=None):
     task = _active.get()
     if task and settings is not None:
@@ -350,7 +359,7 @@ class TaskManager:
             if logical_identity(previous) != logical_identity(current):
                 continue
             settings = self.store.settings(connection)
-            model = settings["note_review_model"] if invocation.kind == "note_review" else settings["model"]
+            model = task_model(settings, invocation.kind)
             if previous.get("model") is not None and previous["model"] != model:
                 continue
             raise Conflict(f"任务 {pending[0]} 尚待处理，请先恢复原请求或明确选择重新生成；新动作未冒用旧身份")

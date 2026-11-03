@@ -49,9 +49,17 @@ class Settings(Input):
     ai_enabled: bool = False
     model: str = Field(default="", max_length=160)
     note_review_model: str = Field(default="gpt-6-luna", min_length=1, max_length=160)
+    # Empty follows the learning model; a deepseek-* name sends goal extraction to DeepSeek.
+    goal_model: str = Field(default="", max_length=160)
     reasoning_effort: Literal["low", "medium", "high"] = "medium"
     obsidian_vault: str = Field(default="", max_length=500)
     parser: Literal["basic", "docling"] = "basic"
+
+    @model_validator(mode="after")
+    def deepseek_only_for_checked_tasks(self):
+        if self.model.strip().lower().startswith("deepseek"):
+            raise ValueError("DeepSeek 只用于笔记检查和目标提取；学习对话模型请使用 Codex 模型")
+        return self
 
 
 class NoteWrite(Input):
