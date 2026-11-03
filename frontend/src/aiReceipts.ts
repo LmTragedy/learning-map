@@ -10,9 +10,19 @@ export type AiReceipt = {
 
 type StoredReceipt = AiReceipt & { createdAt: string; settled?: boolean };
 
+/** Receipts whose request this page is still sending; the backend may not have recorded them yet. */
+const inFlight = new Set<string>();
+
 /** Recovery hints contain identities only; full inputs and replies stay in the backend ledger. */
 export function aiReceiptHints(courseId: string) {
-  return readStored().filter((receipt) => !receipt.settled && receipt.scope.includes(`/courses/${courseId}/`));
+  return readStored()
+    .filter((receipt) => !receipt.settled && receipt.scope.includes(`/courses/${courseId}/`))
+    .map((receipt) => ({ ...receipt, inFlight: inFlight.has(receipt.id) }));
+}
+
+/** Called once this page's request for `receipt` has answered or failed, whatever the outcome. */
+export function endAiRequest(receipt: AiReceipt | null) {
+  if (receipt) inFlight.delete(receipt.id);
 }
 
 export function regenerationRequestId(courseId: string, taskId: string) {
@@ -158,6 +168,7 @@ export async function prepareAiReceipt(path: string, init: RequestInit) {
   } catch (error) {
     throw storageError(error, "无法持久保存 AI 请求身份，请检查浏览器本地存储；请求尚未发送");
   }
+  inFlight.add(receipt.id);
 
   const headers = new Headers(init.headers);
   headers.set("X-AI-Request-ID", receipt.id);

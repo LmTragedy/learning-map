@@ -124,6 +124,23 @@ test("API sends and retains the receipt on failure, then clears it after parsed 
   }
 });
 
+test("a receipt is in flight only while this page is still sending its request", async () => {
+  reset();
+  const originalFetch = globalThis.fetch;
+  try {
+    let during;
+    globalThis.fetch = async () => {
+      during = aiReceiptHints("c1").map((hint) => hint.inFlight);
+      throw new Error("connection lost");
+    };
+    await assert.rejects(api.chat("c1", "n1", "in flight"), /无法连接/);
+    assert.deepEqual(during, [true]);
+    assert.deepEqual(aiReceiptHints("c1").map((hint) => hint.inFlight), [false]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("lesson body request_id is replaced but retell gets identity only in its header", async () => {
   reset();
   const originalFetch = globalThis.fetch;

@@ -52,7 +52,8 @@ function useTaskLedger(course: Course | null, onCourse: (course: Course) => void
       const missing=aiReceiptHints(cid).filter(hint=>!list.some(t=>t.request_id===hint.id)).map(hint=>{
         const route=hint.scope.split(' ' ).slice(1).join(' '), target=route.match(/\/nodes\/([^/]+)/)?.[1]||'batch';
         const kind=route.endsWith('/lessons')?'lesson':route.endsWith('/chat')?'chat':route.endsWith('/question')?'question':route.endsWith('/attempts')?'assessment':'unknown';
-        return {id:`missing-${hint.id}`,course_id:cid,kind,target,state:'missing',request_id:hint.id,created_at:hint.createdAt,updated_at:hint.createdAt} satisfies AiTask;
+        // Still being sent from this page: the backend simply has not recorded it yet.
+        return {id:`missing-${hint.id}`,course_id:cid,kind,target,state:hint.inFlight?'prepared':'missing',request_id:hint.id,created_at:hint.createdAt,updated_at:hint.createdAt} satisfies AiTask;
       });
       setTasks([...full,...missing]);
       if(details.some(d=>d.status==='rejected')){failures.current++;setError('部分任务详情无法读取。');setOffline(true);}
