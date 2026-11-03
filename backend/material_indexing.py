@@ -68,7 +68,10 @@ def _apply(course, batch, draft):
     returned = {(item["material_id"], item["page"]): item for item in draft["pages"]}
     materials = {material["id"]: material for material in course["materials"]}
     for wanted in batch:
-        page = materials[wanted["material_id"]]["pages"][wanted["page"] - 1]
+        material = materials.get(wanted["material_id"])
+        if material is None or wanted["page"] > len(material["pages"]):
+            raise Conflict("索引期间材料已被删除或替换，请刷新后重新建立索引")
+        page = material["pages"][wanted["page"] - 1]
         if page["text"] != wanted["text"]:
             raise Conflict("索引期间材料文字已变化，请刷新后重新建立索引")
         item = returned.get((wanted["material_id"], wanted["page"]))

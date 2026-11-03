@@ -131,7 +131,8 @@ def material_index(course, full_text_ids=(), *, only=None, quotes=False):
                 entry |= dict(text=page["text"], uncertain=page.get("uncertain", False))
             elif page["text"].strip() and (only is None or (material["id"], number) in only):
                 saved = page_index_entry(course, material["id"], number, page["text"]) or {}
-                entry["digest"] = saved.get("digest") or _local_digest(page["text"])
+                # page["digest"]: summaries saved before the page index existed.
+                entry["digest"] = saved.get("digest") or page.get("digest") or _local_digest(page["text"])
                 if quotes and "key_quotes" in saved:
                     entry |= dict(terms=saved["terms"], key_quotes=saved["key_quotes"])
             else:

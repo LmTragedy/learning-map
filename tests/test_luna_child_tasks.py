@@ -237,3 +237,32 @@ def test_unknown_child_is_not_resent_when_parent_is_replayed(tmp_path):
     child = next(task for task in learning.tasks.list(course["id"]) if task["kind"] == "child")
     assert child["state"] == "unknown"
     assert model.calls and len(model.calls) == 1
+
+
+def test_child_reply_that_fails_validation_is_not_offered_for_recovery(tmp_path):
+    from backend.learning import LearningError
+
+    store = Store(tmp_path / "data")
+    course = store.create("Luna invalid child")
+    store.save_settings(store.settings() | {"ai_enabled": True})
+    model = Model()
+    learning = Learning(store, lambda settings: model)
+
+    def child_action():
+        learning.ai(model="gpt-6-luna", effort="medium").ask("summarize")
+        raise LearningError("evidence check failed")
+
+    def parent_action():
+        return learning.tasks.run_child(course["id"], "recall_summary", {"prompt": "summarize"}, child_action)
+
+    try:
+        learning.tasks.run(course["id"], "recall", "n1", {}, parent_action, request_id="invalid-child-request-01")
+    except LearningError:
+        pass
+    else:
+        raise AssertionError("a reply that fails validation must not apply")
+    tasks = {task["kind"]: learning.tasks.get(task["id"]) for task in learning.tasks.list(course["id"])}
+    assert tasks["child"]["state"] == "invalid"
+    assert tasks["child"]["raw_reply"]["text"] == "child answer"
+    assert tasks["recall"]["state"] != "received"
+    assert not learning.tasks.public(tasks["recall"])["can_recover"]
