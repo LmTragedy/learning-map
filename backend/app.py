@@ -13,6 +13,7 @@ from .ai import AIError, AIUnavailable, CodexAI
 from .ai_task_routes import register_ai_task_routes
 from .ai_tasks import client_request_id, requested_action_id
 from .bridge_backfill import register_bridge_backfill
+from .node_links import register_node_links
 from .domain import (
     find_attempt,
     find_node,
@@ -88,6 +89,7 @@ def create_app(data_dir=None, ai_factory=None):
     _learning_routes(app, store, learning)
     # Registered before /relations/{rid} so "backfill" is not read as a relation id.
     register_bridge_backfill(app, store, learning)
+    register_node_links(app, store, learning)
     register_relation_routes(app, store)
     register_goals_notes(app, store)
     register_note_review(app, learning)

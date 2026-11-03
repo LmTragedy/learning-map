@@ -21,12 +21,12 @@ export type TaskView = {
   error?: string; shortLabel: string; newRequestId?: string;
 };
 export const ACTIVE_STATES = new Set(['prepared','sending','running','processing']);
-export const DISPATCH_KINDS = new Set(['bridge','bridge_history','assessment','chat','lesson','map','question','recall','lines','retell','goals','note_review']);
+export const DISPATCH_KINDS = new Set(['bridge','links','bridge_history','assessment','chat','lesson','map','question','recall','lines','retell','goals','note_review']);
 const RECOVER_KINDS = new Set([...DISPATCH_KINDS,'assessment']);
 export const taskTime = (value: string) => formatTime(value);
 export function taskName(task: AiTask, course?: Course) {
   const kind = task.kind === 'history' ? task.history_kind || 'history' : task.kind;
-  const verb = {lesson: task.inputs?.kind === 'supplement' ? '补一节小课' : '生成小课', chat:'回复',question:'生成验收题',assessment:'检查作答',bridge:'补充知识桥',bridge_backfill:'补充知识桥',bridge_history:'历史知识桥',map:'更新地图',lines:'生成主线',recall:'整理学习内容',retell:'检查复述',goals:'提取目标',note_review:'检查笔记',history:'历史任务'}[kind] || (task.kind === 'history' ? '历史任务' : kind);
+  const verb = {lesson: task.inputs?.kind === 'supplement' ? '补一节小课' : '生成小课', chat:'回复',question:'生成验收题',assessment:'检查作答',bridge:'补充知识桥',links:'重新找前后联系',bridge_backfill:'补充知识桥',bridge_history:'历史知识桥',map:'更新地图',lines:'生成主线',recall:'整理学习内容',retell:'检查复述',goals:'提取目标',note_review:'检查笔记',history:'历史任务'}[kind] || (task.kind === 'history' ? '历史任务' : kind);
   const label = course?.nodes.find(n => n.id === task.target)?.title || course?.edges.find(e => e.id === task.target)?.explanation;
   return label ? `${verb}「${label}」` : verb;
 }

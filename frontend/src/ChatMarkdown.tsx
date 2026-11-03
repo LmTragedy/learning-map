@@ -1,5 +1,6 @@
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import "./nodeNotes.css";
 
 /** AI replies are written in Markdown; show them formatted instead of as raw `**` and `>` marks. Raw HTML is not rendered. */
 export function ChatMarkdown({ text }: { text: string }) {

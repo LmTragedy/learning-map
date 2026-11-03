@@ -87,7 +87,7 @@
 /* Let the editor grow with its content inside the scrolling note body instead of overlapping what follows. */
 .node-note-editor, .node-note-panes { flex: 1 0 auto; }
 /* AI tutor replies in the chat: compact Markdown, with bold and quotes standing out so steps and sentence frames are easy to spot. */
-.chat-md { min-width: 0; font-size: var(--fs-sm, 14px); line-height: 1.75; color: var(--foreground); overflow-wrap: anywhere; }
+.chat-md { min-width: 0; font-size: 14px; line-height: 1.75; color: var(--foreground); overflow-wrap: anywhere; }
 .chat-md > :first-child { margin-top: 0; }
 .chat-md > :last-child { margin-bottom: 0; }
 .chat-md p { margin: .55em 0; }
@@ -97,10 +97,10 @@
 .chat-md ul { list-style: disc; }
 .chat-md ol { list-style: decimal; }
 .chat-md li::marker { color: var(--muted-foreground); }
-.chat-md blockquote { margin: .7em 0; padding: 8px 12px; border-left: 3px solid var(--st-new, var(--border)); border-radius: 0 6px 6px 0; background: var(--muted); }
+.chat-md blockquote { margin: .7em 0; padding: 8px 12px; border-left: 3px solid var(--muted-foreground); border-radius: 0; background: var(--raised); }
 .chat-md blockquote p { margin: 0; }
-.chat-md pre { max-width: 100%; overflow: auto; padding: 10px 12px; background: var(--muted); border-radius: 8px; font-size: .9em; line-height: 1.5; }
-.chat-md :not(pre) > code { padding: 1px 5px; background: var(--muted); border-radius: 4px; font-size: .92em; }
+.chat-md pre { max-width: 100%; overflow: auto; padding: 10px 12px; background: var(--raised); border-radius: 8px; font-size: .9em; line-height: 1.5; }
+.chat-md :not(pre) > code { padding: 1px 5px; background: var(--hover); border-radius: 4px; font-size: .92em; }
 .chat-md table { display: block; max-width: 100%; overflow: auto; border-collapse: collapse; margin: .7em 0; }
 .chat-md th, .chat-md td { padding: 5px 9px; border: 1px solid var(--border); }
 .chat-md a { text-decoration: underline; }

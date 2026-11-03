@@ -55,6 +55,10 @@ def _bridge(task, course):
     return [edge for edge in course["edges"] if edge["id"] in ids] or None
 
 
+def _links(task, course):
+    return [edge for edge in course["edges"] if task["target"] in (edge.get("source"), edge.get("target"))] or None
+
+
 def _map(task, course):
     fields = ("id", "title", "summary", "prerequisites", "sources", "pieces", "steps")
     return dict(nodes=[{key: node[key] for key in fields if key in node} for node in course["nodes"]],
@@ -72,7 +76,7 @@ def _retell(task, course):
 
 
 OBJECT_READERS = {"chat": _chat, "lesson": _lesson, "assessment": _assessment, "question": _question,
-                  "map": _map, "bridge": _bridge, "bridge_history": _bridge, "lines": _lines, "retell": _retell}
+                  "map": _map, "bridge": _bridge, "bridge_history": _bridge, "links": _links, "lines": _lines, "retell": _retell}
 
 
 def _stable_object(kind, payload):

@@ -17,6 +17,7 @@ import { BridgeDetail } from "./BridgeDetail";
 import { PersonalNote } from "./PersonalNote";
 import { Workbench } from "./workbench/Workbench";
 import { BridgeCard } from "./BridgeCard";
+import { NodeLinks } from "./NodeLinks";
 import { useWorkbenchState } from "./workbench/useWorkbenchState";
 import { quoteBlock } from "./noteFormatting";
 import { NodeGoals } from "./NodeGoals";
@@ -365,6 +366,9 @@ export function NodePanel({
             <NextStep node={node} onLesson={bench.openLesson} onPractice={bench.openPractice} />
           </>
         )}
+        {!reviewStrict && <NodeLinks key={`${node.id}:${course.revision}`} course={course} node={node} busy={busy} aiEnabled={aiEnabled} act={act}
+          canOpen={(entry) => isNodeVisible(entry, { reviewActive, directEntryId, directWeek })}
+          onNavigate={onNavigateNode} onOpenBridge={onOpenRelation} />}
         <section className="flex flex-col" aria-label="相关">
           <h3 className="t-label mb-1">相关</h3>
           <Related icon={Target} label={goalEntries[0]?.goal.title || "目标"}

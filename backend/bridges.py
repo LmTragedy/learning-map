@@ -218,6 +218,7 @@ def set_bridges(course, relation_id, bridges):
             if_missing=item["if_missing"].strip(), strength=item["strength"],
             check=dict(question=item["check"]["question"].strip(), answer=item["check"]["answer"].strip()),
             sources=old.get("sources", []), uncertain=old.get("uncertain", True), origin="user",
+            **({"from_step": old["from_step"]} if old.get("from_step") else {}),
         ))
     edge["bridges"] = saved
     edge["confirmed"] = False
@@ -234,9 +235,13 @@ def set_pieces(course, node, pieces, steps):
     for piece in node["pieces"]:
         piece.setdefault("sources", [])
         piece.setdefault("uncertain", True)
-    old_steps = {step["id"] for step in node.get("steps", [])}
+    old_steps = {step["id"]: step for step in node.get("steps", [])}
     node["steps"] = [
-        dict(id=item["id"] if item["id"] in old_steps else identity(), title=item["title"].strip())
+        dict(id=item["id"], title=item["title"].strip(),
+             # The formal statement belongs to the step's wording; a renamed step drops it.
+             **({"formal": old_steps[item["id"]]["formal"]} if old_steps[item["id"]].get("formal")
+                and old_steps[item["id"]]["title"].strip() == item["title"].strip() else {}))
+        if item["id"] in old_steps else dict(id=identity(), title=item["title"].strip())
         for item in steps
     ]
     piece_ids = {piece["id"] for piece in node["pieces"]}
@@ -247,6 +252,8 @@ def set_pieces(course, node, pieces, steps):
                 bridge["from_piece"] = ""
             if edge["target"] == node["id"] and bridge["to_step"] not in step_ids:
                 bridge["to_step"] = ""
+            if edge["source"] == node["id"] and bridge.get("from_step") and bridge["from_step"] not in step_ids:
+                bridge["from_step"] = ""
 
 
 def record_check(course, relation_id, bridge_id, result, answer=""):

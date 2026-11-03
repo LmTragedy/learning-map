@@ -10,6 +10,7 @@ from .ai_history_import import bridge_disposition, import_legacy_receipt
 from .ai_legacy_history import scan_legacy_history
 from .ai_tasks import client_request_id
 from .bridge_backfill import backfill, fill_batch
+from .node_links import find_links
 from .domain import find_node, project_course
 from .goal_routes import extract_goals
 from .lessons import LessonRequest, generate_lesson
@@ -65,6 +66,8 @@ def register_ai_task_routes(app, store, learning):
                 store.course(cid)["revision"] if request_id else inputs["revision"],
                 None if nid == "batch" else nid, rid),
             "bridge_history": lambda: historical_bridge(task, rid),
+            "links": lambda: find_links(store, learning, cid, nid,
+                store.course(cid)["revision"] if request_id else inputs["revision"], rid),
             "chat": lambda: learning.chat(cid, nid, inputs["message"], request_id=rid),
             "lesson": lambda: generate_lesson(learning, cid, nid,
                 LessonRequest.model_validate(inputs | {"request_id": rid})),

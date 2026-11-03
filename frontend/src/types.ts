@@ -5,7 +5,8 @@ export type Strength = "required" | "suggested" | "extension";
 /** A check or practice result for one bridge: "missing" is written only by a failed practice. */
 export type BridgeState = { result: "known" | "unsure" | "missing"; at: string; via: "check" | "attempt"; answer?: string } | null;
 export type Piece = { id: string; kind: PieceKind; title: string; detail: string; sources?: Source[]; uncertain?: boolean; state?: BridgeState };
-export type Step = { id: string; title: string };
+/** `formal` is the course's formal statement of the step, written by the links AI. */
+export type Step = { id: string; title: string; formal?: string };
 export type Bridge = {
   id: string;
   from_piece: string;
@@ -18,6 +19,8 @@ export type Bridge = {
   uncertain: boolean;
   origin: "migrated" | "ai" | "user";
   legacy?: boolean;
+  /** On a link to a later node: which step of the earlier node it builds on. */
+  from_step?: string;
   state?: BridgeState;
 };
 export type Source = { material_id: string; page: number; quote: string };
@@ -102,6 +105,9 @@ export type LearningNode = {
   progress?: { known: number; total: number; ratio: number; done: boolean };
   pieces?: Piece[];
   steps?: Step[];
+  /** One plain-language sentence and the formal statement, written by the links AI. */
+  plain?: string;
+  formal?: string;
   title: string;
   summary: string;
   week: string;

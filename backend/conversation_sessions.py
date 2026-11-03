@@ -9,7 +9,7 @@ from .store import Conflict, timestamp
 
 NODE_CHANNELS = {"chat": "learning", "lesson": "learning", "question": "assessment",
                  "assessment": "assessment", "note_review": "note_review", "recall": "recall"}
-COURSE_CHANNELS = {"bridge": "bridges", "bridge_history": "bridges"}
+COURSE_CHANNELS = {"bridge": "bridges", "bridge_history": "bridges", "links": "bridges"}
 
 
 def _digest(identity):
@@ -24,7 +24,7 @@ def logical_identity(task):
     course = task["before"]
     node = next((node for node in course["nodes"] if node["id"] == task["target"]), {})
     channel = NODE_CHANNELS.get(task["kind"], COURSE_CHANNELS.get(task["kind"], task["kind"]))
-    target = "course" if task["kind"] in {"map", "bridge", "bridge_history", "goals", "lines"} else task["target"]
+    target = "course" if task["kind"] in {"map", "bridge", "bridge_history", "links", "goals", "lines"} else task["target"]
     scope = conversation_scope(task)
     return dict(course_id=course["id"], target=target, channel=channel, scope=scope,
                 note_id=task["inputs"].get("note_id", "") if channel == "note_review" else "",

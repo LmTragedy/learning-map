@@ -95,6 +95,8 @@ export const api = {
     request<Course>(`/courses/${cid}/relations/${encodeURIComponent(rid)}/confirm`, json("POST", { revision })),
   backfillRelations: (cid: string, revision: number) =>
     request<Course>(`/courses/${cid}/relations/backfill`, json("POST", { revision })),
+  findLinks: (cid: string, nid: string, revision: number) =>
+    request<Course>(`/courses/${cid}/nodes/${encodeURIComponent(nid)}/links`, json("POST", { revision })),
   backfillRelation: (cid: string, rid: string, revision: number) =>
     request<Course>(`/courses/${cid}/relations/${rid}/backfill`, json("POST", { revision })),
   editBridges: (cid: string, rid: string, revision: number, bridges: { id: string; from_piece: string; to_step: string; how: string; if_missing: string; strength: Strength; check: { question: string; answer: string } }[]) =>
