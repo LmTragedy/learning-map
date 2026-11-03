@@ -360,7 +360,7 @@ export function NodePanel({
             <NextStep node={node} onLesson={bench.openLesson} onPractice={bench.openPractice} />
           </>
         )}
-        <NodeLinks key={`${node.id}:${course.revision}`} course={course} node={node} busy={busy} aiEnabled={aiEnabled} reviewStrict={reviewStrict} act={act}
+        <NodeLinks key={node.id} course={course} node={node} busy={busy} aiEnabled={aiEnabled} reviewStrict={reviewStrict} act={act}
           canOpen={(entry) => reviewStrict ? course.review_scope.node_ids.includes(entry.id) : isNodeVisible(entry, { reviewActive, directEntryId, directWeek })}
           onNavigate={onNavigateNode} onOpenBridge={onOpenRelation}
           onOpenSource={(source) => openMaterial({ materialId: source.material_id, page: source.page })} />
