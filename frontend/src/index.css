@@ -1,0 +1,167 @@
+/*
+ * shadcn/ui theme (zinc, dark) on Tailwind v4.
+ * Layer order: older hand-written rules (legacy) sit under the kit and the
+ * Tailwind utilities, so shadcn components always win where they overlap.
+ */
+@layer theme, base, legacy, kit, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "./styles.css" layer(legacy);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+:root {
+  --radius: 0.625rem;
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #0f0f11;
+  --card-foreground: #fafafa;
+  --popover: #141416;
+  --popover-foreground: #fafafa;
+  --primary: #fafafa;
+  --primary-foreground: #18181b;
+  --secondary: #27272a;
+  --secondary-foreground: #fafafa;
+  --sh-muted: #1f1f23;
+  --muted-foreground: #a1a1aa;
+  --sh-accent: #27272a;
+  --accent-foreground: #fafafa;
+  --destructive: #f87171;
+  --border: #27272a;
+  --input: #27272a;
+  --ring: #d4d4d8;
+  --sidebar: #0c0c0e;
+  /* learning states: always shown with a word and an icon too */
+  --state-new: #fbbf24;
+  --state-studied: #a1a1aa;
+  --state-mastered: #60a5fa;
+  --state-passed: #4ade80;
+  --state-locked: #52525b;
+}
+
+@theme inline {
+  --font-sans: "Geist Variable", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "Cascadia Code", monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--sh-muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--sh-accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-st-new: var(--state-new);
+  --color-st-studied: var(--state-studied);
+  --color-st-mastered: var(--state-mastered);
+  --color-st-passed: var(--state-passed);
+  --color-st-locked: var(--state-locked);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  *, ::before, ::after { box-sizing: border-box; border: 0 solid var(--border); }
+  html, body { background: var(--background); color: var(--foreground); }
+  body { margin: 0; font-family: var(--font-sans); font-size: 14px; line-height: 1.6; -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01"; }
+  code, kbd, pre, .mono { font-family: var(--font-mono); }
+  button { background: none; color: inherit; font: inherit; padding: 0; }
+  h1, h2, h3, h4, p { margin: 0; }
+}
+
+@layer kit {
+  /* Older screens read these names; point them at the shadcn palette. */
+  :root {
+    --bg: var(--background); --surface: var(--sidebar); --raised: #18181b; --hover: #27272a;
+    --border: #27272a; --border-strong: #3f3f46;
+    --text: #fafafa; --text-2: #d4d4d8; --muted: #a1a1aa;
+    --accent: #fafafa; --accent-hover: #ffffff; --accent-ink: #18181b; --accent-soft: rgba(250, 250, 250, 0.08);
+    --danger: #f87171; --danger-soft: rgba(248, 113, 113, 0.1);
+    --amber: #fbbf24; --amber-text: #fcd34d; --amber-soft: rgba(251, 191, 36, 0.1);
+    --st-new: var(--state-new); --st-studied: var(--state-studied); --st-mastered: var(--state-mastered);
+    --st-passed: var(--state-passed); --st-locked: var(--state-locked);
+    --r-sm: 6px; --r-md: 8px; --r-lg: 10px;
+    font-family: var(--font-sans);
+    color-scheme: dark;
+  }
+
+  /* 781–1279px: the sidebar folds into a 64px icon rail; names move into tooltips */
+  @media (min-width: 781px) and (max-width: 1279px) {
+    .shell-side { width: 64px !important; padding-left: 8px !important; padding-right: 8px !important; }
+    .rail-hide { display: none !important; }
+    .rail-center { justify-content: center !important; padding-left: 0 !important; padding-right: 0 !important; }
+    .shell-side .course-item { align-items: center; }
+  }
+  @media not all and (min-width: 781px) and (max-width: 1279px) { .rail-tip { display: none; } }
+
+  /* Shared token names (--border) are declared in :root above too, unlayered; keep them equal. */
+  .shell-side .course-item { border: 0; box-shadow: none; }
+  /* Thin, dark scrollbars everywhere */
+  * { scrollbar-width: thin; scrollbar-color: #3f3f46 transparent; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: #52525b; border: 3px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-corner { background: transparent; }
+
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  a { color: #e4e4e7; text-underline-offset: 3px; }
+
+  /* Legacy buttons inside dialogs and practice: shadcn button look */
+  .modal button:not([class*="inline-flex"]), .practice-panel button, .recall-panel button, .lesson-reader button,
+  .decision-row button, .mastered-note button, .suggestion-card button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px;
+    border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--foreground);
+    font-size: 13px; font-weight: 500; cursor: pointer; transition: background .15s;
+  }
+  .modal button:not([class*="inline-flex"]):hover, .practice-panel button:hover, .recall-panel button:hover,
+  .lesson-reader button:hover, .decision-row button:hover { background: var(--accent-soft); }
+  button.primary, .modal button.primary, .practice-panel button.primary, .lesson-reader button.primary, .decision-row button.primary {
+    background: var(--primary); color: var(--primary-foreground); border-color: var(--primary);
+  }
+  button.primary:hover { background: #e4e4e7 !important; }
+  button.danger-button { background: var(--destructive); color: #fff; border-color: var(--destructive); }
+  button.full { width: 100%; }
+  .modal button.icon-btn, .lesson-reader button.icon-btn { width: 36px; padding: 0; border-color: transparent; color: var(--muted-foreground); }
+
+  /* Inputs */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), select, textarea {
+    background: transparent; border: 1px solid var(--input); border-radius: 8px; color: var(--foreground);
+    padding: 7px 11px; font-size: 13px; box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+  }
+  input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; border-color: #52525b; box-shadow: 0 0 0 3px rgba(212, 212, 216, .18); }
+  select option { background: #18181b; }
+
+  /* Dialogs: shadcn Dialog look */
+  .modal-scrim { background: rgba(0, 0, 0, .7); backdrop-filter: none; }
+  .modal { background: var(--background); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 16px 48px rgba(0, 0, 0, .6); }
+  .modal-head { border-bottom: 1px solid var(--border); padding: 16px 20px; gap: 10px; }
+  .modal-head h2 { font-size: 16px; font-weight: 600; }
+  .modal-icon { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--secondary); color: var(--foreground); }
+  .modal-body { padding: 20px; }
+  .muted { color: var(--muted-foreground); }
+
+  /* Cards and callouts reused by dialogs and practice */
+  .preview-card, .material-card, .quiet-card, .suggestion-card, .mastered-note, .review-history-note, .ai-disabled-note,
+  .warning-callout, .dropzone, .settings-card, .profile-card {
+    border-radius: 10px; border-color: var(--border);
+  }
+  .tag { border-radius: 999px; font-size: 12px; }
+  .busy-indicator { background: var(--popover); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.5); color: var(--foreground); }
+  .bubble.user p { background: var(--secondary); }
+  .bubble.assistant p { background: transparent; border: 1px solid var(--border); }
+  .lesson-reader { background: var(--background); border: 1px solid var(--border); border-radius: 12px; color: var(--foreground); }
+  .toggle-row input[type="checkbox"]:checked::after { background: #18181b; }
+  .toggle-row input[type="checkbox"]:checked { background: var(--primary); }
+  .lesson-reader::backdrop { background: rgba(0, 0, 0, .7); }
+}

@@ -20,9 +20,9 @@ import {
   Bot,
   BotOff,
   CalendarDays,
+  ChevronDown,
   Ellipsis,
   GraduationCap,
-  GripHorizontal,
   History,
   Layers,
   Library,
@@ -38,6 +38,11 @@ import {
   FileText,
 } from "lucide-react";
 import { api } from "./api";
+import { cn } from "./lib/utils";
+import { Badge } from "./components/ui/badge";
+import { Button } from "./components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
 import { CourseMap } from "./CourseMap";
 import { recommendedNode } from "./learningNavigation";
 import { NodePanel } from "./NodePanel";
@@ -363,218 +368,214 @@ export function App() {
     }
   };
 
+  const percent = (done: number, total: number) => (total ? Math.round((done / total) * 100) : 0);
+  const aiOn = Boolean(health?.ai.available && aiEnabled);
+  const sideTools = [
+    { label: "学习档案", Icon: Archive, onClick: () => void openProfile() },
+    { label: "Obsidian 笔记", Icon: NotebookPen, onClick: () => void showObsidian() },
+    { label: "设置", Icon: Settings2, onClick: () => void openSettings() },
+  ];
+
   return (
-    <div className={`app-shell ${navOpen ? "nav-open" : ""}`}>
-      <div className="nav-scrim" onClick={() => setNavOpen(false)} aria-hidden />
-      <aside className="sidebar" aria-label="课程与工具">
-        <div className="brand">
-          <span className="brand-mark"><GraduationCap size={17} aria-hidden /></span>
-          <div>
-            <strong>Learning Map</strong>
-            <small>知识地图</small>
+    <TooltipProvider delayDuration={250}>
+    <div className={cn("shell flex h-dvh overflow-hidden bg-background text-foreground", navOpen && "nav-open")}>
+      {navOpen && <div className="fixed inset-0 z-40 bg-black/60 min-[781px]:hidden" onClick={() => setNavOpen(false)} aria-hidden />}
+      <aside
+        className={cn(
+          "shell-side z-50 flex w-60 shrink-0 flex-col border-r border-border bg-sidebar px-3 py-4",
+          "max-[780px]:fixed max-[780px]:inset-y-0 max-[780px]:left-0 max-[780px]:w-72 max-[780px]:shadow-2xl max-[780px]:transition-transform",
+          !navOpen && "max-[780px]:-translate-x-full",
+        )}
+        aria-label="课程与工具"
+      >
+        <div className="flex items-center gap-2.5 px-2 pb-5">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
+            <GraduationCap size={17} aria-hidden />
+          </span>
+          <div className="rail-hide min-w-0 leading-tight">
+            <div className="text-sm font-semibold">Learning Map</div>
+            <div className="text-xs text-muted-foreground">知识地图</div>
           </div>
         </div>
-        <div className="side-label">
-          <span><Library size={13} aria-hidden /> 我的课程</span> <span>{courses.length}</span>
+        <div className="rail-hide flex items-center justify-between px-2 pb-1.5 text-xs font-medium text-muted-foreground">
+          <span className="flex items-center gap-1.5"><Library size={13} aria-hidden /> 我的课程</span>
+          <span>{courses.length}</span>
         </div>
-        <div className="course-list">
+        <nav className="-mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1">
           {courses.map((c) => {
             const done = course?.id === c.id && course.route ? course.route.completed_count : c.passed_count;
             const total = course?.id === c.id && course.route ? course.route.total : c.node_count;
+            const chosen = course?.id === c.id;
             return (
-              <button
-                key={c.id}
-                className={`course-item ${course?.id === c.id ? "chosen" : ""}`}
-                onClick={() => { setNavOpen(false); void open(c.id); }}
-                disabled={busy}
-                aria-current={course?.id === c.id ? "page" : undefined}
-              >
-                <span className="course-row">
-                  <BookMarked size={15} aria-hidden />
-                  <span className="course-name">{c.title}</span>
-                </span>
-                <span className="course-meta">
-                  <i className="meter" style={{ ["--p" as string]: `${total ? Math.round((done / total) * 100) : 0}%` }} aria-hidden />
-                  <small>{done}/{total}</small>
-                </span>
-              </button>
+              <Tooltip key={c.id}>
+                <TooltipTrigger asChild>
+                  <button
+                    className={cn(
+                      "course-item group flex w-full cursor-pointer flex-col gap-1.5 rounded-md px-2.5 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground disabled:cursor-wait",
+                      chosen && "chosen bg-accent text-foreground",
+                    )}
+                    onClick={() => { setNavOpen(false); void open(c.id); }}
+                    disabled={busy}
+                    aria-current={chosen ? "page" : undefined}
+                    aria-label={c.title}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <BookMarked size={15} className="shrink-0" aria-hidden />
+                      <span className="rail-hide truncate font-medium">{c.title}</span>
+                    </span>
+                    <span className="rail-hide flex items-center gap-2">
+                      <span className="h-1 flex-1 overflow-hidden rounded-full bg-secondary">
+                        <span className="block h-full rounded-full bg-primary" style={{ width: `${percent(done, total)}%` }} />
+                      </span>
+                      <small className="text-[11px] tabular-nums text-muted-foreground">{done}/{total}</small>
+                    </span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="rail-tip">{c.title} · {done}/{total}</TooltipContent>
+              </Tooltip>
             );
           })}
-        </div>
-        <button
-          className="new-course"
-          onClick={() => {
-            setNavOpen(false);
-            setTitle("");
-            setModal("create");
-          }}
-        >
-          <Plus size={15} />
-          新建课程
-        </button>
-        <div className="sidebar-bottom">
-          <button className="side-item" onClick={() => { setNavOpen(false); void openProfile(); }}>
-            <Archive size={16} />
-            学习档案
-          </button>
-          <button className="side-item" onClick={() => { setNavOpen(false); void showObsidian(); }}>
-            <NotebookPen size={16} />
-            Obsidian 笔记
-          </button>
-          <button className="side-item" onClick={() => { setNavOpen(false); void openSettings(); }}>
-            <Settings2 size={16} />
-            设置
-          </button>
-          <div className="service-state" title={health?.ai.reason || undefined}>
-            {health?.ai.available && aiEnabled ? <Bot size={15} className="online" aria-hidden /> : <BotOff size={15} aria-hidden />}
-            <div>
-              <strong>
-                {health?.ai.available
-                  ? (aiEnabled ? "AI 学习辅助已启用" : "Codex 已找到 · 待启用")
-                  : "本地学习模式"}
-              </strong>
-              <small>
-                {health?.ai.available
-                  ? "登录状态未检测"
-                  : health ? "未找到 Codex，AI 功能不可用" : "正在检测 Codex…"}
-              </small>
-            </div>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="rail-center mt-1 justify-start px-2.5"
+            onClick={() => { setNavOpen(false); setTitle(""); setModal("create"); }}
+            aria-label="新建课程"
+          >
+            <Plus /> <span className="rail-hide">新建课程</span>
+          </Button>
+        </nav>
+        <div className="mt-3 flex flex-col gap-0.5 border-t border-border pt-3">
+          {sideTools.map(({ label, Icon, onClick }) => (
+            <Tooltip key={label}>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="sm" className="rail-center justify-start px-2.5" aria-label={label}
+                  onClick={() => { setNavOpen(false); onClick(); }}>
+                  <Icon /> <span className="rail-hide">{label}</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="rail-tip">{label}</TooltipContent>
+            </Tooltip>
+          ))}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="rail-center mt-2 flex items-center gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2">
+                {aiOn ? <Bot size={16} className="shrink-0 text-st-passed" aria-hidden /> : <BotOff size={16} className="shrink-0 text-muted-foreground" aria-hidden />}
+                <div className="rail-hide min-w-0 leading-tight">
+                  <div className="truncate text-[13px] font-medium">
+                    {health?.ai.available ? (aiEnabled ? "AI 学习辅助已启用" : "Codex 已找到 · 待启用") : "本地学习模式"}
+                  </div>
+                  <div className="truncate text-[11px] text-muted-foreground">
+                    {health?.ai.available ? "登录状态未检测" : health ? "未找到 Codex，AI 功能不可用" : "正在检测 Codex…"}
+                  </div>
+                </div>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="max-w-72">
+              {health?.ai.reason || (aiOn ? "AI 学习辅助已启用" : "本地学习模式")}
+              {health?.data_dir && <div className="opacity-70">数据保存在本机：{shortPath(health.data_dir)}</div>}
+            </TooltipContent>
+          </Tooltip>
         </div>
       </aside>
-      <main className="workspace">
+      <main className="flex min-w-0 flex-1 flex-col max-[780px]:pb-14">
         {error && (
-          <div className="error-banner">
-            <AlertCircle size={17} />
-            <span>{error}</span>
-            <button onClick={() => setError("")} aria-label="关闭错误">
-              <X size={16} />
-            </button>
+          <div className="mx-4 mt-3 flex items-center gap-2.5 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+            <AlertCircle size={16} className="shrink-0" />
+            <span className="flex-1">{error}</span>
+            <Button variant="ghost" size="icon-sm" onClick={() => setError("")} aria-label="关闭错误"><X /></Button>
           </div>
         )}
         {course ? (
           <>
-            <header className="course-head">
-              <button className="icon-btn nav-toggle" onClick={() => setNavOpen(true)} aria-label="打开课程列表">
-                <Menu size={18} />
-              </button>
-              <div className="course-title">
-                <h1>{course.title}</h1>
-                <div className="course-sub">
-                  <span><History size={13} aria-hidden /> 版本 {course.revision}</span>
-                  <span><FileText size={13} aria-hidden /> {course.materials.length} 份材料</span>
-                  <span><Layers size={13} aria-hidden /> {course.nodes.length} 个知识点</span>
-                  {course.route && <span className="course-progress">
-                    <i className="meter" style={{ ["--p" as string]: `${course.route.total ? Math.round((course.route.completed_count / course.route.total) * 100) : 0}%` }} aria-hidden />
-                    {course.route.completed_count} / {course.route.total} 已掌握
+            <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 max-[780px]:h-auto max-[780px]:flex-wrap max-[780px]:py-2.5">
+              <Button variant="ghost" size="icon-sm" className="min-[781px]:hidden" onClick={() => setNavOpen(true)} aria-label="打开课程列表">
+                <Menu />
+              </Button>
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate text-[15px] font-semibold leading-tight">{course.title}</h1>
+                <div className="mt-0.5 flex items-center gap-3 overflow-hidden whitespace-nowrap text-xs text-muted-foreground [&_svg]:size-3">
+                  <span className="flex items-center gap-1"><History aria-hidden /> 版本 {course.revision}</span>
+                  <span className="flex items-center gap-1"><FileText aria-hidden /> {course.materials.length} 份材料</span>
+                  <span className="flex items-center gap-1 max-[1100px]:hidden"><Layers aria-hidden /> {course.nodes.length} 个知识点</span>
+                  {course.route && <span className="flex items-center gap-1.5 text-foreground/80">
+                    <span className="h-1 w-14 overflow-hidden rounded-full bg-secondary"><span className="block h-full bg-st-passed" style={{ width: `${percent(course.route.completed_count, course.route.total)}%` }} /></span>
+                    {course.route.completed_count}/{course.route.total} 已掌握
                   </span>}
                 </div>
               </div>
-              <div className="head-actions">
+              <div className="flex shrink-0 items-center gap-2">
                 {course.review_scope?.enabled ? (
-                  <div className="review-chip">
-                    <FileSearch size={15} aria-hidden />
-                    <span>复习模式 · {course.review_scope.material_ids.length} 份 PDF · AI {course.review_scope.ai_scope === "selected" ? "仅参考所选" : "参考整门课"}</span>
-                    <button onClick={openReview}><Pencil size={13} aria-hidden /> 编辑</button>
-                    <button onClick={() => void saveReviewScope(false)} disabled={busy}><LogOut size={13} aria-hidden /> 退出</button>
+                  <div className="flex items-center gap-1 rounded-lg border border-st-new/30 bg-st-new/10 py-1 pl-2.5 pr-1 text-xs text-st-new">
+                    <FileSearch size={14} aria-hidden />
+                    <span className="max-w-64 truncate">复习模式 · {course.review_scope.material_ids.length} 份 PDF · AI {course.review_scope.ai_scope === "selected" ? "仅参考所选" : "参考整门课"}</span>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-st-new hover:text-st-new" onClick={openReview}><Pencil /> 编辑</Button>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-st-new hover:text-st-new" onClick={() => void saveReviewScope(false)} disabled={busy}><LogOut /> 退出</Button>
                   </div>
                 ) : (
-                  <button className="quiet-button head-review" onClick={openReview} disabled={busy}>
-                    <FileSearch size={15} /> <span>复习所选 PDF</span>
-                  </button>
+                  <Button variant="outline" size="sm" className="max-[780px]:hidden" onClick={openReview} disabled={busy}>
+                    <FileSearch /> 复习所选 PDF
+                  </Button>
                 )}
-                <button
-                  className="primary import-button"
-                  onClick={() => void openImport()}
-                  disabled={busy}
-                >
-                  <Upload size={15} />
-                  <span>导入材料</span>
-                </button>
-                <div className="menu-anchor">
-                  <button
-                    className="icon-btn"
-                    aria-label="更多课程操作"
-                    aria-haspopup="menu"
-                    aria-expanded={menuOpen}
-                    onClick={() => setMenuOpen((v) => !v)}
-                  >
-                    <Ellipsis size={18} />
-                  </button>
-                  {menuOpen && (
-                    <>
-                      <div className="menu-scrim" onClick={() => setMenuOpen(false)} aria-hidden />
-                      <div className="menu" role="menu">
-                        {course.materials.length > 0 && (
-                          <button
-                            role="menuitem"
-                            onClick={() => {
-                              setMenuOpen(false);
-                              void run("generate", () => api.generate(course.id)).then((v) => v && refreshCourse(v));
-                            }}
-                            disabled={busy || !aiEnabled || !health?.ai.available}
-                          >
-                            <Sparkles size={15} />
-                            {course.nodes.length ? "更新地图" : "生成知识地图"}
-                            {(!aiEnabled || !health?.ai.available) && <small>需启用 AI</small>}
-                          </button>
-                        )}
-                        <button role="menuitem" onClick={() => { setMenuOpen(false); setModal("materials"); }}>
-                          <FolderOpen size={15} /> 已导入材料 <small>{course.materials.length} 份</small>
-                        </button>
-                        <hr />
-                        <button
-                          role="menuitem"
-                          onClick={() => {
-                            setMenuOpen(false);
-                            void run("snapshot", () => api.snapshot(course.id)).then((v) => v && refreshCourse(v));
-                          }}
-                          disabled={busy}
-                        >
-                          <Save size={15} /> 保存版本
-                        </button>
-                        <button role="menuitem" onClick={() => { setMenuOpen(false); void openVersions(); }}>
-                          <History size={15} /> 版本历史
-                        </button>
-                        <hr />
-                        <button role="menuitem" className="danger-text" onClick={() => { setMenuOpen(false); void beginDelete(); }} disabled={busy}>
-                          <Trash2 size={15} /> 删除课程…
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
+                <Button size="sm" onClick={() => void openImport()} disabled={busy}>
+                  <Upload /> <span className="max-[480px]:hidden">导入材料</span>
+                </Button>
+                <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="icon-sm" aria-label="更多课程操作"><Ellipsis /></Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {course.materials.length > 0 && (
+                      <DropdownMenuItem
+                        disabled={busy || !aiEnabled || !health?.ai.available}
+                        onSelect={() => void run("generate", () => api.generate(course.id)).then((v) => v && refreshCourse(v))}
+                      >
+                        <Sparkles /> {course.nodes.length ? "更新地图" : "生成知识地图"}
+                        {(!aiEnabled || !health?.ai.available) && <DropdownMenuShortcut>需启用 AI</DropdownMenuShortcut>}
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onSelect={() => setModal("materials")}>
+                      <FolderOpen /> 已导入材料 <DropdownMenuShortcut>{course.materials.length} 份</DropdownMenuShortcut>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem disabled={busy} onSelect={() => void run("snapshot", () => api.snapshot(course.id)).then((v) => v && refreshCourse(v))}>
+                      <Save /> 保存版本
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void openVersions()}>
+                      <History /> 版本历史
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" disabled={busy} onSelect={() => void beginDelete()}>
+                      <Trash2 /> 删除课程…
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </header>
             {course.materials.length > 0 && !course.nodes.length && (
-              <div className="generate-strip">
-                <Sparkles size={18} aria-hidden />
-                <div>
-                  <strong>材料已就绪</strong>
-                  <span>
-                    {aiEnabled
-                      ? "分析课程材料并生成知识地图。"
-                      : "请先在设置中启用 AI，并确认数据发送说明。"}
-                  </span>
+              <div className="mx-4 mt-4 flex items-center gap-3 rounded-xl border border-border bg-card p-4">
+                <span className="grid size-9 place-items-center rounded-lg bg-secondary"><Sparkles size={17} aria-hidden /></span>
+                <div className="flex-1">
+                  <div className="text-sm font-semibold">材料已就绪</div>
+                  <div className="text-[13px] text-muted-foreground">
+                    {aiEnabled ? "分析课程材料并生成知识地图。" : "请先在设置中启用 AI，并确认数据发送说明。"}
+                  </div>
                 </div>
-                <button
-                  className="primary"
-                  onClick={() =>
-                    void run("generate", () => api.generate(course.id)).then(
-                      (v) => v && refreshCourse(v),
-                    )
-                  }
+                <Button
+                  onClick={() => void run("generate", () => api.generate(course.id)).then((v) => v && refreshCourse(v))}
                   disabled={busy || !aiEnabled || !health?.ai.available}
                 >
-                  <Sparkles size={15} />
-                  生成知识地图
-                </button>
+                  <Sparkles /> 生成知识地图
+                </Button>
               </div>
             )}
-            <div className="content-grid">
-              <section className="graph-area">
+            <div className="flex min-h-0 flex-1">
+              <section className="graph-area relative flex min-w-0 flex-1 flex-col">
                 {course.review_scope?.enabled && activeNodes.length === 0 && (
-                  <div className="review-empty-note"><FileSearch size={19} /><div><strong>所选 PDF 暂无匹配知识点</strong><span>这份材料当前没有关联到已生成的节点。可以更换复习资料，或退出复习；无需重新导入文件。</span></div></div>
+                  <div className="mx-4 mt-3 flex gap-3 rounded-lg border border-border bg-card p-3 text-[13px]">
+                    <FileSearch size={18} className="shrink-0 text-muted-foreground" />
+                    <div><strong className="block font-medium">所选 PDF 暂无匹配知识点</strong><span className="text-muted-foreground">这份材料当前没有关联到已生成的节点。可以更换复习资料，或退出复习；无需重新导入文件。</span></div>
+                  </div>
                 )}
                 <CourseMap
                   key={`${course.id}-${reviewUiKey}`}
@@ -585,10 +586,11 @@ export function App() {
                   directEntryId={directNodeId}
                   directWeek={directWeek}
                   toolbar={
-                    <div className="toolbar-controls">
-                      {course.nodes.some((n) => n.week) && <label className="select-wrap">
-                        <CalendarDays size={14} aria-hidden />
+                    <div className="flex min-w-0 items-center gap-2 max-[780px]:w-full">
+                      {course.nodes.some((n) => n.week) && <label className="relative flex items-center max-[780px]:hidden">
+                        <CalendarDays size={14} className="pointer-events-none absolute left-2.5 text-muted-foreground" aria-hidden />
                         <select
+                          className="h-8 cursor-pointer appearance-none !py-0 !pl-8 !pr-7"
                           aria-label="按周次直达"
                           value={directWeek}
                           onChange={(e) => {
@@ -598,19 +600,17 @@ export function App() {
                           }}
                         >
                           <option value="">全部周次</option>
-                          {Array.from(
-                            new Set(eligibleNodes.map((n) => n.week).filter(Boolean)),
-                          ).map((w) => (
-                            <option key={w} value={w}>
-                              {w}
-                            </option>
+                          {Array.from(new Set(eligibleNodes.map((n) => n.week).filter(Boolean))).map((w) => (
+                            <option key={w} value={w}>{w}</option>
                           ))}
                         </select>
+                        <ChevronDown size={14} className="pointer-events-none absolute right-2 text-muted-foreground" aria-hidden />
                       </label>}
-                      <label className="search-box">
-                        <Search size={15} aria-hidden />
+                      <label className="flex h-8 w-64 min-w-0 items-center gap-2 rounded-md border border-input px-2.5 text-muted-foreground shadow-xs focus-within:border-zinc-600 focus-within:ring-[3px] focus-within:ring-ring/20 max-[1100px]:w-48 max-[780px]:flex-1">
+                        <Search size={14} className="shrink-0" aria-hidden />
                         <input
                           id="node-search"
+                          className="!m-0 min-w-0 flex-1 !border-0 !bg-transparent !p-0 text-[13px] text-foreground !shadow-none outline-none placeholder:text-muted-foreground"
                           list="map-targets"
                           aria-label="搜索并直达知识点"
                           placeholder="搜索或直达知识点"
@@ -626,26 +626,27 @@ export function App() {
                             }
                           }}
                         />
-                        <kbd>Ctrl K</kbd>
+                        <kbd className="rounded border border-border px-1.5 font-sans text-[10px] leading-4 text-muted-foreground max-[780px]:hidden">Ctrl K</kbd>
                       </label>
                       <datalist id="map-targets">
-                        {eligibleNodes.map((n) => (
-                          <option key={n.id} value={n.title} />
-                        ))}
+                        {eligibleNodes.map((n) => <option key={n.id} value={n.title} />)}
                       </datalist>
-                      {(directQuery || directNodeId || directWeek) && <button
-                        className="icon-btn"
-                        onClick={() => {
-                          setDirectWeek("");
-                          setDirectNodeId("");
-                          setDirectQuery("");
-                          setSelected(recommendedNode(course, eligibleNodes));
-                        }}
-                        title="清除临时直达"
-                        aria-label="清除临时直达"
-                      >
-                        <RotateCcw size={15} />
-                      </button>}
+                      {(directQuery || directNodeId || directWeek) && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon-sm" aria-label="清除临时直达"
+                              onClick={() => {
+                                setDirectWeek("");
+                                setDirectNodeId("");
+                                setDirectQuery("");
+                                setSelected(recommendedNode(course, eligibleNodes));
+                              }}>
+                              <RotateCcw />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>清除临时直达</TooltipContent>
+                        </Tooltip>
+                      )}
                     </div>
                   }
                   onSelect={(node) => {
@@ -655,9 +656,17 @@ export function App() {
                   }}
                 />
               </section>
-              <div className={`detail-dock ${sheetOpen ? "open" : ""}`}>
-                <button className="sheet-grab" onClick={() => setSheetOpen((v) => !v)} aria-label={sheetOpen ? "收起节点详情" : "展开节点详情"}>
-                  <GripHorizontal size={18} aria-hidden />
+              <div
+                className={cn(
+                  "node-dock flex w-[380px] shrink-0 flex-col overflow-hidden border-l border-border bg-sidebar max-[1180px]:w-[340px]",
+                  "max-[780px]:fixed max-[780px]:inset-x-0 max-[780px]:bottom-14 max-[780px]:z-30 max-[780px]:h-[62dvh] max-[780px]:w-auto max-[780px]:rounded-t-2xl max-[780px]:border-l-0 max-[780px]:border-t max-[780px]:shadow-2xl max-[780px]:transition-transform",
+                  !sheetOpen && "max-[780px]:translate-y-[calc(100%-44px)]",
+                  sheetOpen && "open",
+                )}
+              >
+                <button className="mx-auto flex h-11 w-full shrink-0 cursor-pointer items-center justify-center text-muted-foreground min-[781px]:hidden"
+                  onClick={() => setSheetOpen((v) => !v)} aria-label={sheetOpen ? "收起节点详情" : "展开节点详情"}>
+                  <span className="h-1 w-10 rounded-full bg-zinc-700" />
                 </button>
                 {selectedNode ? (
                   <NodePanel
@@ -674,66 +683,47 @@ export function App() {
                     onRatingSubmitted={() => void onRatingSubmitted()}
                   />
                 ) : (
-                  <div className="detail-empty">
-                    <MousePointerClick />
-                    <p>选择一个知识点查看详情</p>
+                  <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
+                    <span className="grid size-11 place-items-center rounded-xl border border-border bg-card"><MousePointerClick size={18} /></span>
+                    选择一个知识点查看详情
                   </div>
                 )}
               </div>
             </div>
           </>
         ) : (
-          <div className="welcome">
-            <button className="icon-btn nav-toggle welcome-nav" onClick={() => setNavOpen(true)} aria-label="打开课程列表">
-              <Menu size={18} />
-            </button>
-            <div className="welcome-icon">
-              <GraduationCap size={26} aria-hidden />
+          <div className="relative flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
+            <Button variant="ghost" size="icon-sm" className="absolute left-3 top-3 min-[781px]:hidden" onClick={() => setNavOpen(true)} aria-label="打开课程列表">
+              <Menu />
+            </Button>
+            <span className="grid size-12 place-items-center rounded-xl bg-primary text-primary-foreground"><GraduationCap size={24} aria-hidden /></span>
+            <Badge variant="outline">本地学习空间</Badge>
+            <h1 className="text-3xl font-semibold leading-snug tracking-tight">把知识连起来，<br />把思路留住。</h1>
+            <p className="max-w-md text-muted-foreground">从理解课程材料开始，逐步建立自己的知识地图与判断能力。</p>
+            <div className="flex flex-wrap justify-center gap-2.5">
+              <Button size="lg" onClick={() => { setTitle(""); setModal("create"); }}><Plus /> 创建课程</Button>
+              <Button size="lg" variant="outline" onClick={() => void run("sample", api.sample).then((v) => v && loadCourses(v.id))}>
+                <FilePlus2 /> 试用示例课程
+              </Button>
             </div>
-            <span className="eyebrow">本地学习空间</span>
-            <h1>
-              把知识连起来，
-              <br />
-              把思路留住。
-            </h1>
-            <p>从理解课程材料开始，逐步建立自己的知识地图与判断能力。</p>
-            <div className="welcome-actions">
-              <button
-                className="primary"
-                onClick={() => {
-                  setTitle("");
-                  setModal("create");
-                }}
-              >
-                <Plus size={17} />
-                创建课程
-              </button>
-              <button
-                className="secondary"
-                onClick={() =>
-                  void run("sample", api.sample).then(
-                    (v) => v && loadCourses(v.id),
-                  )
-                }
-              >
-                <FilePlus2 size={17} />
-                试用示例课程
-              </button>
-            </div>
-            <small>示例课程明确标注为示例，且从零进度开始</small>
+            <small className="text-xs text-muted-foreground">示例课程明确标注为示例，且从零进度开始</small>
+            <small className="flex items-center gap-1.5 text-xs text-muted-foreground" title={health?.data_dir}>
+              <ShieldCheck size={13} /> 数据保存在本机 · {health?.data_dir ? shortPath(health.data_dir) : "等待本地服务"}
+            </small>
           </div>
         )}
-        <footer className="statusbar">
-          <span title={health?.data_dir}>
-            <ShieldCheck size={14} />
-            数据保存在本机 · <span className="data-path">{health?.data_dir ? shortPath(health.data_dir) : "等待本地服务"}</span>
-          </span>
-        </footer>
-        <nav className="tabbar" aria-label="主要功能">
-          <button className="on" onClick={() => { setModal(null); setSheetOpen(false); }}><MapIcon size={19} />地图</button>
-          <button onClick={openReview} disabled={!course || busy}><FileSearch size={19} />复习</button>
-          <button onClick={() => void openProfile()}><Archive size={19} />档案</button>
-          <button onClick={() => void openSettings()}><Settings2 size={19} />设置</button>
+        <nav className="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-4 border-t border-border bg-sidebar min-[781px]:hidden" aria-label="主要功能">
+          {[
+            { label: "地图", Icon: MapIcon, on: true, onClick: () => { setModal(null); setSheetOpen(false); } },
+            { label: "复习", Icon: FileSearch, on: false, onClick: openReview, disabled: !course || busy },
+            { label: "档案", Icon: Archive, on: false, onClick: () => void openProfile() },
+            { label: "设置", Icon: Settings2, on: false, onClick: () => void openSettings() },
+          ].map(({ label, Icon, on, onClick, disabled }) => (
+            <button key={label} className={cn("flex cursor-pointer flex-col items-center justify-center gap-0.5 text-[11px] text-muted-foreground disabled:opacity-40", on && "text-foreground")}
+              onClick={onClick} disabled={disabled}>
+              <Icon size={18} />{label}
+            </button>
+          ))}
         </nav>
       </main>
       {modal && (
@@ -1397,6 +1387,7 @@ export function App() {
         </div>
       )}
     </div>
+    </TooltipProvider>
   );
 }
 function ConfirmPreview({

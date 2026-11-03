@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, Download, Maximize2, Sparkles, X } from "lucide-react";
+import { BookOpen, Download, Maximize2, MessageCircle, Sparkles, X } from "lucide-react";
+import { Button } from "./components/ui/button";
 import { api } from "./api";
 import type { Course, LearningNode, Lesson } from "./types";
 
@@ -29,31 +30,41 @@ export function LessonPanel({ course, node, busy, aiEnabled, act, onPractice, on
       pendingRequest.current = undefined;
     }
   };
-  return <div className="lesson-panel">
-    <div className="lesson-intro"><BookOpen size={21} />
-      <h3>{lesson ? "继续这一步" : "从一个小例子开始"}</h3>
-      <p>{lesson ? lesson.goal : "先理解一个小目标，再自己试一题。看不懂的地方，可以继续拆小、换例子。"}</p></div>
-    {lesson ? <>
-      <label className="lesson-picker">已保存的小课
-        <select value={lesson.id} onChange={(event) => setSelectedId(event.target.value)}>
-          {lessons.map((entry, index) => <option value={entry.id} key={entry.id}>
-            {index + 1}. {entry.title}{entry.read_at ? " · 已读" : ""}
-          </option>)}
-        </select>
-      </label>
-      <button className="primary lesson-open" onClick={() => setOpened(true)}><Maximize2 size={15} /> 打开学习网页</button>
-      <p className="muted small">{lesson.read_at ? "已记录阅读，可继续练习验收。" : "已保存，重新打开不会重复生成。"}</p>
-      <form className="lesson-supplement" onSubmit={(event) => { event.preventDefault(); void generate("supplement"); }}>
-        <label htmlFor="lesson-focus">哪里还不够清楚？</label>
-        <textarea id="lesson-focus" value={focus} onChange={(event) => setFocus(event.target.value)} rows={3}
+  return <div className="lesson-panel flex flex-col gap-3">
+    <div className="rounded-xl border border-border bg-card p-4">
+      <div className="flex items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary"><BookOpen size={17} /></span>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold">{lesson ? "继续这一步" : "从一个小例子开始"}</h3>
+          <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">{lesson ? lesson.goal : "先理解一个小目标，再自己试一题。看不懂的地方，可以继续拆小、换例子。"}</p>
+        </div>
+      </div>
+      {lesson ? <div className="mt-3 flex flex-col gap-2">
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">已保存的小课
+          <select className="w-full" value={lesson.id} onChange={(event) => setSelectedId(event.target.value)}>
+            {lessons.map((entry, index) => <option value={entry.id} key={entry.id}>
+              {index + 1}. {entry.title}{entry.read_at ? " · 已读" : ""}
+            </option>)}
+          </select>
+        </label>
+        <Button className="w-full" onClick={() => setOpened(true)}><Maximize2 /> 打开学习网页</Button>
+        <p className="text-xs text-muted-foreground">{lesson.read_at ? "已记录阅读，可继续练习验收。" : "已保存，重新打开不会重复生成。"}</p>
+      </div> : <Button className="mt-3 w-full" onClick={() => void generate("initial")} disabled={busy || !aiEnabled}>
+        <Sparkles /> 生成小课
+      </Button>}
+    </div>
+    {lesson && <>
+      <form className="flex flex-col gap-2 rounded-xl border border-border p-3" onSubmit={(event) => { event.preventDefault(); void generate("supplement"); }}>
+        <label className="text-[13px] font-medium" htmlFor="lesson-focus">哪里还不够清楚？</label>
+        <textarea id="lesson-focus" className="w-full resize-y" value={focus} onChange={(event) => setFocus(event.target.value)} rows={2}
           maxLength={2000} placeholder="例如：把第二步展开，或者换一个更简单的例子…" disabled={!aiEnabled || busy} />
-        <button className="secondary" disabled={busy || !aiEnabled || !focus.trim()}>补一节小课</button>
+        <div className="flex gap-2">
+          <Button type="submit" variant="secondary" size="sm" className="flex-1" disabled={busy || !aiEnabled || !focus.trim()}><Sparkles /> 补一节小课</Button>
+          <Button type="button" variant="ghost" size="sm" className="flex-1" onClick={() => onDiscuss(`关于小课「${lesson.title}」：`)}><MessageCircle /> 带着问题对话</Button>
+        </div>
       </form>
-      <button className="secondary" onClick={() => onDiscuss(`关于小课「${lesson.title}」：`)}>带着问题继续对话</button>
-    </> : <button className="primary lesson-open" onClick={() => void generate("initial")} disabled={busy || !aiEnabled}>
-      <Sparkles size={15} /> 生成小课
-    </button>}
-    <p className="muted small">阅读和小课自测不会改变掌握状态；准备好后再做节点验收。</p>
+    </>}
+    <p className="text-xs text-muted-foreground">阅读和小课自测不会改变掌握状态；准备好后再做节点验收。</p>
     {opened && lesson && <LessonReader lesson={lesson} courseId={course.id} nodeId={node.id} busy={busy}
       onClose={() => setOpened(false)} onRead={() => void act("lesson-read", () => api.readLesson(course.id, node.id, lesson.id))}
       onPractice={() => { setOpened(false); onPractice(); }} />}
