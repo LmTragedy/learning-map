@@ -16,7 +16,7 @@ from .bridges import (
 )
 from .conversation_labels import conversation_label, remember_conversation
 from .domain import project_course
-from .learning import LearningError, _validate_sources, cited_material_context, structured
+from .learning import BASE_SYSTEM, LearningError, _validate_sources, cited_material_context, structured
 from .review_scope import strict_scope
 from .schemas import Input
 from .store import Conflict, identity
@@ -147,7 +147,7 @@ def fill_batch(store, learning, course, batch):
         + cited_material_context(course, backfill_sources(course, batch, endpoint_ids))
     )
     label = conversation_label(course, purpose="补充知识桥")
-    reply = structured(learning.ai(), prompt, BackfillDraft, {"conversation": label})
+    reply = structured(learning.ai(), prompt, BackfillDraft, {"conversation": label}, system=BASE_SYSTEM)
     draft = reply.payload
     wanted = {item["id"] for item in items}
     draft["relations"] = [item for item in draft["relations"] if item["id"] in wanted]

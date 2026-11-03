@@ -5,6 +5,7 @@ from .conversation_labels import conversation_label
 from .domain import find_node, project_course
 from .goals import GoalAccept, GoalDraft, GoalInput, GoalUpdate, goal_fields, new_goal
 from .learning import (
+    BASE_SYSTEM,
     cited_material_context,
     course_material_context,
     fully_indexed,
@@ -62,7 +63,8 @@ def _extract_goals(store, learning, cid):
         "提取属于AI建议，不能保证语义正确。\n已有知识点：" + encoded_nodes + "\n材料：" + context
     )
     draft = structured(learning.ai(), prompt, GoalDraft,
-                       {"conversation": conversation_label(course, purpose="课程目标提取")})
+                       {"conversation": conversation_label(course, purpose="课程目标提取")},
+                       system=BASE_SYSTEM)
     for candidate in draft.payload["goals"]:
         validate_candidate(course, candidate)
     with store.connect() as connection:
