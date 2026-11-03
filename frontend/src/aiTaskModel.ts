@@ -6,7 +6,7 @@ export type AiTask = {
   request_id: string; created_at: string; updated_at: string; started_at?: string;
   thread_id?: string; turn_id?: string; error?: string; organization_error?: string;
   applied_revision?: number; superseded_by?: string; result_type?: string;
-  inputs?: Record<string, unknown>; raw_reply?: { text?: string };
+  inputs?: Record<string, unknown>; raw_reply?: { text?: string }; partial_reply?: string;
   result?: unknown; can_recover?: boolean; can_regenerate?: boolean;
   history_matched?: boolean; historical_raw?: string;
   history_only?: boolean; history_kind?: string; history_disposition?: string; history_match_reason?: string;

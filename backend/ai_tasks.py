@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
@@ -99,9 +100,14 @@ def complete_task_value(result, connection=None):
     return result
 
 
+# How often the reply text received so far is written back, so the page can show it while it streams.
+PARTIAL_FLUSH_SECONDS = 0.3
+
+
 class ReceiptAI:
     def __init__(self, provider, manager, task_id):
         self.provider, self.manager, self.task_id = provider, manager, task_id
+        self._partial_items, self._partial_order, self._partial_flushed = {}, [], 0.0
 
     def ask(self, prompt, **options):
         # A conversation turn may offer a self-contained prompt for when no thread can be resumed.
@@ -146,6 +152,25 @@ class ReceiptAI:
 
     def __call__(self, event, payload):
         self.manager.event(self.task_id, event, payload)
+        if event == "stream/message" and payload.get("method") == "item/agentMessage/delta":
+            self._stream_delta(payload.get("params") or {})
+
+    def _stream_delta(self, params):
+        """Keep a display-only copy of the reply so far; the saved reply still comes from turn/completed."""
+        delta = params.get("delta")
+        if not isinstance(delta, str) or not delta:
+            return
+        item = params.get("itemId") if isinstance(params.get("itemId"), str) else ""
+        if item not in self._partial_items:
+            self._partial_items[item] = []
+            self._partial_order.append(item)
+        self._partial_items[item].append(delta)
+        now = time.monotonic()
+        if now - self._partial_flushed < PARTIAL_FLUSH_SECONDS:
+            return
+        self._partial_flushed = now
+        text = "\n\n".join("".join(self._partial_items[key]) for key in self._partial_order)
+        self.manager.update(self.task_id, partial_reply=text)
 
     def send_guard(self):
         return self.manager.conversations.send_guard()
@@ -535,6 +560,8 @@ class TaskManager:
                 self.validate_result_context(task, self.store.course(task["course_id"]))
             except (ValueError, KeyError):
                 projection["result_ref"]["available"] = False
+        if task["kind"] != "chat" or task["state"] not in ACTIVE_TASK_STATES:
+            published.pop("partial_reply", None)
         published["result_ref"] = projection.get("result_ref")
         published.update({key: value for key, value in projection.items() if key != "result_object"})
         published.update(has_raw_reply=bool(task.get("raw_reply") or task.get("historical_raw")),
