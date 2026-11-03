@@ -424,7 +424,11 @@ def _settings_routes(app, store, factory):
 
     @app.get("/api/settings")
     def settings():
-        return {key: val for key, val in store.settings().items() if key != "accepted_stages"}
+        saved = store.settings()
+        # The key is write-only: the page only learns whether one is saved.
+        hidden = {"accepted_stages", "deepseek_api_key"}
+        return {key: val for key, val in saved.items() if key not in hidden} | dict(
+            deepseek_key_set=bool(saved.get("deepseek_api_key")))
 
     @app.post("/api/settings")
     def update_settings(request: Settings):

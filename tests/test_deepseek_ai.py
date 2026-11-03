@@ -36,7 +36,8 @@ def test_structured_request_uses_json_mode_and_carries_the_schema():
     assert sent["messages"][1] == {"role": "user", "content": "检查笔记"}
 
 
-def test_images_truncation_missing_key_and_rejected_key_fail_loudly():
+def test_images_truncation_missing_key_and_rejected_key_fail_loudly(monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     ai = DeepSeekAI("deepseek-chat", api_key="k", client=_client(lambda _: _reply("{}", "length")))
     with pytest.raises(AIError, match="图片"):
         ai.ask("x", images=["page.png"])
@@ -81,3 +82,21 @@ def test_goal_extraction_is_sent_to_the_goal_model(tmp_path):
     seen.clear()
     assert client.post(f'/api/courses/{course["id"]}/goal-candidates').status_code == 200
     assert seen == ["deepseek-chat"]
+
+
+def test_saved_key_is_write_only_and_used_for_requests(tmp_path, monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    client = TestClient(create_app(tmp_path / "data"), headers={"X-Learning-Map": "1"})
+    saved = client.post("/api/settings", json={"note_review_model": "deepseek-chat", "deepseek_api_key": "sk-test"})
+    assert saved.status_code == 200
+    assert "deepseek_api_key" not in saved.json() and saved.json()["deepseek_key_set"] is True
+    assert "sk-test" not in client.get("/api/settings").text
+    assert client.get("/api/health").json()["deepseek"] == {"available": True}
+    settings = client.app.state.store.settings() | {"model": "deepseek-chat"}
+    assert client.app.state.learning.ai_factory(settings).api_key == "sk-test"
+    # Saving other settings keeps the key; an empty string removes it.
+    client.post("/api/settings", json={"goal_model": ""})
+    assert client.get("/api/settings").json()["deepseek_key_set"] is True
+    client.post("/api/settings", json={"deepseek_api_key": ""})
+    assert client.get("/api/settings").json()["deepseek_key_set"] is False
+    assert client.get("/api/health").json()["deepseek"]["available"] is False

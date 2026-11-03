@@ -142,6 +142,8 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [notice]);
   const [settings, setSettings] = useState<Settings>();
+  // null keeps the saved DeepSeek key; "" removes it.
+  const [deepseekKey, setDeepseekKey] = useState<string | null>(null);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [profile, setProfile] = useState<Profile>();
   const [versions, setVersions] = useState<
@@ -346,6 +348,7 @@ export function App() {
     const value = await run("settings", api.settings);
     if (value) {
       setSettings(value);
+      setDeepseekKey(null);
       setModal("settings");
     }
   };
@@ -382,6 +385,7 @@ export function App() {
         model: settings.model,
         note_review_model: settings.note_review_model || "gpt-6-luna",
         goal_model: settings.goal_model || "",
+        ...(deepseekKey !== null ? { deepseek_api_key: deepseekKey.trim() } : {}),
         reasoning_effort: settings.reasoning_effort || "medium",
         obsidian_vault: settings.obsidian_vault,
         parser: settings.parser,
@@ -389,6 +393,7 @@ export function App() {
     );
     if (value) {
       setSettings(value);
+      setDeepseekKey(null);
       setAiEnabled(value.ai_enabled);
       setModal(null);
       try {
@@ -1272,6 +1277,23 @@ export function App() {
                     onChange={(event) => setSettings({ ...settings, goal_model: event.target.value })}
                     placeholder="留空则沿用学习对话模型" />
                   <span className="text-xs text-muted-foreground">可填 DeepSeek 模型；候选目标仍需核对引用并勾选确认。</span>
+                </label>
+                <label className="field-label">
+                  DeepSeek API key
+                  <div className="flex gap-2">
+                    <input type="password" autoComplete="off" className="flex-1"
+                      value={deepseekKey ?? ""}
+                      onChange={(event) => setDeepseekKey(event.target.value || null)}
+                      placeholder={settings.deepseek_key_set ? "已保存（留空不改）" : "sk-…"} />
+                    {settings.deepseek_key_set && deepseekKey !== "" && (
+                      <Button type="button" variant="outline" size="sm" onClick={() => setDeepseekKey("")}>清除</Button>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {deepseekKey === "" && settings.deepseek_key_set
+                      ? "保存后将删除已保存的 key。"
+                      : "只保存在本机 data/ 数据库中，页面不会再显示；用于上面填了 DeepSeek 模型的两项任务。"}
+                  </span>
                 </label>
                 {health?.deepseek && (
                   <p className="text-xs text-muted-foreground">

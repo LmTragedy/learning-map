@@ -51,6 +51,8 @@ class Settings(Input):
     note_review_model: str = Field(default="gpt-6-luna", min_length=1, max_length=160)
     # Empty follows the learning model; a deepseek-* name sends goal extraction to DeepSeek.
     goal_model: str = Field(default="", max_length=160)
+    # Write-only; an empty string removes the saved key (the environment variable still applies).
+    deepseek_api_key: str = Field(default="", max_length=200, pattern=r"^[\x21-\x7e]*$")
     reasoning_effort: Literal["low", "medium", "high"] = "medium"
     obsidian_vault: str = Field(default="", max_length=500)
     parser: Literal["basic", "docling"] = "basic"

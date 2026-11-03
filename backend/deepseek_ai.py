@@ -28,13 +28,14 @@ class DeepSeekAI:
     def __init__(self, model: str, *, api_key: str | None = None, base_url: str | None = None,
                  client: httpx.Client | None = None) -> None:
         self.model = model.strip()
-        self.api_key = (api_key if api_key is not None else os.environ.get("DEEPSEEK_API_KEY", "")).strip()
+        # A key saved in settings wins; otherwise the environment variable.
+        self.api_key = (api_key or os.environ.get("DEEPSEEK_API_KEY", "")).strip()
         self.base_url = (base_url or os.environ.get("DEEPSEEK_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
         self.client = client
 
     def available(self) -> dict[str, Any]:
         if not self.api_key:
-            return {"available": False, "reason": "未设置 DEEPSEEK_API_KEY 环境变量；设置后重启本地服务。"}
+            return {"available": False, "reason": "未设置 DeepSeek API key：请在设置中填写，或设置 DEEPSEEK_API_KEY 环境变量。"}
         return {"available": True}
 
     def ask(self, prompt: str, *, thread_id: str | None = None, schema: dict[str, Any] | None = None,
@@ -43,7 +44,7 @@ class DeepSeekAI:
         if images:
             raise AIError("DeepSeek 不接收图片；这个任务请使用 Codex 模型。")
         if not self.api_key:
-            raise AIUnavailable("未设置 DEEPSEEK_API_KEY 环境变量；设置后重启本地服务。")
+            raise AIUnavailable("未设置 DeepSeek API key：请在设置中填写，或设置 DEEPSEEK_API_KEY 环境变量。")
         messages = [{"role": "user", "content": prompt}]
         body: dict[str, Any] = dict(model=self.model, messages=messages, max_tokens=_MAX_OUTPUT_TOKENS, stream=False)
         if schema is not None:
@@ -77,7 +78,7 @@ class DeepSeekAI:
         except httpx.HTTPError as exc:
             raise AIUnavailable(f"无法连接 DeepSeek：{exc}") from exc
         if response.status_code in {401, 403}:
-            raise AIUnavailable("DeepSeek 拒绝了 API key，请检查 DEEPSEEK_API_KEY。")
+            raise AIUnavailable("DeepSeek 拒绝了 API key，请在设置中检查。")
         if response.status_code >= 400:
             raise AIError(f"DeepSeek 请求失败（HTTP {response.status_code}）：{response.text[:300]}")
         try:
@@ -89,11 +90,13 @@ class DeepSeekAI:
 def deepseek_status(settings):
     """Key check for the routed tasks, or None when neither uses DeepSeek."""
     models = [settings["note_review_model"], settings.get("goal_model", "")]
-    return DeepSeekAI(next(m for m in models if is_deepseek(m))).available() if any(map(is_deepseek, models)) else None
+    if not any(map(is_deepseek, models)):
+        return None
+    return DeepSeekAI(next(m for m in models if is_deepseek(m)), api_key=settings.get("deepseek_api_key")).available()
 
 
 def provider_for(settings, codex_factory):
     """DeepSeek for a deepseek-* model (only reachable from note review and goal extraction)."""
     if is_deepseek(settings["model"]):
-        return DeepSeekAI(settings["model"])
+        return DeepSeekAI(settings["model"], api_key=settings.get("deepseek_api_key"))
     return codex_factory(settings)
