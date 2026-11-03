@@ -138,6 +138,12 @@ class MapRelation(Input):
     bridges: list[DraftBridge] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="after")
+    def drop_repeated_endpoints(self):
+        # related_keys lists nodes besides the two ends; the AI sometimes repeats the ends there too.
+        self.related_keys = [key for key in dict.fromkeys(self.related_keys) if key not in (self.source, self.target)]
+        return self
+
+    @model_validator(mode="after")
     def evidence_and_synthesis(self):
         for name in ("explanation", "when_to_use", "basis", "forward_difficulty", "reverse_difficulty"):
             if not getattr(self, name).strip():

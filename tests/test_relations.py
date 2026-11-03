@@ -588,3 +588,10 @@ def test_unverified_material_quote_is_kept_uncertain_and_snapshot_restore_preser
     assert restored_edge["confirmed"] is False
     assert restored_edge["uncertain"] is True
     assert restored_edge["sources"][0]["quote"] == ""
+
+
+def test_related_keys_repeating_the_two_ends_do_not_reject_the_map(relation_session):
+    client, _, model, course = relation_session
+    relation = relation_spec("node-0", "node-1", related_keys=["node-0", "node-1", "node-1"])
+    edge = relation_edges(generate_relations(client, course, model, [relation]))[0]
+    assert edge["related_node_ids"] == [node["id"] for node in course["nodes"][:2]]
