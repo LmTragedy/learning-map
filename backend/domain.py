@@ -3,6 +3,7 @@ import json
 
 from .bridges import project_bridges
 from .goals import project_goals
+from .handoff import project_handoffs
 from .lines import project_lines
 from .page_index import index_progress
 from .practice_progress import project_practice_progress
@@ -46,6 +47,7 @@ def project_course(course):
     project_bridges(course)
     project_review(course)
     course["material_index"] = index_progress(course)
+    project_handoffs(course)
     return project_lines(course)
 
 

@@ -122,6 +122,9 @@ export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, ca
       {node.formal && <p className="nl-formal">{node.formal}</p>}
     </div>}
 
+    <Handoff course={course} node={node} canOpen={canOpen} onNavigate={onNavigate}
+      onShow={(item, side) => isStrong(item) ? setSelected({ kind: "bridge", item, side }) : onOpenBridge(item.edge)} />
+
     {empty ? <p className="nl-empty">
       {others.length ? `这一课有 ${others.length} 条联系，但还没写清具体用到哪一块。` : "这一课还没有整理出前后联系。"}
       {reviewStrict ? "退出所选资料复习后，可以让 AI 按整门课重新找。"
@@ -162,6 +165,63 @@ export function NodeLinks({ course, node, busy, aiEnabled, reviewStrict, act, ca
       </div>
     </details>}
   </section>;
+}
+
+/**
+ * 承上启下: the lesson just before and just after this one in the learning order, each with how it
+ * connects. A bridge between the two means it is really used (直接用到); otherwise they are only
+ * next to each other in the order (顺序衔接) and the AI's transition says why.
+ */
+function Handoff({ course, node, canOpen, onNavigate, onShow }: {
+  course: Course; node: LearningNode; canOpen: (node: LearningNode) => boolean;
+  onNavigate: (node: LearningNode, edge?: Edge) => void;
+  onShow: (item: ResolvedBridge, side: "in" | "out") => void;
+}) {
+  const handoff = node.handoff;
+  const byId = new Map(course.nodes.map((entry) => [entry.id, entry]));
+  const prev = handoff?.prev ? byId.get(handoff.prev) : undefined;
+  const next = handoff?.next ? byId.get(handoff.next) : undefined;
+  if (!handoff || (!prev && !next)) return null;
+  const between = (other: LearningNode) => resolveBridges(course, course.edges.filter((edge) => !edge.synthesis_link && edge.kind !== "对比"
+    && ((edge.source === other.id && edge.target === node.id) || (edge.source === node.id && edge.target === other.id))))
+    .find((item) => !item.bridge.legacy);
+  const row = (other: LearningNode, side: "prev" | "next") => {
+    const item = between(other);
+    const text = (side === "prev" ? handoff.prev_text : handoff.next_text) || item?.bridge.how || "";
+    const state = item?.target.id === node.id ? item.bridge.state?.result : undefined;
+    const open = canOpen(other);
+    return <div className="nl-hand-row">
+      <span className={cn("nl-hand-dot", done(other) ? "is-done" : !other.unlocked && "is-locked")} aria-label={done(other) ? "已学会" : other.unlocked ? "还没学" : "还没解锁"} />
+      <div className="min-w-0">
+        <div className="nl-hand-top">
+          <span className="nl-hand-kicker">{side === "prev" ? "← 上一课" : "下一课 →"}</span>
+          {open ? <button type="button" className="nl-hand-title" onClick={() => onNavigate(other)}>{other.title}</button>
+            : <span className="nl-hand-title">{other.title}</span>}
+          {other.week && other.week !== node.week && <span className="nl-hand-week">{other.week}</span>}
+          <span className={cn("nl-hand-tag", item ? "is-use" : "is-seq")}>{item ? "直接用到" : "顺序衔接"}</span>
+        </div>
+        <p className={cn("nl-hand-say", !text && "is-empty")}>{text || "还没写衔接。点上方「让 AI 重新找」会一起写好。"}</p>
+        <p className="nl-hand-more">
+          {item && <>{STRENGTH_LABEL[item.bridge.strength]}{state === "known" ? " · 你已测过会" : state ? " · 有缺口" : ""}
+            <button type="button" onClick={() => onShow(item, item.target.id === node.id ? "in" : "out")}>看这条联系</button></>}
+          {!item && text && "AI 写的过渡"}
+          {!open && `${item || text ? " · " : ""}${side === "next" ? "还没解锁，学完这一课后可打开" : "还没解锁"}`}
+        </p>
+      </div>
+    </div>;
+  };
+  return <div className="nl-hand-wrap">
+    <div className="nl-hand-label">承上启下{handoff.line_name && ` · 主线「${handoff.line_name}」`}</div>
+    <div className="nl-hand">
+      {prev && row(prev, "prev")}
+      <div className="nl-hand-row is-me">
+        <span className="nl-hand-dot is-me" aria-hidden />
+        <div className="nl-hand-top"><span className="nl-hand-kicker">这一课</span><span className="nl-hand-title">{node.title}</span>
+          {node.week && <span className="nl-hand-week">{node.week}</span>}</div>
+      </div>
+      {next && row(next, "next")}
+    </div>
+  </div>;
 }
 
 function Detail({ selected, busy, canOpen, onNavigate, onOpenBridge, onOpenSource, onCheck }: {

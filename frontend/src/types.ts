@@ -117,6 +117,8 @@ export type LearningNode = {
   /** One plain-language sentence and the formal statement, written by the links AI. */
   plain?: string;
   formal?: string;
+  /** The lessons just before and after, in the side list's order, with the links AI's transition for each. */
+  handoff?: { line_name: string; prev: string | null; next: string | null; prev_text: string; next_text: string };
   title: string;
   summary: string;
   week: string;
