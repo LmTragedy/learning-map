@@ -4,7 +4,7 @@ import { Button } from "../components/ui/button";
 import { DiagramView } from "./DiagramView";
 import { SourceImage } from "./SourceImage";
 import { materialPageImageAt } from "./diagramModel";
-import { provenanceText } from "./ProvenanceBadge";
+import { provenanceText } from "./provenance";
 import type { VisualItem } from "./visualTypes";
 
 export function ProcessStepper({ item, original = false, onClose, onAsk, onExcerpt, onMaterial }: {

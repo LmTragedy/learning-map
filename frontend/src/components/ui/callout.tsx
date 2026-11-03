@@ -16,8 +16,10 @@ const tones: Record<CalloutTone, string> = {
   neutral: "border-border bg-card text-foreground",
 };
 
-export function Callout({ tone = "neutral", icon, title, children, actions, onDismiss, dismissLabel = "关闭", className }: {
+export function Callout({ tone = "neutral", compact, icon, title, children, actions, onDismiss, dismissLabel = "关闭", className }: {
   tone?: CalloutTone;
+  /** One slim line: for hints that should not push the workspace down. */
+  compact?: boolean;
   icon?: React.ReactNode;
   title?: React.ReactNode;
   children?: React.ReactNode;
@@ -28,10 +30,10 @@ export function Callout({ tone = "neutral", icon, title, children, actions, onDi
 }) {
   return (
     <div role={tone === "danger" ? "alert" : "status"}
-      className={cn("callout flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3 py-2.5 text-sm", tones[tone], className)}>
+      className={cn("callout flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3 py-2.5 text-sm", compact && "py-1.5 [&_strong]:font-medium", tones[tone], className)}>
       {icon && <span className="flex shrink-0 [&_svg]:size-4" aria-hidden>{icon}</span>}
       <div className="min-w-0 flex-1">
-        {title && <strong className="block font-semibold">{title}</strong>}
+        {title && <strong className={cn("block font-semibold", compact && "truncate")}>{title}</strong>}
         {children && <div className={cn("text-[13px] leading-relaxed", title && "text-muted-foreground")}>{children}</div>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
