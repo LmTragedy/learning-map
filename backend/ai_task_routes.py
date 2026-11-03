@@ -156,6 +156,13 @@ def register_ai_task_routes(app, store, learning):
         owned(cid, tid)
         return tasks.events(tid)
 
+    def applied(task):
+        """An already applied task: its saved value, against the current course."""
+        if task["kind"] == "note_review":
+            tasks.validate_result_context(task, store.course(task["course_id"]))
+        return dict(task=tasks.public(task), course=project_course(store.course(task["course_id"])),
+                    result=task.get("result") if task.get("result_type") == "value" else None)
+
     @app.post("/api/courses/{cid}/ai-tasks/{tid}/recover")
     def recover(cid: str, tid: str):
         task = owned(cid, tid)
@@ -171,10 +178,7 @@ def register_ai_task_routes(app, store, learning):
         if task["state"] == "superseded":
             raise Conflict("课程已恢复，此任务只能查看，不能重新应用")
         if task["state"] == "applied":
-            if task["kind"] == "note_review":
-                tasks.validate_result_context(task, store.course(cid))
-            return dict(task=tasks.public(task), course=project_course(store.course(cid)),
-                        result=task.get("result") if task.get("result_type") == "value" else None)
+            return applied(task)
         child_summaries = tasks.public(task).get("children", [])
         if task["kind"] in {"material_index", "recall"} and child_summaries and not task.get("raw_reply"):
             current_course = store.course(cid)
@@ -204,10 +208,7 @@ def register_ai_task_routes(app, store, learning):
         if task.get("history_only"):
             raise Conflict("历史索引只提供原文与对象核对；缺少原始应用上下文，不会自动写入课程")
         if task["state"] == "applied":
-            if task["kind"] == "note_review":
-                tasks.validate_result_context(task, store.course(cid))
-            return dict(task=tasks.public(task), course=project_course(store.course(cid)),
-                        result=task.get("result") if task.get("result_type") == "value" else None)
+            return applied(task)
         if not task.get("raw_reply"):
             return JSONResponse(dict(task=tasks.public(task), course=None), status_code=202)
         result = dispatch(task)
@@ -235,6 +236,9 @@ def register_ai_task_routes(app, store, learning):
         label = task.get("request", {}).get("conversation")
         if not task.get("thread_id") or not label:
             raise Conflict("尚无可靠会话身份或归类标签")
+        if task["thread_id"].startswith("deepseek-"):
+            # DeepSeek keeps no conversation, so there is no Codex thread to file into a group.
+            raise Conflict("DeepSeek 任务没有 Codex 会话，无需归类")
         provider = learning.ai_factory(store.settings())
         try:
             section_id = provider.organize_thread(task["thread_id"], ConversationIdentity(**label))

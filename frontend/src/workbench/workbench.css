@@ -34,11 +34,6 @@
   .workbench .lesson-tabs,.workbench .lesson-thinking { flex-shrink:0; }
   .workbench .lesson-visual-layout { flex:1 0 292px; min-height:292px; }
   .workbench .lesson-frame-area { min-height:180px; }
-  .workbench .lesson-study:has(.visual-focus) .lesson-tabs,
-  .workbench .lesson-study:has(.visual-focus) .lesson-thinking,
-  .workbench .lesson-study:has(.visual-focus) .visual-rail { display:none; }
-  .workbench .lesson-study:has(.visual-focus) .lesson-visual-layout { flex:1; min-height:0; }
-  .workbench .lesson-study:has(.visual-focus) .lesson-frame-area { min-height:0; }
 }
 /* Study mode and material side by side inside the left pane. */
 .wb-split { display: flex; min-width: 0; min-height: 0; }

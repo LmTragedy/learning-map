@@ -7,7 +7,7 @@ const labels = { knowledge_logic: "知识与逻辑", english: "英文表达", un
 const status = {
   off: "自动检查已关闭；仍可正常编辑和保存。",
   unavailable: "Codex 当前不可用；仍可正常编辑和保存。",
-  idle: "写下笔记后，停笔约两秒会检查整篇内容。",
+  idle: "写下笔记后，停笔约 8 秒会检查整篇内容；两次自动检查至少间隔 30 秒，可随时“立即检查”。",
   waiting: "等待写作停顿后检查整篇笔记…",
   checking: "正在检查整篇笔记；可以继续输入或保存。",
   ready: "有问题的地方会画上波浪线，点击它查看并决定是否修改。",
@@ -52,7 +52,7 @@ export function NoteReviewPanel({ controller, state, model, aiEnabled, automatic
         disabled={!aiEnabled} onChange={(event) => onAutomatic(event.target.checked)} />自动检查</label>
     </div>
     <p role="status" className="text-xs text-muted-foreground">{!aiEnabled ? "AI 尚未启用；笔记仍可正常编辑和保存。" : status[state.phase]}</p>
-    {aiEnabled && automatic && <p className="text-xs text-muted-foreground">整篇笔记和当前节点上下文会发送至配置的 Codex 提供方。建议不会自动写入原文。</p>}
+    {aiEnabled && automatic && <p className="text-xs text-muted-foreground">整篇笔记和当前节点上下文会发送至配置的检查模型提供方（Codex 或 DeepSeek）。建议不会自动写入原文。</p>}
     {state.message && <p role="alert" className="text-xs text-destructive">{state.message}</p>}
     {state.warnings.map((warning) => <p key={warning} className="text-xs text-muted-foreground">{warning}</p>)}
     {!!state.suggestions.length && <ul className="note-review-list">

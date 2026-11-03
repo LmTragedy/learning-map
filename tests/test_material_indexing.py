@@ -113,3 +113,27 @@ def test_map_generation_saves_page_digests_without_touching_materials(session):
     assert saved["materials"] == before
     entry = page_index_entry(saved, material["id"], 1, saved["materials"][0]["pages"][0]["text"])
     assert entry["digest"] == "第一页讲键"
+
+
+def test_legacy_page_digests_are_still_used(session):
+    from backend.learning import material_index
+
+    _, store, _, course = session
+    with store.edit(course["id"]) as (current, _):
+        page = next(p for p in current["materials"][0]["pages"] if p["text"].strip())
+        page["digest"] = "旧版AI摘要"
+    pages = json.loads(material_index(store.course(course["id"])))
+    assert "旧版AI摘要" in [page.get("digest") for page in pages]
+
+
+def test_material_removed_during_indexing_is_a_conflict(session):
+    client, store, model, course = session
+
+    def remove_then_reply(prompt):
+        with store.edit(course["id"]) as (current, _):
+            current["materials"] = current["materials"][1:]
+        return index_reply(prompt)
+
+    model.replies.append(remove_then_reply)
+    response = client.post(f"/api/courses/{course['id']}/material-index", json={"indexed": 0})
+    assert response.status_code == 409, response.text

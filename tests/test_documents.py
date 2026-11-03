@@ -95,7 +95,7 @@ def test_render_page_returns_a_png_without_changing_the_original(tmp_path: Path)
 
 
 def test_page_outside_pdf_is_rejected(tmp_path: Path) -> None:
-    with pytest.raises(DocumentParseError, match="between 1 and 1"):
+    with pytest.raises(DocumentParseError, match="1 到 1 之间"):
         render_page(FIXTURES / "sample-text-formula-table.pdf", 2, tmp_path / "page.png")
 
 
@@ -103,7 +103,7 @@ def test_render_refuses_to_overwrite_the_original_image() -> None:
     source = FIXTURES / "printed-answer-simulation.jpg"
     before = sha256(source.read_bytes()).hexdigest()
 
-    with pytest.raises(DocumentParseError, match="cannot overwrite"):
+    with pytest.raises(DocumentParseError, match="不能覆盖"):
         render_page(source, 1, source)
 
     assert sha256(source.read_bytes()).hexdigest() == before
@@ -117,7 +117,7 @@ def test_pdf_over_page_limit_is_rejected_before_rendering(tmp_path: Path) -> Non
         output.showPage()
     output.save()
 
-    with pytest.raises(DocumentParseError, match="200 page"):
+    with pytest.raises(DocumentParseError, match="200 页"):
         parse_document(source, tmp_path / "parsed")
 
 
@@ -142,14 +142,14 @@ def test_docling_output_preserves_source_page_positions_and_marks_empty_pages() 
     ],
 )
 def test_docling_output_rejects_invalid_or_duplicate_page_numbers(response: str) -> None:
-    with pytest.raises(DocumentParseError, match="page number|duplicate page|truncation flag"):
+    with pytest.raises(DocumentParseError, match="页码|重复页面|截断标记"):
         documents._parse_docling_output(response, 3)
 
 
 def test_docling_output_rejects_text_over_character_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(documents, "MAX_EXTRACTED_TEXT_CHARS", 3)
 
-    with pytest.raises(DocumentParseError, match="10 million character"):
+    with pytest.raises(DocumentParseError, match="1000 万字符"):
         documents._parse_docling_output('{"pages":[{"number":1,"text":"long"}]}', 1)
 
 

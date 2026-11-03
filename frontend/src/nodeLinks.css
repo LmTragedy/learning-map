@@ -31,7 +31,48 @@
 .nl-chip-tag { font-size: 13px; color: var(--muted-foreground); }
 .nl-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; border: 1.5px solid var(--muted-foreground); }
 .nl-dot.is-done { border-color: var(--st-passed); background: var(--st-passed); }
-.nl-next { display: flex; align-items: center; gap: 4px; padding-left: 8px; color: var(--muted-foreground); }
+.nl-chip.is-gap { border-color: var(--destructive); background: color-mix(in oklab, var(--destructive) 6%, var(--card)); }
+.nl-gaps { color: var(--destructive); font-weight: 500; }
+
+/* A chain followed further along required links: earlier roots above a used node, later uses below. */
+.nl-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding-left: 8px; color: var(--muted-foreground); }
+.nl-chain.is-before { justify-content: flex-end; padding-left: 0; padding-right: 8px; }
+.nl-chain-step { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.nl-chain-label { font-size: 12px; }
+
+/* 承上启下: previous lesson, this one, next lesson on one vertical line. */
+.nl-hand-wrap { display: flex; flex-direction: column; gap: 6px; }
+.nl-hand-label { font-size: 13px; color: var(--muted-foreground); }
+.nl-hand { position: relative; display: flex; flex-direction: column; padding: 4px 0; border: 1px solid var(--border); border-radius: 12px; background: var(--raised); }
+.nl-hand::before { content: ""; position: absolute; left: 24px; top: 26px; bottom: 26px; border-left: 1.5px solid var(--border-strong); }
+.nl-hand-row { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 4px; padding: 9px 12px; }
+.nl-hand-dot { position: relative; z-index: 1; width: 13px; height: 13px; margin: 4px 0 0 6px; border-radius: 50%; border: 1.5px solid var(--muted-foreground); background: var(--raised); }
+.nl-hand-dot.is-done { border-color: var(--st-passed); background: var(--st-passed); }
+.nl-hand-dot.is-locked { border-style: dashed; }
+.nl-hand-dot.is-me { border-color: var(--foreground); background: var(--foreground); box-shadow: 0 0 0 4px color-mix(in oklab, var(--foreground) 14%, transparent); }
+.nl-hand-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 7px; min-width: 0; }
+.nl-hand-kicker { font-size: 12px; color: var(--muted-foreground); }
+.nl-hand-title { font-size: 14px; font-weight: 600; color: var(--foreground); text-align: left; overflow-wrap: anywhere; }
+button.nl-hand-title { cursor: var(--cursor-pointer, pointer); }
+button.nl-hand-title:hover { text-decoration: underline; text-underline-offset: 3px; }
+.nl-hand-row.is-me .nl-hand-title { font-size: 15px; }
+.nl-hand-week { font-size: 12px; color: var(--muted-foreground); }
+.nl-hand-tag { padding: 0 7px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: 12px; line-height: 1.6; color: var(--muted-foreground); white-space: nowrap; }
+.nl-hand-tag.is-use { border-color: color-mix(in oklab, var(--st-passed) 45%, transparent); color: var(--st-passed); }
+.nl-hand-tag.is-seq { border-style: dashed; }
+.nl-hand-say { margin-top: 3px; font-size: 13px; line-height: 1.65; color: var(--foreground); }
+.nl-hand-say.is-empty { color: var(--muted-foreground); }
+.nl-hand-more { margin-top: 2px; font-size: 12px; color: var(--muted-foreground); }
+.nl-hand-more:empty { display: none; }
+.nl-hand-more button { margin-left: 8px; color: var(--foreground); text-decoration: underline; text-underline-offset: 2px; cursor: var(--cursor-pointer, pointer); }
+
+/* Links that are not drawn: extensions, migrated placeholders and contrasts. */
+.nl-more { font-size: 13px; color: var(--muted-foreground); }
+.nl-more > summary { cursor: var(--cursor-pointer, pointer); }
+.nl-more-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.nl-more-item { display: flex; flex-direction: column; gap: 2px; padding: 7px 10px; border: 1px dashed var(--border-strong); border-radius: 10px; background: transparent; color: var(--foreground); text-align: left; cursor: var(--cursor-pointer, pointer); }
+.nl-more-item:hover { background: var(--hover); }
+.nl-more-item b { font-weight: 500; }
 
 /* Short arrows inside the row; dashed when every link on that side is only suggested. */
 .nl-link { position: relative; height: 2px; }
@@ -57,6 +98,7 @@
   .nl-row > .nl-step { order: -1; }
   .nl-side.is-left, .nl-side.is-right { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; text-align: left; padding-left: 31px; }
   .nl-side.is-left .nl-chip { align-items: flex-start; }
+  .nl-chain.is-before { justify-content: flex-start; padding-right: 0; }
   .nl-side:not(:has(.nl-chip)) { display: none; }
   .nl-side-label { display: inline; }
 }

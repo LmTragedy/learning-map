@@ -93,6 +93,8 @@
   code, kbd, pre{ font-family: var(--font-mono); }
   button { background: none; color: inherit; font: inherit; padding: 0; }
   h1, h2, h3, h4, p { margin: 0; }
+  /* No Tailwind preflight here: lists laid out with utilities would keep the browser's 40px indent and 1em margins. */
+  :where(ol, ul).list-none { margin: 0; padding: 0; }
 }
 
 @layer kit {

@@ -117,6 +117,8 @@ export type LearningNode = {
   /** One plain-language sentence and the formal statement, written by the links AI. */
   plain?: string;
   formal?: string;
+  /** The lessons just before and after, in the side list's order, with the links AI's transition for each. */
+  handoff?: { line_name: string; prev: string | null; next: string | null; prev_text: string; next_text: string };
   title: string;
   summary: string;
   week: string;
@@ -139,7 +141,6 @@ export type LearningNode = {
 };
 export type Lesson = {
   request_id?: string;
-  visuals?: import('./workbench/visualTypes').VisualItem[];
   id: string;
   title: string;
   goal: string;
@@ -277,6 +278,9 @@ export type Settings = {
   ai_enabled: boolean;
   model: string;
   note_review_model: string;
+  goal_model: string;
+  deepseek_key_set?: boolean;
+  deepseek_api_key?: string;
   reasoning_effort: "low" | "medium" | "high";
   obsidian_vault: string;
   parser: string;

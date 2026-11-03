@@ -8,7 +8,7 @@ from .ai_tasks import current_task_id
 from .bridges import bridges_of, learner_kind
 from .conversation_labels import conversation_label, remember_conversation
 from .domain import project_course
-from .learning import LearningError, structured
+from .learning import BASE_SYSTEM, LearningError, structured
 from .lines import StoryStep, anchored_line_ids, clean_line, find_line
 from .review_scope import strict_scope
 from .schemas import Input
@@ -139,7 +139,8 @@ def _generate_lines(store, learning, cid):
     if not course["nodes"]:
         raise LearningError("还没有知识点，先生成地图再分主线")
     label = conversation_label(course, purpose="生成主线")
-    reply = structured(learning.ai(), _generation_prompt(course), LinesDraft, {"conversation": label})
+    reply = structured(learning.ai(), _generation_prompt(course), LinesDraft, {"conversation": label},
+                       system=BASE_SYSTEM)
     draft = reply.payload
     lines_draft, summary, abilities = _validated_draft(course, draft)
     _save_generated_lines(store, course, lines_draft, summary, abilities, reply.thread_id, label)

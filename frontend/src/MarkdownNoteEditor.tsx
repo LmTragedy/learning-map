@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { HIGHLIGHT, NOTE_COLORS } from "./noteFormatting";
+import { normalizeMath, rehypeKatexPlugin, remarkMathPlugin } from "./mathMarkdown";
 import { Button } from "./components/ui/button";
 import { LiveMarkdownEditor } from "./LiveMarkdownEditor";
 import type { ReviewHooks } from "./LiveMarkdownEditor";
@@ -54,11 +55,11 @@ export default function MarkdownNoteEditor({ content, onChange, onReady, onTab, 
         },
       })} onTab={onTab} reviewHooks={reviewHooks} /></div>
       {view === "read" && <article aria-label="笔记阅读预览" className="node-note-preview">
-        {preview ? <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw, [rehypeSanitize, schema]]} components={{
+        {preview ? <Markdown remarkPlugins={[remarkGfm, remarkMathPlugin]} rehypePlugins={[rehypeRaw, [rehypeSanitize, schema], rehypeKatexPlugin]} components={{
           // Notes remain local: a preview never fetches an embedded image.
           img: ({ alt }) => <span className="text-muted-foreground">[图片：{alt || "未显示"}]</span>,
           a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>,
-        }}>{preview}</Markdown> : <p className="text-muted-foreground">这里会显示笔记的阅读效果。</p>}
+        }}>{normalizeMath(preview)}</Markdown> : <p className="text-muted-foreground">这里会显示笔记的阅读效果。</p>}
       </article>}
     </div>
   </div>;

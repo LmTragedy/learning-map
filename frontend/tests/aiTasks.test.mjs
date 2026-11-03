@@ -148,3 +148,9 @@ test("conflict and superseded receipts continue to expose saved raw output", () 
     assert.equal(view.canViewRaw, true);
   }
 });
+
+test("DeepSeek tasks never offer Codex group filing", () => {
+  const failed = { organization_error: "failed", state: "applied" };
+  assert.equal(taskView(baseTask({ ...failed, thread_id: "thread-1" })).canOrganize, true);
+  assert.equal(taskView(baseTask({ ...failed, thread_id: "deepseek-abc" })).canOrganize, false);
+});

@@ -62,7 +62,7 @@ def _read_rollout(path: Path, expected_cwd: str) -> list[dict[str, Any]]:
                 try:
                     line = _read_record(stream)
                     if stream.tell() > _MAX_FILE_BYTES:
-                        raise ValueError("Codex rollout exceeded the size limit")
+                        raise ValueError("Codex 会话记录文件超过大小上限")
                 except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
                     scan_error = "rollout contains a malformed or oversized record"
                     break
@@ -108,10 +108,10 @@ def _read_record(stream) -> dict[str, Any] | None:
     if not raw:
         return None
     if len(raw) > _MAX_LINE_BYTES:
-        raise ValueError("Codex rollout line exceeded the size limit")
+        raise ValueError("Codex 会话记录单行超过大小上限")
     record = json.loads(raw)
     if not isinstance(record, dict):
-        raise ValueError("Codex rollout record must be an object")
+        raise ValueError("Codex 会话记录条目必须是对象")
     return record
 
 
@@ -350,5 +350,5 @@ def _decode_section(section: str) -> Any:
     value = section.strip()
     decoded, end = json.JSONDecoder().raw_decode(value)
     if value[end:].strip():
-        raise ValueError("unexpected content after JSON section")
+        raise ValueError("JSON 段落后出现意外内容")
     return decoded

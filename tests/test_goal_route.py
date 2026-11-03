@@ -45,6 +45,7 @@ def test_subgoal_linked_to_node_completes_when_node_is_verified(tmp_path):
 
 def test_goal_map_route_includes_completed_predecessors_and_subtask_endpoints(tmp_path):
     from fastapi.testclient import TestClient
+
     from backend.app import create_app
     app = create_app(tmp_path / "data", lambda _: None)
     client = TestClient(app, headers={"X-Learning-Map": "1"})

@@ -105,3 +105,7 @@
 .chat-md th, .chat-md td { padding: 5px 9px; border: 1px solid var(--border); }
 .chat-md a { text-decoration: underline; }
 .chat-md hr { margin: 1em 0; border-color: var(--border); }
+
+/* Typeset formulas: long display equations scroll instead of overflowing the chat column. */
+.chat-md .katex, .node-note-preview .katex { font-size: 1.08em; overflow-wrap: normal; }
+.chat-md .katex-display, .node-note-preview .katex-display { margin: .7em 0; padding: .15em 0; overflow-x: auto; overflow-y: hidden; }

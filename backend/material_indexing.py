@@ -11,7 +11,7 @@ from pydantic import Field
 from .ai_tasks import current_task_id
 from .conversation_labels import conversation_label, remember_conversation
 from .domain import project_course
-from .learning import LearningError, StructuredReply, _local_digest, structured
+from .learning import BASE_SYSTEM, LearningError, StructuredReply, _local_digest, structured
 from .page_index import index_progress, is_indexed, set_page_index, text_pages
 from .schemas import Input
 from .store import Conflict
@@ -68,7 +68,10 @@ def _apply(course, batch, draft):
     returned = {(item["material_id"], item["page"]): item for item in draft["pages"]}
     materials = {material["id"]: material for material in course["materials"]}
     for wanted in batch:
-        page = materials[wanted["material_id"]]["pages"][wanted["page"] - 1]
+        material = materials.get(wanted["material_id"])
+        if material is None or wanted["page"] > len(material["pages"]):
+            raise Conflict("索引期间材料已被删除或替换，请刷新后重新建立索引")
+        page = material["pages"][wanted["page"] - 1]
         if page["text"] != wanted["text"]:
             raise Conflict("索引期间材料文字已变化，请刷新后重新建立索引")
         item = returned.get((wanted["material_id"], wanted["page"]))
@@ -86,7 +89,7 @@ def build_index(store, learning, cid, indexed, request_id=None):
 
 def _read_index(learning, prompt, label):
     reply = structured(learning.ai(model="gpt-6-luna", effort="medium"),
-                       prompt, IndexDraft, {"conversation": label})
+                       prompt, IndexDraft, {"conversation": label}, system=BASE_SYSTEM)
     return dict(payload=reply.payload, thread_id=reply.thread_id)
 
 

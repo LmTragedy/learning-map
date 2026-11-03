@@ -1,12 +1,12 @@
 /* Obsidian-style knowledge graph (完整关系图). Owned by MapView.tsx. */
 .graph-canvas { background: var(--background, var(--background)); container-type: inline-size; }
-/* On a narrow canvas the tools fold to icons; each keeps its name as aria-label and tooltip. */
-@container (max-width: 480px) { .graph-tool-label { display: none; } }
+/* Canvas tools are icons only so they never cover the graph; each keeps its name as aria-label and tooltip. */
+.graph-tool-label { display: none; }
 /* Tools float on the canvas (top-left), the chain count sits bottom-right; both opaque, one tone step off the ground. */
 .graph-overlay { position: absolute; z-index: 10; left: 12px; top: 12px; right: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; pointer-events: none; }
 .graph-overlay > * { pointer-events: auto; }
-.graph-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--border, var(--sh-accent)); border-radius: 10px; background: var(--card, var(--card)); }
-.graph-tools > button { height: 30px; padding-inline: 8px; }
+.graph-tools { display: flex; flex-wrap: nowrap; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--border, var(--sh-accent)); border-radius: 10px; background: var(--card, var(--card)); }
+.graph-tools button { height: 30px; width: 30px; padding-inline: 0; }
 .graph-tools-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--border, var(--sh-accent)); }
 .graph-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--border, var(--sh-accent)); border-radius: 8px;
   background: var(--card, var(--card)); font-size: var(--fs-xs); color: var(--muted-foreground, var(--state-studied)); }
@@ -58,7 +58,7 @@
   padding: 4px 9px; box-shadow: 0 6px 20px rgb(0 0 0 / .45); }
 .gedge-tip.is-weak { color: #fecaca; background: #3b1414; border-color: var(--destructive) !important; }
 .route-line { position: relative; }
-.route-line::before { content: ""; position: absolute; left: 18px; top: 8px; bottom: 8px; width: 2px; border-radius: 2px; background: var(--line); opacity: .45; }
+.route-line::before { content: ""; position: absolute; left: 16px; top: 8px; bottom: 8px; width: 2px; border-radius: 2px; background: var(--line); opacity: .45; }
 .route-line li button { position: relative; }
 
 /* Side panel resize edges (useResizableWidth): .is-left sits on a right dock's left edge, .is-right on a left list's right edge. */
@@ -72,3 +72,8 @@
 .panel-resizer:focus-visible { outline: none; }
 .is-resizing-panel { cursor: col-resize; user-select: none; }
 .is-resizing-panel iframe, .is-resizing-panel .react-flow { pointer-events: none; }
+/* On a phone the node sheet's 44px handle covers the bottom of the canvas; lift the zoom buttons and chain chip above it. */
+@media (max-width: 780px) {
+  .graph-canvas .react-flow__panel.bottom { margin-bottom: 56px; }
+  .graph-focus-note { bottom: 56px; }
+}

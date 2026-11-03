@@ -30,14 +30,21 @@ export class NoteReviewController {
   private paused = false;
   private disposed = false;
   private lastEdit = 0;
+  private lastStart = -Infinity;
   private dismissed = new Set<string>();
   private request: ReviewRequest;
   private delay: number;
   private timeout: number;
+  private cooldown: number;
 
-  constructor(request: ReviewRequest, delay = 1800, timeout = 60000) {
-    this.request = request; this.delay = delay; this.timeout = timeout;
+  // Each automatic check is a paid model call over the whole note, so wait for a real pause in writing
+  // and space automatic checks apart. An explicit retry ("立即检查") skips both waits.
+  // The backend gives Codex and DeepSeek 180 s (backend/ai.py, backend/deepseek_ai.py). Waiting a little
+  // longer means the server has already given up when the UI does, so a retry never overlaps a live call.
+  constructor(request: ReviewRequest, delay = 8000, timeout = 190000, cooldown = 30000) {
+    this.request = request; this.delay = delay; this.timeout = timeout; this.cooldown = cooldown;
   }
+  private timeoutMessage = () => `检查超过 ${Math.round(this.timeout / 1000)} 秒，已停止等待。笔记可继续编辑保存，请手动重试。`;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   snapshot = () => this.state;
 
@@ -79,7 +86,7 @@ export class NoteReviewController {
     if (!this.context || this.phase(this.context) !== "waiting" || this.checked === this.generation) return;
     clearTimeout(this.timer);
     this.timer = setTimeout(() => { if (!this.pending) void this.check(); },
-      immediate ? 0 : Math.max(0, this.delay - (Date.now() - this.lastEdit)));
+      immediate ? 0 : Math.max(0, this.delay - (Date.now() - this.lastEdit), this.cooldown - (Date.now() - this.lastStart)));
   }
 
   retry() {
@@ -97,6 +104,7 @@ export class NoteReviewController {
     const requestId = crypto.randomUUID();
     const abort = new AbortController();
     this.pending = abort;
+    this.lastStart = Date.now();
     let timedOut = false;
     this.publish({ phase: "checking", message: "" });
     // A hung provider must not keep the UI in checking state or block saving.
@@ -104,7 +112,7 @@ export class NoteReviewController {
     const deadline = new Promise<never>((_, reject) => {
       abort.signal.addEventListener("abort", () => reject(new Error("检查已取消。")), { once: true });
       timeoutTimer = setTimeout(() => {
-        timedOut = true; abort.abort(); reject(new Error("检查超过 60 秒，已停止等待。笔记可继续编辑保存，请手动重试。"));
+        timedOut = true; abort.abort(); reject(new Error(this.timeoutMessage()));
       }, this.timeout);
     });
     try {
@@ -123,7 +131,7 @@ export class NoteReviewController {
       // Failure pauses this note even after typing, so another paid attempt requires an explicit retry.
       this.paused = true;
       this.publish({ phase: "error",
-        message: timedOut ? "检查超过 60 秒，已停止等待。笔记可继续编辑保存，请手动重试。"
+        message: timedOut ? this.timeoutMessage()
           : error instanceof Error ? error.message : "AI 检查失败；编辑和保存不受影响。" });
     } finally {
       clearTimeout(timeoutTimer!);

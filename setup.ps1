@@ -1,6 +1,8 @@
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 $projectPython = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
+& python -c "import sys; sys.exit(0 if sys.version_info >= (3, 13) else 1)"
+if ($LASTEXITCODE -ne 0) { throw 'Python 3.13 or newer is required (see pyproject.toml requires-python).' }
 if (-not (Test-Path -LiteralPath $projectPython)) {
     & python -m venv --without-pip .venv
     if ($LASTEXITCODE -ne 0) { throw 'Python environment creation failed.' }

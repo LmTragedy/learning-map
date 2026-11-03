@@ -10,6 +10,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@codemirror/autocomplete": "6.20.4",
     "@codemirror/commands": "6.11.1",
     "@codemirror/lang-markdown": "6.5.2",
     "@codemirror/language": "6.13.1",
@@ -28,14 +29,17 @@
     "@xyflow/react": "^12.8.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "katex": "0.18.11",
     "lucide-react": "^0.468.0",
     "lxgw-wenkai-screen-webfont": "^1.7.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "10.1.0",
+    "rehype-katex": "7.0.1",
     "rehype-raw": "7.0.0",
     "rehype-sanitize": "6.0.0",
     "remark-gfm": "4.0.1",
+    "remark-math": "6.0.0",
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
@@ -54,6 +58,7 @@
     "vite": "^6.0.7"
   },
   "overrides": {
-    "minimatch": "^11.0.4"
+    "minimatch": "^11.0.4",
+    "katex": "$katex"
   }
 }

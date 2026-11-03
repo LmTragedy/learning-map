@@ -22,7 +22,7 @@ export function BridgeGaps({ course, node, attempt, busy, act, onNavigate }: {
   return <div className="mt-3 rounded-xl border border-destructive/40 bg-destructive/5 p-3">
     <strong className="flex items-center gap-1.5 text-[13px]"><TriangleAlert size={14} className="text-destructive" aria-hidden />
       {blamed.length ? "可能缺前面的这几块" : "先确认这几块必需的前置内容"}</strong>
-    <p className="t-meta mt-0.5">{blamed.length ? "判卷时对照了进站的知识桥。" : "判卷没有指出具体缺哪一块；这些必需的桥你还没确认会。"}补完点「返回原复习目标」回到这道题。</p>
+    <p className="t-meta mt-0.5">{blamed.length ? "判卷时对照了这一课「先要会」的前置知识。" : "判卷没有指出具体缺哪一块；这些必须先会的内容你还没确认。"}补完点「返回原复习目标」回到这道题。</p>
     <div className="mt-2 flex flex-col gap-2">
       {shown.map((item) => <Gap key={item.bridge.id} item={item} busy={busy}
         onCheck={(result) => void act("bridge-check", () => api.checkBridge(course.id, item.edge.id, item.bridge.id, result))}

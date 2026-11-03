@@ -49,9 +49,21 @@ class Settings(Input):
     ai_enabled: bool = False
     model: str = Field(default="", max_length=160)
     note_review_model: str = Field(default="gpt-6-luna", min_length=1, max_length=160)
+    # Empty follows the learning model; a deepseek-* name sends goal extraction to DeepSeek.
+    goal_model: str = Field(default="", max_length=160)
+    # Write-only; an empty string removes the saved key (the environment variable still applies).
+    deepseek_api_key: str = Field(default="", max_length=200, pattern=r"^[\x21-\x7e]*$")
+    # Read-only flag from GET /api/settings; accepted so a settings round trip still saves.
+    deepseek_key_set: bool | None = Field(default=None, exclude=True)
     reasoning_effort: Literal["low", "medium", "high"] = "medium"
     obsidian_vault: str = Field(default="", max_length=500)
     parser: Literal["basic", "docling"] = "basic"
+
+    @model_validator(mode="after")
+    def deepseek_only_for_checked_tasks(self):
+        if self.model.strip().lower().startswith("deepseek"):
+            raise ValueError("DeepSeek 只用于笔记检查和目标提取；学习对话模型请使用 Codex 模型")
+        return self
 
 
 class NoteWrite(Input):

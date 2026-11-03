@@ -87,7 +87,7 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
         <textarea rows={10} aria-label="你的作答" value={answer} onChange={event => updateAnswerDraft(scope, { answer: event.target.value })} placeholder="写出你的思路、步骤或解释" disabled={!aiEnabled}/>
         {files.length > 0 && <div className="file-chips">{files.map(file => <span key={`${file.name}-${file.size}`}>{file.name}</span>)}<small className="muted">附件不随草稿保存，刷新页面后需要重新选择。</small></div>}
         <div className="practice-editor-foot">
-          <label className={`upload-inline ${!aiEnabled ? 'disabled' : ''}`}><Paperclip size={14}/>照片或 PDF<input type="file" accept="image/*,.pdf" multiple disabled={!aiEnabled} onChange={event => updateAnswerDraft(scope, { files: Array.from(event.target.files || []) })}/></label>
+          <label className={`upload-inline ${!aiEnabled ? 'disabled' : ''}`}><Paperclip size={14}/>照片或 PDF<input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" multiple disabled={!aiEnabled} onChange={event => updateAnswerDraft(scope, { files: Array.from(event.target.files || []) })}/></label>
           {warning ? <span className="muted small" role="alert">{warning}</span> : (answer || reference) && <span className="muted small">草稿已保存在本浏览器</span>}
           <Button variant={answerIsMain ? 'default' : 'outline'} onClick={() => void submitAttempt()} disabled={busy || judging || !aiEnabled || !node.question || (!answer.trim() && files.length === 0)}>提交作答并验收</Button>
         </div>

@@ -11,6 +11,7 @@ httpcore==1.0.9
 httpx==0.28.1
 idna==3.20
 iniconfig==2.3.1
+latex2mathml==3.81.1
 opentelemetry-api==1.45.2
 packaging==26.3
 pillow==12.3.0

@@ -17,5 +17,10 @@ th { background: #e7ede4; }
 .check { border: 1px solid #afc3b2; border-radius: 12px; padding: 6px 24px 24px; background: #f0f4ea; margin: 32px 0; }
 details { margin: 18px 0; border-top: 1px solid #ccd6ce; padding-top: 14px; }
 summary { cursor: pointer; color: #2c654a; font-weight: 600; }
+.handoff { border-left: 3px solid #c7a35a; border-radius: 0 8px 8px 0; padding: 4px 18px 6px; margin: 0 0 28px; background: #f4efe3; }
+.handoff.is-next { border-left-color: #5a8ac7; background: #e8eef6; margin: 28px 0 0; }
+.handoff-k { margin-bottom: 0; font-size: 12px; font-weight: 700; color: #8a6d2f; }
+.handoff.is-next .handoff-k { color: #2f5a8a; }
 footer { color: #627269; font-size: 13px; border-top: 1px solid #ccd6ce; margin-top: 40px; }
+footer a { color: #2f6b4f; text-decoration: underline; text-underline-offset: 2px; }
 @media print { main { max-width: none; padding: 0; } details > * { display: block; } .check { break-inside: avoid; } }

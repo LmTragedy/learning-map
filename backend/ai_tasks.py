@@ -15,6 +15,10 @@ _new_action = ContextVar("learning_map_new_generation", default=False)
 _client_action = ContextVar("learning_map_client_action", default=None)
 _regeneration_parent = ContextVar("learning_map_regeneration_parent", default=None)
 CHILD_MODEL = "gpt-6-luna"
+# Every state a task row can hold. frontend/src/aiTaskModel.ts renders each one and keeps the same
+# ACTIVE set; tests/test_ai_task_states.py fails when the two drift apart.
+ACTIVE_TASK_STATES = ("prepared", "sending", "running", "processing")
+TASK_STATES = (*ACTIVE_TASK_STATES, "received", "unknown", "invalid", "applied", "superseded", "rejected")
 CHILD_EFFORT = "medium"
 
 
@@ -64,6 +68,15 @@ def is_regenerating():
 def has_saved_reply():
     task = _active.get()
     return bool(task and task[0].get(task[1]).get("raw_reply"))
+
+
+def task_model(settings, kind):
+    """The model a new task of this kind would be sent to."""
+    if kind == "note_review":
+        return settings["note_review_model"]
+    if kind == "goals":
+        return settings.get("goal_model", "").strip() or settings["model"]
+    return settings["model"]
 
 
 def task_ai(provider, settings=None):
@@ -149,7 +162,8 @@ class TaskManager:
         with self.store.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             rows = connection.execute(
-                "SELECT id FROM ai_tasks WHERE state IN ('prepared','sending','running','processing')",
+                f"SELECT id FROM ai_tasks WHERE state IN ({','.join('?' * len(ACTIVE_TASK_STATES))})",
+                ACTIVE_TASK_STATES,
             ).fetchall()
             for row in rows:
                 task = self.get(row[0], connection)
@@ -304,11 +318,11 @@ class TaskManager:
 
     def _record_child_failure(self, child_id, error):
         latest = self.get(child_id)
+        # A saved reply that failed parsing or evidence checks fails the same way on every replay, so
+        # it is invalid, not "received": marking it received made the parent look recoverable forever.
         state = "unknown" if latest.get("request") and not latest.get("raw_reply") else "invalid"
         if not latest.get("request"):
             state = "rejected"
-        elif latest.get("raw_reply"):
-            state = "received"
         self.update(child_id, state=state, error=str(error))
 
     def _reserve(self, invocation):
@@ -350,7 +364,7 @@ class TaskManager:
             if logical_identity(previous) != logical_identity(current):
                 continue
             settings = self.store.settings(connection)
-            model = settings["note_review_model"] if invocation.kind == "note_review" else settings["model"]
+            model = task_model(settings, invocation.kind)
             if previous.get("model") is not None and previous["model"] != model:
                 continue
             raise Conflict(f"任务 {pending[0]} 尚待处理，请先恢复原请求或明确选择重新生成；新动作未冒用旧身份")
