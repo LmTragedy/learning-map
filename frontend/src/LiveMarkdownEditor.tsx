@@ -113,6 +113,11 @@ export function LiveMarkdownEditor({ content, onChange, live, onReady, onTab, re
     });
     editor.current = view;
     setView(view);
+    // Opening a note puts the cursor in it, unless the user is typing elsewhere (e.g. the chat),
+    // and not on phones, where focusing would throw up the keyboard over the note.
+    const active = document.activeElement;
+    const typingElsewhere = active instanceof HTMLElement && active.matches("input, textarea, select, [contenteditable='true']");
+    if (!typingElsewhere && window.matchMedia("(min-width: 781px)").matches) requestAnimationFrame(() => view.focus());
     let acceptedDepth = -1;
     let acceptedText: string | null = null;
     // Only text still reading the original under its mark may be replaced or selected.

@@ -33,19 +33,19 @@ export function BridgeEditor({ course, edge, source, target, busy, act, onDone }
       <div className="flex items-center gap-2"><strong className="flex-1 text-foreground">第 {index + 1} 座桥</strong>
         <Button type="button" size="icon-sm" variant="ghost" aria-label="删除这座桥" onClick={() => setRows((current) => current.filter((_, i) => i !== index))}><Trash2 /></Button></div>
       <label className="grid gap-1">用到「{source.title}」的哪一块
-        <select className={field} value={row.from_piece} onChange={(event) => update(index, { from_piece: event.target.value })}>
+        <select className={`${field} !pr-8`} value={row.from_piece} onChange={(event) => update(index, { from_piece: event.target.value })}>
           <option value="">未指定</option>
           {(source.pieces || []).map((piece) => <option key={piece.id} value={piece.id}>{piece.kind}：{piece.title}</option>)}
         </select></label>
       <label className="grid gap-1">用在「{target.title}」的哪一步
-        <select className={field} value={row.to_step} onChange={(event) => update(index, { to_step: event.target.value })}>
+        <select className={`${field} !pr-8`} value={row.to_step} onChange={(event) => update(index, { to_step: event.target.value })}>
           <option value="">未指定</option>
           {(target.steps || []).map((step, i) => <option key={step.id} value={step.id}>第 {i + 1} 步 · {step.title}</option>)}
         </select></label>
       <label className="grid gap-1">怎么用（一句话）<input className={field} required value={row.how} onChange={(event) => update(index, { how: event.target.value })} /></label>
       <label className="grid gap-1">不会会怎样<input className={field} value={row.if_missing} onChange={(event) => update(index, { if_missing: event.target.value })} /></label>
       <label className="grid gap-1">强度
-        <select className={field} value={row.strength} onChange={(event) => update(index, { strength: event.target.value as Strength })}>
+        <select className={`${field} !pr-8`} value={row.strength} onChange={(event) => update(index, { strength: event.target.value as Strength })}>
           {(Object.keys(STRENGTH_LABEL) as Strength[]).map((key) => <option key={key} value={key}>{STRENGTH_LABEL[key]}</option>)}
         </select></label>
       <label className="grid gap-1">检验题<input className={field} value={row.question} onChange={(event) => update(index, { question: event.target.value })} /></label>
@@ -68,7 +68,7 @@ export function PieceEditor({ course, node, busy, act, onDone }: { course: Cours
   return <form className="mt-2 flex flex-col gap-2 text-xs text-muted-foreground" onSubmit={(event) => { event.preventDefault(); void save(); }}>
     <strong className="text-foreground">「{node.title}」拆成的块</strong>
     {pieces.map((piece, index) => <div key={index} className="flex gap-1.5">
-      <select className={field} value={piece.kind} aria-label="块的类型" onChange={(event) => setPieces((current) => current.map((row, i) => i === index ? { ...row, kind: event.target.value as PieceKind } : row))}>
+      <select className={`${field} !pr-8`} value={piece.kind} aria-label="块的类型" onChange={(event) => setPieces((current) => current.map((row, i) => i === index ? { ...row, kind: event.target.value as PieceKind } : row))}>
         {PIECE_KINDS.map((kind) => <option key={kind}>{kind}</option>)}
       </select>
       <input className={`${field} min-w-0 flex-1`} required aria-label="块的名称" value={piece.title} onChange={(event) => setPieces((current) => current.map((row, i) => i === index ? { ...row, title: event.target.value } : row))} />

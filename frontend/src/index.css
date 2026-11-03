@@ -162,6 +162,13 @@
   select option { background: var(--primary-foreground); color: var(--foreground); }
   /* Group labels in native dropdowns otherwise fall back to the light system style. */
   select optgroup { background: var(--primary-foreground); color: var(--state-studied); font-style: normal; font-weight: 600; }
+  /* Dropdowns: drop the light system arrow for one drawn in the theme; selects with their own icon opt out via appearance-none. */
+  select:not([multiple]):not([size]):not(.appearance-none) {
+    appearance: none; padding-right: 30px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center; background-size: 14px;
+  }
+  select:disabled { opacity: .5; cursor: not-allowed; }
 
   /* Dialogs: shadcn Dialog look */
   .modal-scrim { background: rgba(0, 0, 0, .7); backdrop-filter: none; }

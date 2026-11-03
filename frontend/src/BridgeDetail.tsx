@@ -146,7 +146,7 @@ function TextEditor({ course, edge, busy, act, onDone }: { course: Course; edge:
   };
   const input = "rounded-md border border-input bg-background px-2.5 py-1.5 text-[13px] text-foreground";
   return <form className="mt-3 grid gap-2 text-xs text-muted-foreground" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-    <label className="grid gap-1">关系类型<select className={input} value={form.relation} onChange={(event) => setForm({ ...form, relation: event.target.value as RelationKind })}>
+    <label className="grid gap-1">关系类型<select className={`${input} !pr-8`} value={form.relation} onChange={(event) => setForm({ ...form, relation: event.target.value as RelationKind })}>
       {RELATION_KINDS.map((item) => <option key={item}>{item}</option>)}</select></label>
     <label className="grid gap-1">一句话说明<textarea className={`${input} min-h-14`} required value={form.explanation} onChange={(event) => setForm({ ...form, explanation: event.target.value })} /></label>
     <label className="grid gap-1">何时用<textarea className={`${input} min-h-12`} required value={form.when_to_use} onChange={(event) => setForm({ ...form, when_to_use: event.target.value })} /></label>

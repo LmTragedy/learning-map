@@ -184,7 +184,7 @@ export function AiTaskProvider({course,onCourse,onNavigate,aiEnabled,children}:{
 // eslint-disable-next-line react-refresh/only-export-components -- the hooks read this file's context
 export function useCourseTasks(){const value=useContext(Context);if(!value)throw new Error('缺少 AI 任务上下文');return value;}
 const trayProps=(l:Ledger,location:string)=>({tasks:l.tasks,viewFor:l.viewFor,loading:l.loading,error:l.error,open:l.open&&l.activeEntry===location,onOpenChange:(open:boolean)=>{l.setActiveEntry(location);l.setOpen(open);if(!open)l.setTrayFilter('all');},filter:l.trayFilter,onShowAll:()=>l.setTrayFilter('all'),onRefresh:l.refresh,onRecover:l.recover,onRegenerate:l.regenerate,onCollect:l.collect,onOrganize:l.organize,onReadResult:l.readResult,onImportHistory:l.importHistory,importingHistory:l.importingHistory,importMessage:l.importMessage,onNavigate:l.navigate});
-export function TaskEntry({location='header'}:{location?:string}){const l=useCourseTasks();return <TaskTray {...trayProps(l,location)}/>;}
+export function TaskEntry({location='header'}:{location?:string}){const l=useCourseTasks();return <TaskTray {...trayProps(l,location)} variant={location==='header'?'outline':'ghost'}/>;}
 type InlineQuery={kind:string|string[];target?:string;taskId?:string};
 /** Tasks a TaskCards slot shows, oldest ancestor first; shared with the banner so it never repeats them. */
 function inlineTasks(l:Ledger,{kind,target,taskId}:InlineQuery){

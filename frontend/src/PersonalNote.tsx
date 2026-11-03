@@ -252,7 +252,7 @@ export function PersonalNote({ course, node, noteId = "", busy, run, onRefresh, 
           {extra && boundNodes.length > 1 && <button aria-label={`解除绑定 ${entry.title}`} className="text-muted-foreground hover:text-foreground"
             onClick={() => void saveMeta(title, extra.node_ids.filter((id) => id !== entry.id))}><X size={11} /></button>}
         </span>)}
-        {extra && <select className="h-6 rounded-full border border-dashed border-border bg-transparent !py-0 !pl-2 !pr-1 text-xs" value=""
+        {extra && <select className="h-6 rounded-full border border-dashed border-border bg-transparent !bg-[position:right_6px_center] !py-0 !pl-2 !pr-6 text-xs" value=""
           aria-label="加绑知识点" disabled={busy || extra.node_ids.length >= 20}
           onChange={(event) => event.target.value && void saveMeta(title, [...extra.node_ids, event.target.value])}>
           <option value="">＋ 加绑知识点</option>

@@ -8,6 +8,8 @@ import { Callout } from "./components/ui/callout";
 import "./taskUi.css";
 
 type TaskTrayProps = {
+  /** The page header pairs it with outlined buttons; the workbench toolbar with ghost ones. */
+  variant?: "outline" | "ghost";
   tasks: AiTask[];
   viewFor: (task: AiTask) => TaskView;
   loading: boolean;
@@ -135,7 +137,7 @@ export function TaskTray(props: TaskTrayProps) {
   return (
     <Popover open={props.open} onOpenChange={props.onOpenChange}>
       <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" className="task-tray-trigger" aria-label={ariaLabel}>
+        <Button size="sm" variant={props.variant ?? "ghost"} className="task-tray-trigger" aria-label={ariaLabel}>
           <ListChecks aria-hidden="true" /><span className="task-tray-trigger-label">AI 任务</span>
           {(activeCount > 0 || attentionCount > 0) && <span className={`task-tray-badge${attentionCount ? " task-tray-badge-attention" : ""}`}>{attentionCount ? "!" : activeCount > 9 ? "9+" : activeCount}</span>}
         </Button>
