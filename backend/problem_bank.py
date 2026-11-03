@@ -332,28 +332,42 @@ def _neighbours(course, node_id):
     return near
 
 
-# Closest first: the node's own real problems, ones marked as related, neighbours' problems, then the rest.
-CLOSENESS = {0: "本知识点的真题", 1: "与本知识点相关的真题", 2: "相邻知识点的真题", 3: "同课程其他真题"}
+# Closest first: the node's own real problems, ones AI marked related, then by content similarity.
+CLOSENESS = {0: "本知识点的真题", 1: "与本知识点相关的真题", 2: "内容与本知识点相近的真题", 3: "同课程其他真题"}
+CLOSE_SCORE = 0.04
+NEIGHBOUR_BONUS = 0.03
+
+
+def rank_problems(course, node):
+    """Every real problem as (pair, level, score), closest first."""
+    from .problem_similarity import similarities
+
+    pairs = real_problems(course)
+    near = _neighbours(course, node["id"])
+    scores = similarities(course, node, [problem for _, problem in pairs])
+    ranked = []
+    for index, (pair, score) in enumerate(zip(pairs, scores, strict=True)):
+        problem = pair[1]
+        if primary_node(problem) == node["id"]:
+            level = 0
+        elif node["id"] in related_nodes(problem):
+            level = 1
+        else:
+            # Content decides; being next to the node on the map only nudges a borderline match.
+            score += NEIGHBOUR_BONUS if primary_node(problem) in near else 0
+            level = 2 if score >= CLOSE_SCORE else 3
+        ranked.append((level, -score, index, pair, score))
+    ranked.sort(key=lambda item: item[:3])
+    return [(pair, level, score) for level, _, _, pair, score in ranked]
 
 
 def benchmark_for_node(course, node):
     """Real problems the AI should treat as the standard for this node's question, with how close each is."""
-    near = _neighbours(course, node["id"])
-
-    def closeness(problem):
-        if primary_node(problem) == node["id"]:
-            return 0
-        if node["id"] in related_nodes(problem):
-            return 1
-        if primary_node(problem) in near:
-            return 2
-        return 3
-
-    ranked = sorted((closeness(pair[1]), index, pair) for index, pair in enumerate(real_problems(course)))
+    ranked = rank_problems(course, node)
     if strict_scope(course):
         # Strict review limits AI references to problems the learner's own links tie to this node.
-        ranked = [item for item in ranked if item[0] <= 1]
-    return [(pair, level) for level, _, pair in ranked[:BENCHMARK_PER_QUESTION]]
+        ranked = [item for item in ranked if item[1] <= 1]
+    return [(pair, level) for pair, level, _ in ranked[:BENCHMARK_PER_QUESTION]]
 
 
 def _benchmark_entries(pairs, image_limit):
@@ -397,7 +411,7 @@ def benchmark_prompt(course, node):
     return (
         "\n真题基准（用户导入的真实题目，不是AI生成）：出题的题型、难度、条件完整度、设问方式、"
         "考查深度和答题量都要对齐这些真题的标准。relation 说明真题和本知识点的远近：本知识点的真题最贴近，优先参照；"
-        "相关或相邻知识点的真题只学它的出题方式，考查内容仍是本知识点。"
+        "相关或内容相近的真题只学它的出题方式，考查内容仍是本知识点。"
         "不要照抄原题，换情境、数值或设问角度；题目仍须只凭本节点材料能作答。"
         "rubric 参照真题答案的得分点写法。screenshots 里的“图N”是随本请求附上的第N张图片，即该真题的原始截图，"
         "以截图为准；新题本身用文字写出，不要求用户看图。\n"
@@ -837,6 +851,15 @@ def register_problem_bank(app, store, learning):
             raise KeyError("原文件不存在")
         return FileResponse(matches[0], filename=source["name"], content_disposition_type="inline",
                             headers={"Content-Security-Policy": MATERIAL_FILE_CSP})
+
+    @app.get("/api/courses/{cid}/nodes/{nid}/problem-references")
+    def references(cid: str, nid: str):
+        """The real problems AI would take as the standard for this node's next question."""
+        course = store.course(cid)
+        node = find_node(course, nid)
+        return [dict(set_id=problem_set["id"], problem_id=problem["id"], set_title=problem_set["title"],
+                     number=problem.get("number", ""), relation=CLOSENESS[level])
+                for (problem_set, problem), level in benchmark_for_node(course, node)]
 
     @app.post("/api/courses/{cid}/nodes/{nid}/question/from-problem")
     def practise(cid: str, nid: str, request: PracticeProblem):

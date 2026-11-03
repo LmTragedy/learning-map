@@ -252,30 +252,52 @@ def test_ai_links_problems_to_nodes_but_keeps_manual_links(session):
     assert "知识点" in model.prompts[-1] and nodes[0] in model.prompts[-1]
 
 
-def test_one_main_node_and_nearest_problems_as_benchmark(session):
+def test_one_main_node_and_content_close_problems_as_benchmark(session):
     client, store, model, course, base = session
     nodes = course["nodes"]
-    created = client.post(base + "/problem-sets", data={"title": "Exam", "text": "1. own\n2. related\n3. far"}).json()
+    text = ("1. Explain why a primary key cannot be null and how a foreign key references another table.\n"
+            "2. Two users update the same row concurrently. Explain the lost update and how locking prevents it.\n"
+            "3. Compute the integral of x^2 on [0, 2].\n"
+            "4. A bank transfer debits A and credits B. If the credit fails, should it commit or rollback?")
+    created = client.post(base + "/problem-sets", data={"title": "Exam", "text": text}).json()
     problem_set = created["problem_sets"][0]
-    own, related, far = problem_set["problems"]
-    # Several ids sent for one problem: the first is its home, the rest become related references.
+    keys, lost_update, integral, transfer = problem_set["problems"]
     latest = client.get(base).json()
+    # Several ids sent for one problem: the first is its home, the rest become related references.
     saved = client.put(base + f"/problem-sets/{problem_set['id']}", json={"revision": latest["revision"], "title": "Exam", "problems": [
-        dict(own, node_ids=[nodes[1]["id"], nodes[2]["id"]]),
-        dict(related, node_ids=[nodes[3]["id"]], related_node_ids=[nodes[0]["id"]]),
-        dict(far, node_ids=[])]}).json()
+        dict(keys, node_ids=[nodes[0]["id"], nodes[2]["id"]]), dict(lost_update, node_ids=[nodes[3]["id"]]),
+        dict(integral, node_ids=[]), dict(transfer, node_ids=[nodes[2]["id"]], related_node_ids=[nodes[1]["id"]])]}).json()
     stored = saved["problem_sets"][0]["problems"]
-    assert stored[0]["node_ids"] == [nodes[1]["id"]] and stored[0]["related_node_ids"] == [nodes[2]["id"]]
+    assert stored[0]["node_ids"] == [nodes[0]["id"]] and stored[0]["related_node_ids"] == [nodes[2]["id"]]
 
-    from backend.problem_bank import benchmark_for_node
+    from backend.problem_bank import rank_problems
     current = store.course(course["id"])
-    ranked = benchmark_for_node(current, current["nodes"][0])
-    levels = {pair[1]["id"]: level for pair, level in ranked}
-    assert levels[related["id"]] == 1
-    # Node 0 has no problem of its own, yet the neighbour's (node 1 follows it) comes before unrelated ones.
-    assert levels[own["id"]] == 2 and levels[far["id"]] == 3
-    assert [pair[1]["id"] for pair, _ in ranked][:2] == [related["id"], own["id"]]
+    # 提交与回滚 owns the transfer problem; keys only lists it as related.
+    levels = {pair[1]["id"]: level for pair, level, _ in rank_problems(current, current["nodes"][2])}
+    assert levels[transfer["id"]] == 0 and levels[keys["id"]] == 1
+    # 隔离与并发 owns lost-update; for 关系与键's neighbour 事务与 ACID nothing is linked, so content decides.
+    ranked = rank_problems(current, current["nodes"][1])
+    assert ranked[0][0][1]["id"] == transfer["id"] and ranked[0][1] == 1
+    by_id = {pair[1]["id"]: (level, score) for pair, level, score in ranked}
+    assert by_id[integral["id"]][1] < by_id[transfer["id"]][1]
 
+    references = client.get(base + f"/nodes/{nodes[1]['id']}/problem-references").json()
+    assert references[0]["problem_id"] == transfer["id"] and references[0]["relation"] == "与本知识点相关的真题"
     model.reply = {"prompt": "新题", "kind": "变体", "rubric": "要点"}
-    client.post(base + f"/nodes/{nodes[0]['id']}/question")
-    assert "相邻知识点的真题" in model.prompts[-1] and "与本知识点相关的真题" in model.prompts[-1]
+    client.post(base + f"/nodes/{nodes[1]['id']}/question")
+    assert "与本知识点相关的真题" in model.prompts[-1]
+
+
+def test_content_similarity_prefers_matching_topic():
+    from backend.problem_similarity import similarities
+    from backend.sample import SAMPLE
+    course = dict(materials=[dict(id="m", pages=[dict(number=i + 1, text="\n".join(lines)) for i, (_, _, lines) in enumerate(SAMPLE)])],
+                  nodes=[dict(id=str(i), title=title, summary=summary, sources=[dict(material_id="m", page=i + 1, quote="")])
+                         for i, (title, summary, _) in enumerate(SAMPLE)])
+    problems = [dict(text="Explain why a primary key cannot be null and how a foreign key references another table."),
+                dict(text="Two users update the same row concurrently. Explain the lost update and how locking prevents it."),
+                dict(text="Compute the integral of x^2 on [0, 2]."), dict(text="")]
+    keys = similarities(course, course["nodes"][0], problems)
+    isolation = similarities(course, course["nodes"][3], problems)
+    assert keys[0] > 0.1 and keys[0] > keys[1] and keys[0] > keys[2] and keys[3] == 0
+    assert isolation[1] > isolation[0] and isolation[1] > isolation[2]

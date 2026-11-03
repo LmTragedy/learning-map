@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { BookCheck, Paperclip, Play, RefreshCw, SkipForward, Sparkles } from 'lucide-react'
 import { api, problemImageUrl } from './api'
 import { answerDraft, completeAnswerDraft, subscribeAnswerDrafts, updateAnswerDraft } from './answerDrafts'
@@ -72,6 +72,18 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
   const passedCount = linkedProblems.filter(({ status }) => status === 'passed').length
   const currentRef = node.question?.problem_ref
   const nextProblem = linkedProblems.find(({ set, problem, status }) => status !== 'passed' && problemRef(set, problem) !== currentRef)
+  // Without real problems of its own, the node's AI questions follow the closest ones in the bank; show which.
+  const hasBank = (course.problem_sets || []).some(set => set.origin === 'real' && set.problems.length > 0)
+  const ownReal = linkedProblems.some(({ set }) => set.origin === 'real')
+  const [references, setReferences] = useState<{ key: string; items: Awaited<ReturnType<typeof api.problemReferences>> }>()
+  const referenceKey = `${course.id}:${node.id}:${course.revision}`
+  useEffect(() => {
+    if (!hasBank || ownReal) return
+    let live = true
+    api.problemReferences(course.id, node.id).then(items => { if (live) setReferences({ key: referenceKey, items }) }).catch(() => undefined)
+    return () => { live = false }
+  }, [course.id, node.id, referenceKey, hasBank, ownReal])
+  const shownReferences = references?.key === referenceKey ? references.items : []
   const practiseProblem = (setId: string, problemId: string) => void act('problem-practise', () => api.practiseProblem(course.id, node.id, setId, problemId))
   const tasks=useCourseTasks().tasks
   const asking=tasks.some(t=>t.kind==='question'&&t.target===node.id&&t.state!=='applied')
@@ -99,10 +111,17 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
           ? <><p className="muted">本知识点有 {realCount} 道真题，直接从真题开始练。</p>
             <div className="decision-row"><Button onClick={() => practiseProblem(nextProblem.set.id, nextProblem.problem.id)} disabled={busy}><Play size={15}/>练真题</Button>
               <Button variant="outline" onClick={askQuestion} disabled={busy || !aiEnabled}><Sparkles size={15}/>AI 按真题出一道</Button></div></>
-          : <><p className="muted">{(course.problem_sets || []).some(set => set.origin === 'real' && set.problems.length)
-              ? '本知识点还没有自己的真题。AI 出题时会参考相关和相邻知识点的真题，按同样的题型和难度出。'
+          : <><p className="muted">{hasBank
+              ? '本知识点还没有自己的真题。AI 会参考题库里内容最相近的真题，按同样的题型和难度出一道。'
               : '生成一道基于当前节点的验收题，检查理解和应用。'}</p>
             <Button  onClick={askQuestion} disabled={busy || !aiEnabled}><Sparkles size={15}/>生成验收题</Button></>}
+        {!asking && !ownReal && shownReferences.length > 0 && <div className="practice-real">
+          <div className="practice-real-head"><span>AI 出题会参考这些真题</span></div>
+          <ul>{shownReferences.map(item => <li key={item.problem_id}>
+            <span className="pb-status">{item.relation.replace('同课程其他真题', '其他').replace('的真题', '').replace('与本知识点', '')}</span>
+            <span>{item.set_title}{item.number ? ` 第${item.number}题` : ''}</span>
+          </li>)}</ul>
+        </div>}
         {!asking && linkedProblems.length > 0 && <div className="practice-real">
           <div className="practice-real-head"><span>本知识点的题目 · {linkedProblems.length} 道{realCount ? `（真题 ${realCount}）` : ''}</span><span>通过 {passedCount}</span></div>
           <ul>{linkedProblems.map(({ set, problem, status }) => <li key={problem.id} className={problemRef(set, problem) === currentRef ? 'is-current' : ''}>

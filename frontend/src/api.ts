@@ -120,6 +120,8 @@ export const api = {
   deleteProblemSet: (cid: string, sid: string) => request<Course>(`/courses/${cid}/problem-sets/${sid}/delete`, json("POST", {})),
   generateUnit: (cid: string, value: { material_ids: string[]; problem_set_ids: string[]; count: number; focus: string }) =>
     request<Course>(`/courses/${cid}/problem-sets/generate`, json("POST", value)),
+  problemReferences: (cid: string, nid: string) =>
+    request<{ set_id: string; problem_id: string; set_title: string; number: string; relation: string }[]>(`/courses/${cid}/nodes/${nid}/problem-references`),
   practiseProblem: (cid: string, nid: string, set_id: string, problem_id: string) =>
     request<Course>(`/courses/${cid}/nodes/${nid}/question/from-problem`, json("POST", { set_id, problem_id })),
   goalCandidates: (cid: string) => request<GoalPreview>(`/courses/${cid}/goal-candidates`, json("POST", {})),
