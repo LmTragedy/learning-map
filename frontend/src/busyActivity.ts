@@ -19,7 +19,7 @@ export function useBusyActivity() {
 }
 
 /** Requests that wait on the model, which can take tens of seconds. */
-export const AI_KEYS = new Set(["chat", "lesson", "question", "attempt", "generate", "generate-lines", "recall-summary", "retell", "backfill-relations", "find-links", "goal-candidates"]);
+export const AI_KEYS = new Set(["chat", "lesson", "question", "attempt", "generate", "generate-lines", "recall-summary", "retell", "backfill-relations", "find-links", "goal-candidates", "problem-unit"]);
 
 /** Whole seconds since `since`, ticking once a second while `since` is set. */
 export function useElapsedSeconds(since: number) {

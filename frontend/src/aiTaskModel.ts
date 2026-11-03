@@ -27,12 +27,12 @@ export type TaskView = {
 };
 // Mirrors ACTIVE_TASK_STATES in backend/ai_tasks.py (checked by tests/test_ai_task_states.py).
 export const ACTIVE_STATES = new Set(['prepared','sending','running','processing']);
-export const DISPATCH_KINDS = new Set(['bridge','links','bridge_history','assessment','chat','lesson','map','question','recall','lines','retell','goals','note_review','material_index','child']);
+export const DISPATCH_KINDS = new Set(['bridge','links','bridge_history','assessment','chat','lesson','map','question','recall','lines','retell','goals','note_review','material_index','problem_unit','child']);
 export const taskTime = (value: string) => formatTime(value);
 export function taskName(task: AiTask, course?: Course) {
   if (task.kind === 'child') return task.role === 'material_page_index' ? 'Luna 阅读材料' : task.role === 'recall_summary' ? 'Luna 整理学习记录' : 'Luna 文字子任务';
   const kind = task.kind === 'history' ? task.history_kind || 'history' : task.kind;
-  const verb = {lesson: task.inputs?.kind === 'supplement' ? '补一节小课' : '生成小课', chat:'回复',question:'生成验收题',assessment:'检查作答',bridge:'补充知识桥',links:'重新找前后联系',bridge_backfill:'补充知识桥',bridge_history:'历史知识桥',map:'更新地图',material_index:'建立材料索引',lines:'生成主线',recall:'整理学习内容',retell:'检查复述',goals:'提取目标',note_review:'检查笔记',history:'历史任务'}[kind] || (task.kind === 'history' ? '历史任务' : kind);
+  const verb = {lesson: task.inputs?.kind === 'supplement' ? '补一节小课' : '生成小课', chat:'回复',question:'生成验收题',assessment:'检查作答',bridge:'补充知识桥',links:'重新找前后联系',bridge_backfill:'补充知识桥',bridge_history:'历史知识桥',map:'更新地图',material_index:'建立材料索引',lines:'生成主线',recall:'整理学习内容',retell:'检查复述',goals:'提取目标',problem_unit:'按真题出单元题',note_review:'检查笔记',history:'历史任务'}[kind] || (task.kind === 'history' ? '历史任务' : kind);
   const label = course?.nodes.find(n => n.id === task.target)?.title || course?.edges.find(e => e.id === task.target)?.explanation;
   return label ? `${verb}「${label}」` : verb;
 }

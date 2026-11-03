@@ -64,6 +64,7 @@ const json = (method: string, value?: unknown): RequestInit => ({
 /** Direct links to files the browser opens itself (iframes, new tabs), so they skip `request`. */
 export const materialFileUrl = (cid: string, mid: string, page?: number) =>
   `/api/courses/${cid}/materials/${mid}/file${page ? `#page=${page}` : ""}`;
+export const problemFileUrl = (cid: string, sid: string, fid: string) => `/api/courses/${cid}/problem-sets/${sid}/files/${fid}`;
 export const lessonHtmlUrl = (cid: string, nid: string, lid: string) => `/api/courses/${cid}/nodes/${nid}/lessons/${lid}/html`;
 
 export const api = {
@@ -89,6 +90,21 @@ export const api = {
   course: (id: string) => request<Course>(`/courses/${id}`),
   addGoal: (cid: string, goal: GoalFields) => request<Course>(`/courses/${cid}/goals`, json("POST", goal)),
   updateGoal: (cid: string, gid: string, goal: GoalFields & { revision: number }) => request<Course>(`/courses/${cid}/goals/${gid}`, json("PUT", goal)),
+  createProblemSet: (cid: string, value: { title: string; text: string; answer_text: string; files: File[] }) => {
+    const body = new FormData();
+    body.append("title", value.title);
+    body.append("text", value.text);
+    body.append("answer_text", value.answer_text);
+    value.files.forEach((file) => body.append("files", file));
+    return request<Course>(`/courses/${cid}/problem-sets`, { method: "POST", body });
+  },
+  updateProblemSet: (cid: string, sid: string, value: { revision: number; title: string; instructions: string; problems: { id: string; number: string; text: string; answer: string; node_ids: string[] }[] }) =>
+    request<Course>(`/courses/${cid}/problem-sets/${sid}`, json("PUT", value)),
+  deleteProblemSet: (cid: string, sid: string) => request<Course>(`/courses/${cid}/problem-sets/${sid}/delete`, json("POST", {})),
+  generateUnit: (cid: string, value: { material_ids: string[]; problem_set_ids: string[]; count: number; focus: string }) =>
+    request<Course>(`/courses/${cid}/problem-sets/generate`, json("POST", value)),
+  practiseProblem: (cid: string, nid: string, set_id: string, problem_id: string) =>
+    request<Course>(`/courses/${cid}/nodes/${nid}/question/from-problem`, json("POST", { set_id, problem_id })),
   goalCandidates: (cid: string) => request<GoalPreview>(`/courses/${cid}/goal-candidates`, json("POST", {})),
   acceptGoals: (cid: string, token: string, indices: number[]) => request<Course>(`/courses/${cid}/goals/accept`, json("POST", { token, indices })),
   savePersonalNote: (cid: string, nid: string, content: string, expected: string, title?: string) => request<Course>(`/courses/${cid}/nodes/${nid}/personal-note`, json("PUT", { content, expected, ...(title === undefined ? {} : { title }) })),

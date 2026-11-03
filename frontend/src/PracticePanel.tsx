@@ -1,11 +1,12 @@
 import { useState, useSyncExternalStore } from 'react'
-import { Paperclip, RefreshCw, Sparkles } from 'lucide-react'
+import { BookCheck, Paperclip, RefreshCw, Sparkles } from 'lucide-react'
 import { api } from './api'
 import { answerDraft, completeAnswerDraft, subscribeAnswerDrafts, updateAnswerDraft } from './answerDrafts'
 import { BridgeGaps } from './BridgeGaps'
 import type { Attempt, Course, LearningNode } from './types'
 import { TaskCards, useCourseTasks } from './aiTasks'
 import { Button } from './components/ui/button'
+import './problemBank.css'
 
 type Props = {
   course: Course
@@ -64,6 +65,12 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
   }
 
   const askQuestion = () => void act('question', () => api.question(course.id, node.id))
+  // Real problems the learner linked to this node: practise them directly; AI questions also follow their standard.
+  const linkedProblems = (course.problem_sets || []).flatMap(set =>
+    set.problems.filter(problem => problem.node_ids.includes(node.id)).map(problem => ({ set, problem })))
+    .sort((a, b) => Number(a.set.origin === 'ai') - Number(b.set.origin === 'ai'))
+  const realCount = linkedProblems.filter(({ set }) => set.origin === 'real').length
+  const practiseProblem = (setId: string, problemId: string) => void act('problem-practise', () => api.practiseProblem(course.id, node.id, setId, problemId))
   const tasks=useCourseTasks().tasks
   const asking=tasks.some(t=>t.kind==='question'&&t.target===node.id&&t.state!=='applied')
   const judging=tasks.some(t=>t.kind==='assessment'&&t.target===node.id&&t.state!=='applied')
@@ -80,6 +87,13 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
           ? <p>{node.question.prompt}</p>
           : <><p className="muted">生成一道基于当前节点的验收题，检查理解和应用。</p>
             <Button  onClick={askQuestion} disabled={busy || !aiEnabled}><Sparkles size={15}/>生成验收题</Button></>}
+        {!asking && linkedProblems.length > 0 && <div className="practice-real">
+          <p className="muted small">{realCount > 0 ? `本知识点关联了 ${realCount} 道真题，AI 出题会对齐它们的标准。` : ''}也可以直接练：</p>
+          <ul>{linkedProblems.map(({ set, problem }) => <li key={problem.id}>
+            <span title={problem.text}>{set.origin === 'real' ? '真题' : 'AI 单元题'} · {set.title}{problem.number ? ` 第${problem.number}题` : ''}：{problem.text.slice(0, 60)}</span>
+            <button className="link-button" disabled={busy || judging} onClick={() => practiseProblem(set.id, problem.id)}><BookCheck size={13}/>练这道</button>
+          </li>)}</ul>
+        </div>}
       </div>
       <div className="practice-editor">
         {latest && <p className="muted small">默认补充同一道题的上一份作答；选择独立重答后，本次不会引用旧答案。</p>}

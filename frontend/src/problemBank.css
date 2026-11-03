@@ -1,0 +1,47 @@
+.modal:has(.problem-bank) { width: min(100%, 1120px); }
+.problem-bank { gap: 16px; }
+.problem-toolbar, .problem-set-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.problem-muted { font-size: var(--fs-xs); color: var(--muted-foreground); line-height: 1.7; }
+.problem-error { font-size: var(--fs-sm); color: var(--destructive); }
+.problem-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.problem-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 20px; min-width: 0; }
+.problem-sets { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.problem-set-card { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; height: auto; gap: 4px; text-align: left; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); overflow-wrap: anywhere; cursor: pointer; }
+.problem-set-card:hover { border-color: var(--muted-foreground); }
+.problem-set-card.is-selected { border-color: var(--state-new); background: var(--card); }
+.problem-set-card strong { font-size: var(--fs-sm); font-weight: 500; line-height: 1.5; }
+.problem-set-card span { font-size: var(--fs-xs); color: var(--muted-foreground); }
+.problem-set-card:disabled { opacity: .45; cursor: default; }
+.problem-main { min-width: 0; }
+.problem-set-view, .problem-form { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.problem-set-view h3, .problem-form h3 { display: flex; align-items: center; gap: 8px; font-size: var(--fs-section); font-weight: 600; }
+.problem-set-view a { text-decoration: underline; }
+.problem-standard { font-size: var(--fs-sm); line-height: 1.7; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.problem-item { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 1px solid var(--border); font-size: var(--fs-sm); }
+.problem-item header { display: flex; align-items: center; gap: 8px; }
+.problem-item footer { display: flex; flex-wrap: wrap; gap: 6px; }
+.problem-item summary { cursor: pointer; font-size: var(--fs-xs); color: var(--muted-foreground); }
+.problem-text { white-space: pre-wrap; line-height: 1.75; overflow-wrap: anywhere; }
+.problem-form fieldset { border: 0; padding: 0; margin: 0; }
+.problem-form legend { font-size: var(--fs-sm); font-weight: 600; margin-bottom: 8px; }
+.problem-checks { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; font-size: var(--fs-sm); }
+.problem-checks label { display: flex; align-items: baseline; gap: 8px; }
+.problem-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.problem-grow { flex: 1; min-width: 200px; }
+.problem-number { width: 110px; }
+.problem-file { align-self: flex-start; }
+.problem-edit { display: flex; flex-direction: column; gap: 10px; padding-top: 14px !important; border-top: 1px solid var(--border) !important; }
+.problem-nodes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.problem-nodes select { font-size: var(--fs-xs); padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); color: inherit; }
+.problem-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: var(--fs-xs); }
+.problem-chip button { display: inline-flex; padding: 2px; border-radius: 999px; cursor: pointer; }
+.problem-sticky { position: sticky; bottom: 0; justify-content: flex-end; padding: 10px 0; background: var(--surface); }
+.practice-real { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.practice-real ul { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.practice-real li .link-button { flex-shrink: 0; white-space: nowrap; }
+.practice-real li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--fs-xs); }
+.practice-real li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+@media (max-width: 780px) {
+  .problem-layout { grid-template-columns: minmax(0, 1fr); }
+  .problem-toolbar, .problem-set-head { flex-direction: column; }
+}

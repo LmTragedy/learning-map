@@ -191,6 +191,32 @@ export type CourseNote = {
   updated_at: string;
 };
 
+export type Problem = {
+  id: string;
+  number: string;
+  text: string;
+  answer: string;
+  node_ids: string[];
+  /** AI unit problems only. */
+  kind?: string;
+  sources?: { material_id: string; page: number }[];
+  benchmark_ids?: string[];
+};
+
+export type ProblemSet = {
+  id: string;
+  title: string;
+  /** real: imported by the learner; ai: generated to the standard of real sets. */
+  origin: "real" | "ai";
+  created_at: string;
+  files: { id: string; name: string; kind: string }[];
+  problems: Problem[];
+  /** Shared instructions printed before problem 1. */
+  instructions?: string;
+  standard?: string;
+  basis?: { material_ids: string[]; problem_set_ids: string[]; focus: string };
+};
+
 export type Course = {
   id: string;
   title: string;
@@ -201,6 +227,7 @@ export type Course = {
   material_index?: { indexed: number; total: number };
   nodes: LearningNode[];
   goals?: Goal[];
+  problem_sets?: ProblemSet[];
   notes?: CourseNote[];
   lines?: Line[];
   overview?: { summary: string; abilities: string[] };

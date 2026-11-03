@@ -646,6 +646,8 @@ class Learning:
         )
 
     def _question(self, course_id, node_id):
+        from .problem_bank import benchmark_prompt  # problem_bank builds on this module
+
         course = self.store.course(course_id)
         node = find_node(course, node_id)
         question = structured(
@@ -658,7 +660,8 @@ class Learning:
             "rubric列出2–4条可逐条判断的得分要点和1–2个常见错误，写语义和推理标准。"
             "若题干采用英文，prompt中将英文题干和AI中文题意说明分开，先说明情境、任务与限制，"
             "不能在题意说明中泄露解题结论。可先中文理清，再邀请用简单英文独立作答，允许中文澄清。\n"
-            + node_context(course, node),
+            + node_context(course, node)
+            + benchmark_prompt(course, node),
             Question,
             {"conversation": review_label(course, node, "出题")},
         )
