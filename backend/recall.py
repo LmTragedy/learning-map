@@ -3,7 +3,7 @@ import json
 from .ai_tasks import current_task_id, save_task_result
 from .conversation_labels import remember_conversation
 from .domain import find_node
-from .learning import LearningError, structured
+from .learning import BASE_SYSTEM, LearningError, structured
 from .review_scope import active_records, require_review_node, review_label, scope_key
 from .schemas import RecallSummary
 from .store import Conflict, timestamp
@@ -60,7 +60,7 @@ def _summarize_recall(learning, course_id, node_id):
 
 def _recall_child_result(learning, prompt, label, history):
     reply = structured(learning.ai(model="gpt-6-luna", effort="medium"),
-                       prompt, RecallSummary, {"conversation": label})
+                       prompt, RecallSummary, {"conversation": label}, system=BASE_SYSTEM)
     _validate_evidence(reply.payload, history)
     return dict(payload=reply.payload, thread_id=reply.thread_id)
 
