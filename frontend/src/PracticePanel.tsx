@@ -104,7 +104,8 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
         {progress.confirmed_points.map(point => <p key={point.id}>✓ {point.point} <span className="muted small">“{point.quote}”</span></p>)}
         {progress.blockers.map((blocker, index) => <p key={`${index}-${blocker}`}>待补充：{blocker}</p>)}
       </section>}
-      {chain.length > 0 && <details className="result-card" open><summary>同题历史作答（{chain.length}）</summary>{chain.map((attempt, index) => <article key={attempt.id}>
+      {/* The latest attempt is the result card below, so the history lists only the earlier ones. */}
+      {chain.length > 1 && <details className="result-card"><summary>同题历史作答（{chain.length - 1}）</summary>{chain.slice(0, -1).map((attempt, index) => <article key={attempt.id}>
         <h4>第 {index + 1} 次 · AI 原判：{outcomeLabel(attempt.judgment.outcome)}{attempt.resolution ? ` · 用户决定：${resolutionLabel(attempt.resolution)}` : ''}</h4>
         <p style={{ whiteSpace: 'pre-wrap' }}>{attempt.answer || '（未附文字）'}</p>
         {attempt.attachments.map(file => <details key={file.id}><summary>{file.name}</summary>{file.pages.map(page => <p key={page.number} className="muted small">第 {page.number} 页：{page.text}</p>)}</details>)}

@@ -95,6 +95,8 @@
 .practice-editor:focus-within { border-color: var(--state-locked); }
 .practice-editor textarea { min-height: 220px; padding: 14px 16px; border: 0 !important; border-radius: 0; box-shadow: none !important; background: transparent !important; font-size: var(--fs-read); line-height: 1.8; resize: vertical; }
 .practice-editor .file-chips { padding: 0 14px 8px; }
+.practice-editor > p { margin: 0; padding: 10px 16px 0; }
+.practice-editor > label { display: flex; align-items: center; gap: 6px; padding: 6px 16px 0; }
 .practice-editor-foot { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 14px; border-top: 1px solid var(--border); }
 .practice-editor-foot .upload-inline { display: flex; align-items: center; gap: 6px; color: var(--muted-foreground); font-size: var(--fs-sm); }
 .practice-editor-foot .upload-inline:hover { color: var(--foreground); }
@@ -102,8 +104,9 @@
 .practice-editor-foot > span { margin-left: auto; white-space: nowrap; }
 .practice-editor-foot > span + button { margin-left: 0; }
 .practice-side .result-card { padding: 0; border: 0; background: none; }
-.practice-side .result-head { justify-content: flex-start; gap: 10px; }
-.outcome { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px; font-size: var(--fs-xs); font-weight: 500; border: 1px solid; }
+.practice-side .result-head { justify-content: flex-start; flex-wrap: wrap; gap: 6px 10px; }
+.practice-side .result-head > span { white-space: nowrap; }
+.outcome { display: inline-flex; align-items: center; height: 24px; white-space: nowrap; padding: 0 10px; border-radius: 999px; font-size: var(--fs-xs); font-weight: 500; border: 1px solid; }
 .outcome-passed { color: var(--state-passed); border-color: color-mix(in srgb, var(--state-passed) 35%, transparent); background: color-mix(in srgb, var(--state-passed) 10%, transparent); }
 .outcome-failed, .outcome-uncertain { color: var(--state-new); border-color: color-mix(in srgb, var(--state-new) 35%, transparent); background: color-mix(in srgb, var(--state-new) 10%, transparent); }
 

@@ -6,6 +6,7 @@ import { cn } from "./lib/utils";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { TaskCards, useCourseTasks } from './aiTasks';
 import { taskTime } from './aiTaskModel';
+import type { AiTask } from './aiTaskModel';
 import type { LearningNode } from "./types";
 
 /** Follow-ups that fit almost any explanation; a click puts one in the draft, it is never sent on its own. */
@@ -28,7 +29,9 @@ export function NodeChat({ node, busy, aiEnabled, message, fieldRef, context, on
   // The message just sent stays visible above the thinking bubble until the reply is saved.
   const [sent, setSent] = useState("");
   const [confirmNewConversation,setConfirmNewConversation]=useState(false), [resettingConversation,setResettingConversation]=useState(false), [resetError,setResetError]=useState('');
-  const pending=ledger.tasks.filter(t=>!t.history_only&&t.kind!=='history'&&t.kind==='chat'&&t.target===node.id&&t.state!=='applied'&&(t.state!=='superseded'||!!t.superseded_by))
+  // A regenerated message stays only while its replacement is still unfinished; once that reply is saved it is in node.chats.
+  const replacementOpen=(t:AiTask)=>ledger.tasks.some(next=>next.request_id===t.superseded_by&&next.state!=='applied'&&next.state!=='superseded');
+  const pending=ledger.tasks.filter(t=>!t.history_only&&t.kind!=='history'&&t.kind==='chat'&&t.target===node.id&&t.state!=='applied'&&(t.state!=='superseded'||(!!t.superseded_by&&replacementOpen(t))))
     .sort((left,right)=>left.created_at.localeCompare(right.created_at));
   const thinking=pending.length;
   const blocking=pending.some(t=>['prepared','sending','running','processing'].includes(t.state));
