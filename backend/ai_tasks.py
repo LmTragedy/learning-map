@@ -304,11 +304,11 @@ class TaskManager:
 
     def _record_child_failure(self, child_id, error):
         latest = self.get(child_id)
+        # A saved reply that failed parsing or evidence checks fails the same way on every replay, so
+        # it is invalid, not "received": marking it received made the parent look recoverable forever.
         state = "unknown" if latest.get("request") and not latest.get("raw_reply") else "invalid"
         if not latest.get("request"):
             state = "rejected"
-        elif latest.get("raw_reply"):
-            state = "received"
         self.update(child_id, state=state, error=str(error))
 
     def _reserve(self, invocation):
