@@ -1,20 +1,14 @@
-"""Attach existing course sources to saved lessons without requesting model work."""
+"""Source-backed visual items built from saved course pages (used when old visual-era lesson receipts replay)."""
 
-import copy
 import hashlib
 import json
 from typing import Annotated
 
 from pydantic import Field, StrictInt
 
-from .ai_result_refs import _fingerprint, presented_result
-from .domain import find_node
 from .files import material_original
-from .review_scope import require_review_record, strict_scope
+from .review_scope import strict_scope
 from .schemas import Input
-from .store import Conflict
-
-MAX_VISUALS = 40
 
 
 def _normalized(value):
@@ -25,11 +19,6 @@ class SourceProcess(Input):
     title: str = Field(min_length=1, max_length=180)
     material_id: str = Field(min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_-]+$")
     pages: list[Annotated[StrictInt, Field(ge=1)]] = Field(min_length=2, max_length=20)
-
-
-class RecoverVisuals(Input):
-    revision: StrictInt = Field(ge=0)
-    processes: list[SourceProcess] = Field(default_factory=list, max_length=5)
 
 
 def _source_page(store, course, material_id, number, quote=""):
@@ -98,60 +87,3 @@ def _process_visual(store, course, process):
                           matched=source["matched"], uncertain=source["uncertain"]))
     return dict(id=_visual_id("process", process.model_dump()), title=process.title, kind="process",
                 provenance="source", source=first_source, steps=steps)
-
-
-def _merged_visuals(store, course, lesson, request):
-    existing = copy.deepcopy(lesson.get("visuals", []))
-    if not isinstance(existing, list) or any(
-        not isinstance(visual, dict) or not isinstance(visual.get("id"), str)
-        or type(visual.get("number")) is not int or visual["number"] < 1
-        for visual in existing
-    ):
-        raise ValueError("已保存的例图列表格式异常，原始结果未覆盖。")
-    ids = {v["id"] for v in existing}
-    number = max((v["number"] for v in existing), default=0)
-    recovered = _source_visuals(store, course, lesson)
-    recovered.extend(_process_visual(store, course, process) for process in request.processes)
-    for visual in recovered:
-        if visual["id"] not in ids:
-            number += 1
-            existing.append(visual | dict(number=number))
-            ids.add(visual["id"])
-    if len(existing) > MAX_VISUALS:
-        raise ValueError("例图超过 40 项，未静默丢弃已有内容。")
-    return existing
-
-
-def _sync_receipts(connection, before, course, lesson):
-    """Only extend receipts already verified against the unchanged original lesson."""
-    for row in connection.execute("SELECT * FROM ai_tasks WHERE course_id=?", (course["id"],)).fetchall():
-        body = json.loads(row["body"])
-        task = body | {key: row[key] for key in ("id", "course_id", "kind", "target", "state")}
-        reference = body.get("result_ref", {})
-        if reference.get("kind") != "lesson" or reference.get("object_id") != lesson["id"]:
-            continue
-        if not presented_result(task, before).get("result_ref", {}).get("available"):
-            continue
-        body["result_object"] = copy.deepcopy(lesson)
-        body["result_ref"]["fingerprint"] = _fingerprint("lesson", lesson)
-        connection.execute("UPDATE ai_tasks SET body=? WHERE id=?", (json.dumps(body, ensure_ascii=False), row["id"]))
-
-
-def recover_visuals(store, course_id, node_id, lesson_id, request):
-    from .lessons import find_lesson
-
-    course = store.course(course_id)
-    if course["revision"] != request.revision:
-        raise Conflict("课程已改变，请刷新后接入已有来源；原始内容未覆盖。")
-    lesson = find_lesson(find_node(course, node_id), lesson_id)
-    require_review_record(course, lesson)
-    visuals = _merged_visuals(store, course, lesson, request)
-    if visuals == lesson.get("visuals", []):
-        return course
-    with store.edit(course_id, expected=request.revision) as (current, connection):
-        before = copy.deepcopy(current)
-        target = find_lesson(find_node(current, node_id), lesson_id)
-        store.snapshot(current, "接入小课原文和原图前自动备份", connection)
-        target["visuals"] = visuals
-        _sync_receipts(connection, before, current, target)
-    return store.course(course_id)

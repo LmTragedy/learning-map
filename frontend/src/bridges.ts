@@ -65,6 +65,3 @@ export function needsBridges(edge: Edge) {
 }
 
 /** Bridges a failed practice or a "不确定" self-check flagged; they are what the learner should go back to. */
-export function isWeak(bridge: Bridge) {
-  return bridge.state?.result === "missing" || bridge.state?.result === "unsure";
-}

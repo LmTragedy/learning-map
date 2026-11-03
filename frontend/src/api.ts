@@ -135,8 +135,6 @@ export const api = {
   lesson: (cid: string, nid: string, lesson: { kind: "initial" | "supplement"; focus: string; request_id: string }) =>
     request<Course>(`/courses/${cid}/nodes/${nid}/lessons`,
       json("POST", lesson)),
-  recoverLessonVisuals: (cid: string, nid: string, lid: string, revision: number, processes?: { title: string; material_id: string; pages: number[] }[]) =>
-    request<Course>(`/courses/${encodeURIComponent(cid)}/nodes/${encodeURIComponent(nid)}/lessons/${encodeURIComponent(lid)}/visuals/recover`, json("POST", processes ? { revision, processes } : { revision })),
   readLesson: (cid: string, nid: string, lid: string) =>
     request<Course>(`/courses/${cid}/nodes/${nid}/lessons/${lid}/read`, json("POST", {})),
   unreadLesson: (cid: string, nid: string, lid: string) =>
