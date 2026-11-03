@@ -431,10 +431,11 @@ def _append_prerequisites(course, specifications, key_to_node, fresh):
 def _map_relation(specification, key_to_node):
     source = key_to_node[specification["source"]]["id"]
     target = key_to_node[specification["target"]]["id"]
-    raw_related_ids = [source, target, *(key_to_node[key]["id"] for key in specification.get("related_keys", []))]
-    related_ids = list(dict.fromkeys(raw_related_ids))
-    if len(related_ids) < 2 or len(related_ids) != len(raw_related_ids):
-        raise LearningError("知识联系的端点合并为同一知识节点，地图未应用，请重新生成")
+    # Keys merged into the same existing node (same title) collapse into one end.
+    related_ids = list(dict.fromkeys(
+        [source, target, *(key_to_node[key]["id"] for key in specification.get("related_keys", []))]))
+    if source == target:
+        return None
     candidate = dict(specification)
     candidate.pop("related_keys", None)
     candidate.update(source=source, target=target, related_node_ids=related_ids)
@@ -457,6 +458,8 @@ def _append_generated_relations(course, specifications, key_to_node):
     edges = course.setdefault("edges", [])
     for specification in specifications:
         edge = _map_relation(specification, key_to_node)
+        if edge is None:
+            continue
         if any(_same_relation(existing, edge) for existing in edges):
             continue
         bridges = edge.pop("bridges", [])
@@ -553,7 +556,7 @@ class Learning:
             "summary写清这一项讲什么、关键条件和用途，不写空话。"
             "按内容安排例子/整体与先修关系，不要把相似关系误作前置。最多60节点，保留重要差异，"
             "不确定识别或概念合并要uncertain=true。请同时返回relations数组（允许为空），"
-            "关系source/target/related_keys只使用本次节点key。relation只能是前置知识、帮助理解、工具关系、"
+            "关系source/target/related_keys只使用本次节点key；related_keys只列两端以外还涉及的节点，没有就留空，不要重复source/target。relation只能是前置知识、帮助理解、工具关系、"
             "相似或对比、归纳关系。关系仅作为理解线索；填写解释、何时使用、依据、evidence_kind、来源页、"
             "双向初始难度、uncertain。material_quote/material_inference必须给sources，ai_inference可不提供来源；"
             "presentation=synthesis时给出synthesis_title和synthesis_summary。难度仅是未验证的初始估计。"
@@ -646,8 +649,14 @@ class Learning:
         )
 
     def _question(self, course_id, node_id):
+        from .problem_bank import benchmark_prompt, image_paths  # problem_bank builds on this module
+
         course = self.store.course(course_id)
         node = find_node(course, node_id)
+        benchmark, benchmark_refs = benchmark_prompt(course, node)
+        options = {"conversation": review_label(course, node, "出题")}
+        if benchmark_refs:
+            options["images"] = image_paths(self.store, course_id, benchmark_refs)
         question = structured(
             self.ai(),
             "按该节点内容设计一个合适的解释/案例/变体/组合验收，"
@@ -658,9 +667,10 @@ class Learning:
             "rubric列出2–4条可逐条判断的得分要点和1–2个常见错误，写语义和推理标准。"
             "若题干采用英文，prompt中将英文题干和AI中文题意说明分开，先说明情境、任务与限制，"
             "不能在题意说明中泄露解题结论。可先中文理清，再邀请用简单英文独立作答，允许中文澄清。\n"
-            + node_context(course, node),
+            + node_context(course, node)
+            + benchmark,
             Question,
-            {"conversation": review_label(course, node, "出题")},
+            options,
         )
         with self.store.edit(course_id, task_id=current_task_id()) as (current, _):
             require_same_node(course, current, node_id)
@@ -681,10 +691,18 @@ class Learning:
         validate_parent(course, node, submission.get("base_attempt_id", ""), submission.get("question_key", ""))
         if submission.get("question_key") and submission["question_key"] != question_key(question):
             raise LearningError("题目已变化，请刷新后重新作答")
+        from .problem_bank import question_image_paths  # problem_bank builds on this module
+
+        question_images, answer_images = question_image_paths(self.store, course, question)
         prompt = self._assessment_prompt(course, node, submission, question)
+        if question_images or answer_images:
+            prompt += (f"\n随附图片顺序：先 {len(question_images)} 张题目原始截图（以截图为准），"
+                       f"再 {len(answer_images)} 张参考答案截图（只用于核对，不要向用户整段复述），"
+                       "其后的图片才是用户的纸面作答。")
         if len(prompt) > 180000:
             raise LearningError("作答与来源超过本版上下文上限，请缩小范围")
-        options = {"images": image_paths, "conversation": review_label(course, node, "验收")}
+        options = {"images": [*question_images, *answer_images, *image_paths],
+                   "conversation": review_label(course, node, "验收")}
         return self._judgment_reply(prompt, options)
 
     def _assessment_prompt(self, course, node, submission, question):

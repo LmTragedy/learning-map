@@ -136,13 +136,14 @@
   a { color: #e4e4e7; text-underline-offset: 3px; }
 
   /* Legacy buttons inside dialogs and practice: shadcn button look */
-  .modal button:not([class*="inline-flex"]), .recall-panel button,
+  /* The problem bank (.pb) styles its own plain buttons. */
+  .modal button:not([class*="inline-flex"]):not(.pb button), .recall-panel button,
   .decision-row button{
     display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px;
     border: 1px solid transparent; border-radius: 8px; background: var(--control); color: var(--foreground);
     font-size: var(--fs-sm); font-weight: 500; cursor: var(--cursor-pointer); transition: background .15s;
   }
-  .modal button:not([class*="inline-flex"]):hover, .recall-panel button:hover, .decision-row button:hover { background: var(--control-hover); }
+  .modal button:not([class*="inline-flex"]):not(.pb button):hover, .recall-panel button:hover, .decision-row button:hover { background: var(--control-hover); }
   button.primary, .modal button.primary, .decision-row button.primary {
     background: var(--primary); color: var(--primary-foreground); border-color: var(--primary);
   }

@@ -42,6 +42,7 @@ from .material_indexing import register_material_index
 from .node_links import register_node_links
 from .note_review import register_note_review
 from .practice_progress import question_key, validate_parent
+from .problem_bank import register_problem_bank
 from .profile import accept_stage as apply_stage
 from .recall import summarize_recall
 from .relation_routes import register_relation_routes
@@ -103,6 +104,7 @@ def create_app(data_dir=None, ai_factory=None):
     register_line_routes(app, store)
     register_line_ai(app, store, learning)
     register_lesson_routes(app, store, learning)
+    register_problem_bank(app, store, learning)
     register_ai_task_routes(app, store, learning)
     _protection_routes(app, store)
     _settings_routes(app, store, factory)

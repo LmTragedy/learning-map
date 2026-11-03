@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AlertCircle, Archive, CircleHelp, Clock3, FileSearch, FolderOpen, FolderSync, History, LoaderCircle, NotebookPen, Plus, RotateCcw, Settings2, Target, Trash2, Upload, Waypoints, X } from "lucide-react";
+import { AlertCircle, Archive, CircleHelp, ClipboardList, Clock3, FileSearch, FolderOpen, FolderSync, History, LoaderCircle, NotebookPen, Plus, RotateCcw, Settings2, Target, Trash2, Upload, Waypoints, X } from "lucide-react";
 import { AI_KEYS, useBusyActivity, useElapsedSeconds } from "./busyActivity";
 import { Button } from "./components/ui/button";
 import type { Modal } from "./appLabels";
@@ -63,6 +63,7 @@ export function ModalIcon({ modal: m }: { modal: Modal }) {
     goals: Target,
     lines: Waypoints,
     "course-notes": NotebookPen,
+    problems: ClipboardList,
   };
   const Icon = icons[m || ""] || CircleHelp;
   return <Icon size={18} />;

@@ -42,6 +42,7 @@ import {
   CircleCheck,
   FolderSync,
   ListTree,
+  ClipboardList,
 } from "lucide-react";
 import { api, materialFileUrl } from "./api";
 import { cn } from "./lib/utils";
@@ -55,6 +56,7 @@ import { recommendedNode } from "./learningNavigation";
 import { isRelationVisible } from "./relationVisibility";
 import { NodePanel } from "./NodePanel";
 import { GoalBoard } from "./GoalBoard";
+import { ProblemBank } from "./ProblemBank";
 import { GoalActionsContext } from "./goalActions";
 import { goalProgressDiff, goalsForNode, type GoalChange } from "./goalContext";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -81,6 +83,15 @@ import type {
   RecallSummary,
   Settings,
 } from "./types";
+
+const DEEPSEEK_OPTIONS: [string, string][] = [["deepseek-chat", "DeepSeek（deepseek-chat）"]];
+
+/** Fixed choices, plus a previously saved custom model so opening settings never changes it. */
+function modelOptions(current: string | undefined, choices: [string, string][]) {
+  const saved = (current ?? "").trim();
+  const extra: [string, string][] = saved && !choices.some(([value]) => value === saved) ? [[saved, `${saved}（已保存）`]] : [];
+  return [...choices, ...extra].map(([value, label]) => <option key={value} value={value}>{label}</option>);
+}
 
 export function App() {
   const [courses, setCourses] = useState<CourseSummary[]>([]);
@@ -526,6 +537,7 @@ export function App() {
   const sideTools: NavTool[] = [
     { label: "目标看板", ...goalsTool },
     { label: "课程笔记", ...notesTool },
+    { label: "真题题库", Icon: ClipboardList, onClick: () => setModal("problems"), disabled: !course },
     { label: "学习档案", Icon: Archive, onClick: () => void openProfile() },
     { label: "Obsidian 导入导出", Icon: FolderSync, onClick: () => void showObsidian() },
     { label: "设置", Icon: Settings2, onClick: () => void openSettings() },
@@ -539,6 +551,7 @@ export function App() {
       if(target)openNode(target,edge?.id||'');
       if(task.kind==='lines'||task.kind==='retell'){setLineFocus(task.kind==='retell'?task.target:'');setModal('lines');}
       if(task.kind==='goals')setModal('goals');
+      if(task.kind==='problem_unit')setModal('problems');
       setTaskNavigation({task,sequence:Date.now()});
     }}>
     <div className={cn("shell flex h-dvh overflow-hidden bg-background text-foreground", navOpen && "nav-open")}>
@@ -673,6 +686,9 @@ export function App() {
                     <FileSearch /> 复习所选 PDF
                   </Button>
                 )}
+                <Button size="sm" variant="outline" onClick={() => setModal("problems")} title="导入真题，按真题标准出题和练习">
+                  <ClipboardList /> <span className="max-[480px]:hidden">真题题库{course.problem_sets?.length ? ` · ${course.problem_sets.length}` : ""}</span>
+                </Button>
                 <Button size="sm" variant="outline" onClick={() => void openImport()}>
                   <Upload /> <span className="max-[480px]:hidden">导入材料</span>
                 </Button>
@@ -985,7 +1001,7 @@ export function App() {
         <Dialog.Portal>
         <Dialog.Overlay className="modal-scrim">
           <Dialog.Content
-            className={`modal ${modal && ["profile", "versions", "obsidian", "recall", "import", "materials", "goals", "course-notes"].includes(modal) ? "modal-wide" : ""}`}
+            className={`modal ${modal && ["profile", "versions", "obsidian", "recall", "import", "materials", "goals", "course-notes", "problems"].includes(modal) ? "modal-wide" : ""}`}
             aria-describedby={undefined}
             // Clicking the backdrop never throws away typed input; it asks first, like Escape and ×.
             onPointerDownOutside={(event) => { if (modalDirty()) { event.preventDefault(); setDiscardFor(modal); } }}
@@ -1005,6 +1021,16 @@ export function App() {
             {modal === "lines" && course && <LinesPanel key={`${course.id}:${lineFocus}`} course={course} initialLineId={lineFocus} busy={busy} aiEnabled={aiOn} act={lineAct}
               onNode={(node) => openNode(node)} onNote={openMapNote} />}
             {modal === "goals" && course && <GoalBoard key={`${course.id}:${goalFocus}`} initialGoalId={goalFocus} course={course} busy={busy} aiEnabled={aiOn} run={run} onRefresh={refreshCourse} onNode={openGoalNode} />}
+            {modal === "problems" && course && <ProblemBank key={course.id} course={course} busy={busy} aiEnabled={aiOn} run={run} onRefresh={refreshCourse}
+              onOpenNode={(nodeId) => { setModal(null); openGoalNode(nodeId); }}
+              onPractise={(nodeId) => {
+                const node = course.nodes.find((item) => item.id === nodeId);
+                if (!node) return;
+                setModal(null);
+                openNode(node);
+                // Same path a finished question task takes: open this node's practice tab.
+                setTaskNavigation({ task: { id: `problem-${nodeId}`, course_id: course.id, kind: "question", target: nodeId, state: "applied", request_id: "", created_at: "", updated_at: "" }, sequence: Date.now() });
+              }} />}
             {modal === "course-notes" && course && <CourseNotes course={course}
               onExitReview={() => void saveReviewScope(false).then(() => setModal("course-notes"))}
               onOpen={(node, noteId = "") => openMapNote(node, noteId)} />}
@@ -1207,7 +1233,7 @@ export function App() {
                   <ShieldCheck size={18} />
                   <p>
                     AI 默认关闭。开启后，课程材料节选、对话和作答会发送到 Codex
-                    提供方处理；检查或目标提取模型填 DeepSeek 时，笔记和材料节选会发送到 DeepSeek。Codex
+                    提供方处理；检查或目标提取模型选 DeepSeek 时，笔记和材料节选会发送到 DeepSeek。Codex
                     也可能在其用户目录保存会话记录；删除课程不会清除这些记录，它们由
                     Codex 与提供方的设置管理。
                   </p>
@@ -1250,17 +1276,19 @@ export function App() {
                 </label>
                 <label className="field-label">
                   笔记自动检查模型（独立）
-                  <input value={settings.note_review_model || "gpt-6-luna"}
-                    onChange={(event) => setSettings({ ...settings, note_review_model: event.target.value })}
-                    placeholder="gpt-6-luna" />
-                  <span className="text-xs text-muted-foreground">笔记检查默认 Luna／中等推理；不改变学习对话模型。填 deepseek-chat 等 DeepSeek 模型时改用 DeepSeek。</span>
+                  <select value={settings.note_review_model || "gpt-6-luna"}
+                    onChange={(event) => setSettings({ ...settings, note_review_model: event.target.value })}>
+                    {modelOptions(settings.note_review_model, [["gpt-6-luna", "Luna（gpt-6-luna）"], ...DEEPSEEK_OPTIONS])}
+                  </select>
+                  <span className="text-xs text-muted-foreground">笔记检查默认 Luna／中等推理；不改变学习对话模型。选 DeepSeek 需在下方填写 API key。</span>
                 </label>
                 <label className="field-label">
                   课程目标提取模型（独立）
-                  <input value={settings.goal_model || ""}
-                    onChange={(event) => setSettings({ ...settings, goal_model: event.target.value })}
-                    placeholder="留空则沿用学习对话模型" />
-                  <span className="text-xs text-muted-foreground">可填 DeepSeek 模型；候选目标仍需核对引用并勾选确认。</span>
+                  <select value={settings.goal_model || ""}
+                    onChange={(event) => setSettings({ ...settings, goal_model: event.target.value })}>
+                    {modelOptions(settings.goal_model, [["", "沿用学习对话模型"], ...DEEPSEEK_OPTIONS])}
+                  </select>
+                  <span className="text-xs text-muted-foreground">候选目标仍需核对引用并勾选确认。</span>
                 </label>
                 <label className="field-label">
                   DeepSeek API key
@@ -1276,7 +1304,7 @@ export function App() {
                   <span className="text-xs text-muted-foreground">
                     {deepseekKey === "" && settings.deepseek_key_set
                       ? "保存后将删除已保存的 key。"
-                      : "只保存在本机 data/ 数据库中，页面不会再显示；用于上面填了 DeepSeek 模型的两项任务。"}
+                      : "只保存在本机 data/ 数据库中，页面不会再显示；用于上面选了 DeepSeek 的两项任务。"}
                   </span>
                 </label>
                 {health?.deepseek && (

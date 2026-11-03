@@ -49,6 +49,8 @@ const generationPaths = [
   /^\/courses\/[^/]+\/relations\/(?:[^/]+\/)?backfill$/,
   /^\/courses\/[^/]+\/nodes\/[^/]+\/personal-note\/review$/,
   /^\/courses\/[^/]+\/goal-candidates$/,
+  /^\/courses\/[^/]+\/problem-sets\/generate$/,
+  /^\/courses\/[^/]+\/problem-sets\/[^/]+\/link$/,
   /^\/courses\/[^/]+\/lines\/generate$/,
   /^\/courses\/[^/]+\/lines\/[^/]+\/retell$/,
 ];
