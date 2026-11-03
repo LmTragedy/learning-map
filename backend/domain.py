@@ -1,6 +1,8 @@
 import hashlib
 import json
 
+from .goals import project_goals
+from .relations import project_edges
 from .review_scope import project_review
 from .route import learning_route
 from .store import identity, timestamp
@@ -25,13 +27,16 @@ def is_complete(node):
 
 
 def project_course(course):
+    project_goals(course)
     completed = {node["id"] for node in course["nodes"] if is_complete(node)}
     for node in course["nodes"]:
         node["unlocked"] = is_complete(node) or set(node["prerequisites"]).issubset(completed)
         # Full HTML is retrieved separately so every chat does not retransmit every lesson.
         for lesson in node.get("lessons", []):
             lesson.pop("html", None)
-    course["route"] = learning_route(course["nodes"])
+    doing = [node_id for goal in course.get("goals", []) if goal.get("status") == "doing" for node_id in goal.get("node_ids", [])]
+    course["route"] = learning_route(course["nodes"], doing)
+    project_edges(course)
     return project_review(course)
 
 

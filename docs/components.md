@@ -2,7 +2,13 @@
 
 This document records the document-processing choices in this application. It does not claim that optional engines have been installed or tested.
 
+## Node note editor
+
+[CodeMirror 6](https://codemirror.net/) and its [Markdown language package](https://code.haverbeke.berlin/codemirror/lang-markdown), MIT, provide the node document's editing state, parsing, history and source-preserving live decorations. The application owns only the presentation policy and existing draft/save flow. [react-markdown](https://github.com/remarkjs/react-markdown) 10.1.0 and [remark-gfm](https://github.com/remarkjs/remark-gfm) 4.0.1, MIT, render reading mode. rehype-raw 7.0.0 and rehype-sanitize 6.0.0 (MIT) allow sanitized editor color/highlight spans and marks; arbitrary raw HTML is not trusted. Embedded images are replaced with text placeholders. Exact direct and transitive dependency versions are in `frontend/package-lock.json`; the editor is loaded when a node note opens. This is an independent node-note UI, not an Obsidian plugin or vault writer.
+
 ## Integrated adapters
+
+AI note review keeps the CodeMirror editing/history model and uses the existing real Codex adapter with a separate Luna setting. [Plate](https://github.com/udecode/plate) (MIT) was assessed through its official [suggestion](https://platejs.org/docs/suggestion) and [Markdown](https://platejs.org/docs/markdown) integrations. Its structured editor/suggestion values would require a source conversion and replacement of the existing editor. It is not installed: preserving existing Markdown and the current save/undo flow is the smaller compatible change. The application adds only draft scheduling, verified suggestion anchors, a compact review panel and user-confirmed CodeMirror transactions.
 
 | Component | Use | License and source |
 | --- | --- | --- |

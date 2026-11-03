@@ -1,11 +1,15 @@
 import type {
   Course,
   CourseSummary,
+  GoalFields,
+  GoalPreview,
   Preview,
   Profile,
   RecallSummary,
+  RelationKind,
   Settings,
 } from "./types";
+import type { NoteReviewResponse } from "./noteReviewTypes";
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
@@ -36,7 +40,14 @@ const json = (method: string, value?: unknown): RequestInit => ({
   method,
   body: value === undefined ? undefined : JSON.stringify(value),
 });
+/** Direct links to files the browser opens itself (iframes, new tabs), so they skip `request`. */
+export const materialFileUrl = (cid: string, mid: string, page?: number) =>
+  `/api/courses/${cid}/materials/${mid}/file${page ? `#page=${page}` : ""}`;
+export const lessonHtmlUrl = (cid: string, nid: string, lid: string) => `/api/courses/${cid}/nodes/${nid}/lessons/${lid}/html`;
+
 export const api = {
+  reviewPersonalNote: (cid: string, nid: string, draft: { content: string; revision: number; request_id: string; note_id?: string }, signal: AbortSignal) =>
+    request<NoteReviewResponse>(`/courses/${cid}/nodes/${nid}/personal-note/review`, { ...json("POST", draft), signal }),
   health: () =>
     request<{
       ai: { available: boolean; [key: string]: unknown };
@@ -45,8 +56,25 @@ export const api = {
     }>("/health"),
   courses: () => request<CourseSummary[]>("/courses"),
   course: (id: string) => request<Course>(`/courses/${id}`),
+  addGoal: (cid: string, goal: GoalFields) => request<Course>(`/courses/${cid}/goals`, json("POST", goal)),
+  updateGoal: (cid: string, gid: string, goal: GoalFields & { revision: number }) => request<Course>(`/courses/${cid}/goals/${gid}`, json("PUT", goal)),
+  goalCandidates: (cid: string) => request<GoalPreview>(`/courses/${cid}/goal-candidates`, json("POST", {})),
+  acceptGoals: (cid: string, token: string, indices: number[]) => request<Course>(`/courses/${cid}/goals/accept`, json("POST", { token, indices })),
+  savePersonalNote: (cid: string, nid: string, content: string, expected: string, title?: string) => request<Course>(`/courses/${cid}/nodes/${nid}/personal-note`, json("PUT", { content, expected, ...(title === undefined ? {} : { title }) })),
+  createNote: (cid: string, note: { title: string; node_ids: string[]; content?: string }) => request<Course>(`/courses/${cid}/notes`, json("POST", note)),
+  saveNote: (cid: string, id: string, note: { title: string; node_ids: string[]; content: string; expected: string }) =>
+    request<Course>(`/courses/${cid}/notes/${encodeURIComponent(id)}`, json("PUT", note)),
+  deleteNote: (cid: string, id: string) => request<Course>(`/courses/${cid}/notes/${encodeURIComponent(id)}`, { method: "DELETE" }),
   reviewScope: (id: string, value: { enabled: boolean; material_ids: string[]; ai_scope: "selected" | "course" }) =>
     request<Course>(`/courses/${id}/review-scope`, json("POST", value)),
+  relationPresentation: (cid: string, rid: string, presentation: "simple" | "synthesis", revision: number) =>
+    request<Course>(`/courses/${cid}/relations/${encodeURIComponent(rid)}/presentation`, json("POST", { presentation, revision })),
+  confirmRelation: (cid: string, rid: string, revision: number) =>
+    request<Course>(`/courses/${cid}/relations/${encodeURIComponent(rid)}/confirm`, json("POST", { revision })),
+  backfillRelations: (cid: string, revision: number) =>
+    request<Course>(`/courses/${cid}/relations/backfill`, json("POST", { revision })),
+  editRelation: (cid: string, rid: string, value: { revision: number; explanation: string; when_to_use: string; basis: string; relation: RelationKind; forward_difficulty: string; reverse_difficulty: string }) =>
+    request<Course>(`/courses/${cid}/relations/${encodeURIComponent(rid)}`, json("POST", value)),
   create: (title: string) =>
     request<Course>("/courses", json("POST", { title })),
   sample: () => request<Course>("/sample", json("POST", {})),

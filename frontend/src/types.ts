@@ -1,4 +1,6 @@
 export type NodeStatus = "new" | "studied" | "mastered" | "passed";
+export const RELATION_KINDS = ["前置知识", "帮助理解", "工具关系", "相似或对比", "归纳关系"] as const;
+export type RelationKind = (typeof RELATION_KINDS)[number];
 export type Attempt = {
   id: string;
   question: { prompt: string; kind: string; rubric: string };
@@ -56,6 +58,11 @@ export type Material = {
 };
 export type LearningNode = {
   id: string;
+  personal_note?: string;
+  personal_note_title?: string;
+  kind?: "concept" | "synthesis" | string;
+  related_node_ids?: string[];
+  relation_id?: string;
   title: string;
   summary: string;
   week: string;
@@ -65,6 +72,7 @@ export type LearningNode = {
   verification: "none" | "ai_passed" | "user_passed" | "review";
   review_verification?: "none" | "ai_passed" | "user_passed" | "review";
   uncertain: boolean;
+  material_variants?: { summary: string; sources: { material_id: string; page: number; quote: string }[]; uncertain: true }[];
   difficulty: string;
   chats: Chat[];
   attempts: Attempt[];
@@ -89,10 +97,40 @@ export type Lesson = {
 export type LearningRoute = {
   stages: { id: string; title: string; node_ids: string[] }[];
   next_node_id: string | null;
+  next_for_goal?: boolean;
   completed_count: number;
   total: number;
   warning: string;
 };
+export type GoalFields = {
+  title: string;
+  description: string;
+  kind: "course" | "personal";
+  status: "todo" | "doing" | "done";
+  node_ids: string[];
+  subtasks: { id: string; title: string; done: boolean; node_id?: string; auto_done?: boolean }[];
+};
+export type Goal = GoalFields & {
+  id: string;
+  created_at: string;
+  sources: { material_id: string; page: number; quote: string }[];
+  progress: { linked: number; studied: number; mastered: number; verified: number; review: number; subtasks_done: number; subtasks_total: number };
+};
+export type GoalPreview = {
+  token: string;
+  revision: number;
+  goals: { title: string; description: string; node_ids: string[]; subtasks: string[]; sources: Goal["sources"] }[];
+};
+/** A named note of its own, bound to one or more nodes (the node's main note lives on the node). */
+export type CourseNote = {
+  id: string;
+  title: string;
+  node_ids: string[];
+  content: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Course = {
   id: string;
   title: string;
@@ -100,12 +138,28 @@ export type Course = {
   created_at: string;
   materials: Material[];
   nodes: LearningNode[];
+  goals?: Goal[];
+  notes?: CourseNote[];
   edges: {
     id: string;
     source: string;
     target: string;
     relation: string;
     uncertain: boolean;
+    explanation?: string;
+    when_to_use?: string;
+    basis?: string;
+    evidence_kind?: "material_quote" | "material_inference" | "ai_inference" | string;
+    sources?: { material_id: string; page: number; quote: string }[];
+    confirmed?: boolean;
+    forward_difficulty?: string;
+    reverse_difficulty?: string;
+    presentation?: "simple" | "synthesis";
+    synthesis_node_id?: string;
+    controls_unlock?: boolean;
+    synthesis_link?: boolean;
+    origin_relation_id?: string;
+    related_node_ids?: string[];
   }[];
   ratings: unknown[];
   suggestions: { id: string; [key: string]: unknown }[];
@@ -152,6 +206,7 @@ export type Profile = {
 export type Settings = {
   ai_enabled: boolean;
   model: string;
+  note_review_model: string;
   reasoning_effort: "low" | "medium" | "high";
   obsidian_vault: string;
   parser: string;

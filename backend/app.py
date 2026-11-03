@@ -25,12 +25,18 @@ from .files import (
     material_original,
     material_page,
 )
+from .goal_routes import register_goal_routes
+from .goals_notes import register_goals_notes
 from .learning import Learning, recall_messages
 from .lesson_routes import register_lesson_routes
+from .note_review import register_note_review
 from .profile import accept_stage as apply_stage
 from .recall import summarize_recall
+from .relation_backfill import register_relation_backfill
+from .relation_routes import register_relation_routes
 from .review_scope import question_for, require_review_record, set_review_scope, strict_scope
 from .sample import create_sample
+from .security_headers import DEFAULT_CSP, MATERIAL_FILE_CSP
 from .schemas import (
     CreateCourse,
     Mark,
@@ -60,6 +66,12 @@ def create_app(data_dir=None, ai_factory=None):
     _errors(app)
     _course_routes(app, store, learning)
     _learning_routes(app, store, learning)
+    # Registered before /relations/{rid} so "backfill" is not read as a relation id.
+    register_relation_backfill(app, store, learning)
+    register_relation_routes(app, store)
+    register_goals_notes(app, store)
+    register_note_review(app, learning)
+    register_goal_routes(app, store, learning)
     register_lesson_routes(app, store, learning)
     _protection_routes(app, store)
     _settings_routes(app, store, factory)
@@ -88,11 +100,7 @@ def _security(app):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Cache-Control"] = "no-store"
-        response.headers.setdefault("Content-Security-Policy", (
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; "
-            "frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
-        ))
+        response.headers.setdefault("Content-Security-Policy", DEFAULT_CSP)
         return response
 
 
@@ -184,6 +192,7 @@ def _course_routes(app, store, learning):
             material_original(store, course_id, material_id),
             filename=material["name"],
             content_disposition_type="inline",
+            headers={"Content-Security-Policy": MATERIAL_FILE_CSP},
         )
 
     @app.get("/api/courses/{course_id}/materials/{material_id}/pages/{page_number}")
@@ -347,7 +356,7 @@ def _settings_routes(app, store, factory):
 
     @app.post("/api/settings")
     def update_settings(request: Settings):
-        updated = store.settings() | request.model_dump()
+        updated = store.settings() | request.model_dump(exclude_unset=True)
         store.save_settings(updated)
         return settings()
 

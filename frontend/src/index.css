@@ -38,7 +38,7 @@
 }
 
 @theme inline {
-  --font-sans: "Geist Variable", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --font-sans: "Noto Sans SC Variable", "Geist Variable", "PingFang SC", "Microsoft YaHei UI", sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, "Cascadia Code", monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -103,6 +103,13 @@
     .shell-side .course-item { align-items: center; }
   }
   @media not all and (min-width: 781px) and (max-width: 1279px) { .rail-tip { display: none; } }
+  /* The study workbench needs the width: the course list folds into the icon rail while it is open. */
+  @media (min-width: 781px) {
+    .shell:has(.workbench) .shell-side { width: 64px !important; padding-left: 8px !important; padding-right: 8px !important; }
+    .shell:has(.workbench) .rail-hide { display: none !important; }
+    .shell:has(.workbench) .rail-center { justify-content: center !important; padding-left: 0 !important; padding-right: 0 !important; }
+    .shell:has(.workbench) .shell-side .course-item { align-items: center; }
+  }
 
   /* Shared token names (--border) are declared in :root above too, unlayered; keep them equal. */
   .shell-side .course-item { border: 0; box-shadow: none; }
@@ -140,7 +147,9 @@
     padding: 7px 11px; font-size: 13px; box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
   }
   input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; border-color: #52525b; box-shadow: 0 0 0 3px rgba(212, 212, 216, .18); }
-  select option { background: #18181b; }
+  select option { background: #18181b; color: #fafafa; }
+  /* Group labels in native dropdowns otherwise fall back to the light system style. */
+  select optgroup { background: #18181b; color: #a1a1aa; font-style: normal; font-weight: 600; }
 
   /* Dialogs: shadcn Dialog look */
   .modal-scrim { background: rgba(0, 0, 0, .7); backdrop-filter: none; }
@@ -160,8 +169,26 @@
   .busy-indicator { background: var(--popover); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.5); color: var(--foreground); }
   .bubble.user p { background: var(--secondary); }
   .bubble.assistant p { background: transparent; border: 1px solid var(--border); }
-  .lesson-reader { background: var(--background); border: 1px solid var(--border); border-radius: 12px; color: var(--foreground); }
+  .lesson-reader { background: var(--background); border: 0; border-radius: 0; color: var(--foreground); }
   .toggle-row input[type="checkbox"]:checked::after { background: #18181b; }
   .toggle-row input[type="checkbox"]:checked { background: var(--primary); }
-  .lesson-reader::backdrop { background: rgba(0, 0, 0, .7); }
 }
+
+.learning-dialogue .conversation { min-height: min(20rem, 45dvh); max-height: 60dvh; }
+
+.study-workspace:has(.lesson-reader) > .node-dock { width: clamp(340px, 40%, 560px); }
+@media (max-width: 780px) {
+  .study-workspace:has(.lesson-reader) { flex-direction: column; padding-bottom: 56px; }
+  .study-workspace:has(.lesson-reader) > .graph-area { flex: 0 0 42%; height: auto; min-height: 150px; }
+  .study-workspace:has(.lesson-reader) > .node-dock { position: static; flex: 1; width: 100%; height: auto; min-height: 0; transform: none; border-radius: 0; border-top: 1px solid var(--border); }
+  .study-workspace:has(.lesson-reader) > .node-dock > button { display: none; }
+  .lesson-reader > header strong { font-size: var(--fs-sm); }
+}
+
+/* Type scale: one style per level, used everywhere instead of ad-hoc sizes.
+   page 20/700 > section 17/600 > item 14/600 > body 14/400 > label 12/600 > meta 12/400; buttons stay 13/500. */
+.t-page { font-size: 20px; font-weight: 700; line-height: 1.35; letter-spacing: -0.01em; }
+.t-section { font-size: 17px; font-weight: 600; line-height: 1.4; }
+.t-item { font-size: 14px; font-weight: 600; line-height: 1.5; }
+.t-label { font-size: 12px; font-weight: 600; line-height: 1.5; letter-spacing: 0.04em; color: var(--muted-foreground); }
+.t-meta { font-size: 12px; font-weight: 400; line-height: 1.5; color: var(--muted-foreground); }

@@ -88,9 +88,22 @@ def project_review(course):
         if not scope["enabled"] or any(s["material_id"] in selected for s in n["sources"])
     ]
     if strict_scope(course):
+        # Relationship explanations can carry context from more than one source.
+        # Hide them unless both endpoints and every cited page belong to this exact PDF selection.
+        from .relations import relationship_in_scope
+
+        course["edges"] = [
+            edge for edge in course.get("edges", [])
+            if relationship_in_scope(course, edge)
+        ]
         course["suggestions"] = active_records(course, course["suggestions"])
         for node in course["nodes"]:
             node["review_verification"] = node.get("review_progress", {}).get(scope_key(course), {}).get("verification", "none")
+            node["material_variants"] = [
+                variant for variant in node.get("material_variants", [])
+                if variant.get("sources")
+                and all(source.get("material_id") in selected for source in variant["sources"])
+            ]
             node["review_archived"] = {}
             for field in ("chats", "attempts", "lessons"):
                 records = node.get(field, [])

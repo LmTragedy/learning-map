@@ -36,8 +36,10 @@ import {
   Search,
   Sparkles,
   FileText,
+  Waypoints,
+  Target,
 } from "lucide-react";
-import { api } from "./api";
+import { api, materialFileUrl } from "./api";
 import { cn } from "./lib/utils";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -45,7 +47,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
 import { CourseMap } from "./CourseMap";
 import { recommendedNode } from "./learningNavigation";
+import { isRelationVisible } from "./relationVisibility";
 import { NodePanel } from "./NodePanel";
+import { GoalBoard } from "./GoalBoard";
+import { needsExplanation } from "./relationVisibility";
+import { CourseNotes } from "./CourseNotes";
+import { hasUnsavedNotes } from "./noteDrafts";
+import { hasVolatileAnswerDrafts } from "./answerDrafts";
 import { RecallPanel } from "./RecallPanel";
 import type {
   Course,
@@ -69,11 +77,23 @@ type Modal =
   | "recall"
   | "review"
   | "materials"
+  | "goals"
+  | "course-notes"
   | null;
 export function App() {
   const [courses, setCourses] = useState<CourseSummary[]>([]);
   const [course, setCourse] = useState<Course | null>(null);
   const [selected, setSelected] = useState<LearningNode>();
+  const [noteTarget, setNoteTarget] = useState("");
+  const [noteRequest, setNoteRequest] = useState(0);
+  const [noteTargetId, setNoteTargetId] = useState("");
+  const [goalChatTarget, setGoalChatTarget] = useState("");
+  const [goalFocus, setGoalFocus] = useState("");
+  const [explainHidden, setExplainHidden] = useState(false);
+  const [mapGoal, setMapGoal] = useState("");
+  const [activeRelationId, setActiveRelationId] = useState("");
+  const [relationContextNodeId, setRelationContextNodeId] = useState("");
+  const [relationBackStack, setRelationBackStack] = useState<{ nodeId: string; scopeKey: string }[]>([]);
   const [health, setHealth] = useState<{
     ai: { available: boolean; reason?: string };
     parser: Record<string, unknown>;
@@ -108,6 +128,7 @@ export function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [contentContainer, setContentContainer] = useState<HTMLDivElement | null>(null);
 
   const loadCourses = useCallback(async (active?: string) => {
     try {
@@ -156,10 +177,20 @@ export function App() {
       if (event.key === "Escape") {
         setMenuOpen(false);
         setNavOpen(false);
+        setModal(null);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  useEffect(() => {
+    const warnUnsaved = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedNotes() && !hasVolatileAnswerDrafts()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnUnsaved);
+    return () => window.removeEventListener("beforeunload", warnUnsaved);
   }, []);
   const run = useCallback(async <T,>(key: string, action: () => Promise<T>) => {
     setBusy(true);
@@ -176,10 +207,11 @@ export function App() {
     }
   }, []);
   const refreshCourse = useCallback((value: Course) => {
-    setCourse(value);
+    // A delayed save must never reopen a course the user has already left.
+    setCourse((current) => current?.id === value.id && current.revision <= value.revision ? value : current);
     setCourses((list) =>
       list.map((c) =>
-        c.id === value.id
+        c.id === value.id && c.revision <= value.revision
           ? {
               ...c,
               title: value.title,
@@ -192,9 +224,6 @@ export function App() {
           : c,
       ),
     );
-    setSelected(
-      (old) => value.nodes.find((n) => n.id === old?.id) || recommendedNode(value),
-    );
   }, []);
   const eligibleNodes = useMemo(() => {
     if (!course) return [];
@@ -203,18 +232,20 @@ export function App() {
       ? course.nodes.filter((node) => reviewIds.includes(node.id))
       : course.nodes;
   }, [course]);
+  const reviewEnabled = Boolean(course?.review_scope?.enabled);
   const activeNodes = useMemo(
     () =>
       eligibleNodes.filter(
         (n) =>
           (!directWeek || n.week === directWeek) &&
-          (!directNodeId || n.id === directNodeId || n.unlocked),
+          (!directNodeId || n.id === directNodeId || n.unlocked || reviewEnabled),
       ) || [],
-    [eligibleNodes, directWeek, directNodeId],
+    [eligibleNodes, directWeek, directNodeId, reviewEnabled],
   );
   const reviewUiKey = course?.review_scope?.enabled
     ? `review:${[...course.review_scope.material_ids].sort().join(",")}:${course.review_scope.key}`
     : "course";
+  const reviewStrict = Boolean(course?.review_scope?.enabled && course.review_scope.ai_scope === "selected");
   const displayCourse = useMemo(() => course ? ({
     ...course,
     nodes: activeNodes,
@@ -232,11 +263,18 @@ export function App() {
   }) : null, [course, activeNodes]);
   const selectedNode = selected && activeNodes.find((node) => node.id === selected.id)
     || (course ? recommendedNode(course, activeNodes) : undefined);
+  const selectedRelation = activeRelationId ? course?.edges.find((edge) => edge.id === activeRelationId) : undefined;
+  const activeRelation = selectedRelation && course && isRelationVisible(course, selectedRelation, reviewStrict)
+    && activeNodes.some((node) => node.id === selectedRelation.source)
+    && activeNodes.some((node) => node.id === selectedRelation.target) ? selectedRelation : undefined;
   const open = async (id: string) => {
     const value = await run("course", () => api.course(id));
     if (value) {
       setCourse(value);
       setSelected(recommendedNode(value));
+      setActiveRelationId("");
+      setRelationContextNodeId("");
+      setRelationBackStack([]);
       setDirectWeek("");
       setDirectNodeId("");
       setDirectQuery("");
@@ -280,6 +318,7 @@ export function App() {
       api.saveSettings({
         ai_enabled: settings.ai_enabled,
         model: settings.model,
+        note_review_model: settings.note_review_model || "gpt-6-luna",
         reasoning_effort: settings.reasoning_effort || "medium",
         obsidian_vault: settings.obsidian_vault,
         parser: settings.parser,
@@ -341,6 +380,42 @@ export function App() {
     setReviewAiScope(course.review_scope?.ai_scope || "selected");
     setModal("review");
   };
+  const navigateRelatedNode = (node: LearningNode, edge?: Course["edges"][number]) => {
+    if (!course) return;
+    const strict = Boolean(course.review_scope?.enabled && course.review_scope.ai_scope === "selected");
+    if (strict && !course.review_scope.node_ids.includes(node.id)) return;
+    setRelationBackStack((stack) => [...stack, { nodeId: selectedNode?.id || node.id, scopeKey: reviewUiKey }]);
+    setRelationContextNodeId(selectedNode?.id || node.id);
+    setActiveRelationId(edge?.id || activeRelationId);
+    setDirectWeek("");
+    setDirectQuery("");
+    setDirectNodeId(node.id);
+    setSelected(node);
+    setSheetOpen(true);
+  };
+  const closeRelationDetail = () => {
+    setActiveRelationId("");
+    const target = course?.nodes.find((node) => node.id === relationContextNodeId);
+    setRelationContextNodeId("");
+    if (relationBackStack.at(-1)?.scopeKey === reviewUiKey) setRelationBackStack((stack) => stack.slice(0, -1));
+    if (target) {
+      setDirectNodeId(target.id);
+      setSelected(target);
+    }
+  };
+  const returnToRelationTarget = () => {
+    const entry = relationBackStack.at(-1);
+    if (!entry || entry.scopeKey !== reviewUiKey) return;
+    const target = course?.nodes.find((node) => node.id === entry.nodeId);
+    setRelationBackStack((stack) => stack.slice(0, -1));
+    setActiveRelationId("");
+    setRelationContextNodeId("");
+    if (target) {
+      setDirectNodeId(target.id);
+      setSelected(target);
+      setSheetOpen(true);
+    }
+  };
   const saveReviewScope = async (enabled: boolean) => {
     if (!course) return;
     const value = await run("review-scope", () => api.reviewScope(course.id, {
@@ -351,6 +426,9 @@ export function App() {
     if (value) {
       refreshCourse(value);
       setModal(null);
+      setActiveRelationId("");
+      setRelationContextNodeId("");
+      setRelationBackStack([]);
       setDirectWeek(""); setDirectNodeId(""); setDirectQuery("");
       const ids = value.review_scope?.enabled ? value.review_scope.node_ids : value.nodes.map((node) => node.id);
       setSelected(recommendedNode(value, value.nodes.filter((node) => ids.includes(node.id))));
@@ -370,9 +448,16 @@ export function App() {
 
   const percent = (done: number, total: number) => (total ? Math.round((done / total) * 100) : 0);
   const aiOn = Boolean(health?.ai.available && aiEnabled);
+  const openCourseNotes = useCallback(async () => {
+    if (!course) return;
+    setModal("course-notes");
+    const latest = await run("course-notes", () => api.course(course.id));
+    if (latest) refreshCourse(latest);
+  }, [course, run, refreshCourse]);
   const sideTools = [
+    { label: "课程笔记", Icon: BookMarked, onClick: openCourseNotes, disabled: !course },
     { label: "学习档案", Icon: Archive, onClick: () => void openProfile() },
-    { label: "Obsidian 笔记", Icon: NotebookPen, onClick: () => void showObsidian() },
+    { label: "Obsidian 导入导出", Icon: NotebookPen, onClick: () => void showObsidian() },
     { label: "设置", Icon: Settings2, onClick: () => void openSettings() },
   ];
 
@@ -427,7 +512,7 @@ export function App() {
                       <span className="h-1 flex-1 overflow-hidden rounded-full bg-secondary">
                         <span className="block h-full rounded-full bg-primary" style={{ width: `${percent(done, total)}%` }} />
                       </span>
-                      <small className="text-[11px] tabular-nums text-muted-foreground">{done}/{total}</small>
+                      <small className="text-xs tabular-nums text-muted-foreground">{done}/{total}</small>
                     </span>
                   </button>
                 </TooltipTrigger>
@@ -446,10 +531,10 @@ export function App() {
           </Button>
         </nav>
         <div className="mt-3 flex flex-col gap-0.5 border-t border-border pt-3">
-          {sideTools.map(({ label, Icon, onClick }) => (
+          {sideTools.map(({ label, Icon, onClick, disabled }) => (
             <Tooltip key={label}>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="sm" className="rail-center justify-start px-2.5" aria-label={label}
+                <Button variant="ghost" size="sm" className="rail-center justify-start px-2.5" aria-label={label} disabled={disabled}
                   onClick={() => { setNavOpen(false); onClick(); }}>
                   <Icon /> <span className="rail-hide">{label}</span>
                 </Button>
@@ -465,7 +550,7 @@ export function App() {
                   <div className="truncate text-[13px] font-medium">
                     {health?.ai.available ? (aiEnabled ? "AI 学习辅助已启用" : "Codex 已找到 · 待启用") : "本地学习模式"}
                   </div>
-                  <div className="truncate text-[11px] text-muted-foreground">
+                  <div className="truncate text-xs text-muted-foreground">
                     {health?.ai.available ? "登录状态未检测" : health ? "未找到 Codex，AI 功能不可用" : "正在检测 Codex…"}
                   </div>
                 </div>
@@ -493,7 +578,7 @@ export function App() {
                 <Menu />
               </Button>
               <div className="min-w-0 flex-1">
-                <h1 className="truncate text-[15px] font-semibold leading-tight">{course.title}</h1>
+                <h1 className="t-page truncate">{course.title}</h1>
                 <div className="mt-0.5 flex items-center gap-3 overflow-hidden whitespace-nowrap text-xs text-muted-foreground [&_svg]:size-3">
                   <span className="flex items-center gap-1"><History aria-hidden /> 版本 {course.revision}</span>
                   <span className="flex items-center gap-1"><FileText aria-hidden /> {course.materials.length} 份材料</span>
@@ -502,9 +587,17 @@ export function App() {
                     <span className="h-1 w-14 overflow-hidden rounded-full bg-secondary"><span className="block h-full bg-st-passed" style={{ width: `${percent(course.route.completed_count, course.route.total)}%` }} /></span>
                     {course.route.completed_count}/{course.route.total} 已掌握
                   </span>}
+                  {(() => {
+                    const current = course.goals?.find((goal) => goal.status === "doing");
+                    return current && <button className="flex min-w-0 cursor-pointer items-center gap-1 text-foreground/80 hover:text-foreground max-[780px]:hidden"
+                      onClick={() => { setGoalFocus(current.id); setModal("goals"); }} title="打开这个目标">
+                      <Target aria-hidden /><span className="truncate">当前目标：{current.title} · {current.progress?.verified || 0}/{current.node_ids.length} 节点</span>
+                    </button>;
+                  })()}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => { setGoalFocus(""); setModal("goals"); }} disabled={busy}><Target /> 目标看板</Button>
                 {course.review_scope?.enabled ? (
                   <div className="flex items-center gap-1 rounded-lg border border-st-new/30 bg-st-new/10 py-1 pl-2.5 pr-1 text-xs text-st-new">
                     <FileSearch size={14} aria-hidden />
@@ -569,7 +662,21 @@ export function App() {
                 </Button>
               </div>
             )}
-            <div className="flex min-h-0 flex-1">
+            {!explainHidden && course.edges.some(needsExplanation) && (
+              <div className="mx-4 mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+                <Waypoints size={17} className="shrink-0 text-muted-foreground" aria-hidden />
+                <div className="min-w-0 flex-1 text-sm">
+                  <strong className="font-semibold">{course.edges.filter(needsExplanation).length} 条前置关系还没有说明</strong>
+                  <span className="block text-xs text-muted-foreground max-[780px]:hidden">让 AI 根据材料说明“后一个知识点用到了前一个的什么”。每次处理 30 条，结果标为待核对，不改变进度和解锁。</span>
+                </div>
+                {aiOn ? <Button size="sm" disabled={busy}
+                  onClick={() => void run("backfill-relations", () => api.backfillRelations(course.id, course.revision)).then((v) => v && refreshCourse(v))}>
+                  <Sparkles /> 用 AI 补充说明
+                </Button> : <Button size="sm" variant="outline" onClick={() => void openSettings()}>先在设置中开启 AI</Button>}
+                <Button size="icon-sm" variant="ghost" aria-label="暂时隐藏" onClick={() => setExplainHidden(true)}><X /></Button>
+              </div>
+            )}
+            <div className="study-workspace flex min-h-0 flex-1">
               <section className="graph-area relative flex min-w-0 flex-1 flex-col">
                 {course.review_scope?.enabled && activeNodes.length === 0 && (
                   <div className="mx-4 mt-3 flex gap-3 rounded-lg border border-border bg-card p-3 text-[13px]">
@@ -583,10 +690,21 @@ export function App() {
                   prerequisiteNodes={course.nodes}
                   selected={selectedNode}
                   reviewActive={Boolean(course.review_scope?.enabled)}
+                  reviewStrict={reviewStrict}
                   directEntryId={directNodeId}
                   directWeek={directWeek}
+                  focusIds={course.goals?.find((goal) => goal.id === mapGoal)?.node_ids}
                   toolbar={
                     <div className="flex min-w-0 items-center gap-2 max-[780px]:w-full">
+                      {!!course.goals?.length && <label className="relative flex items-center max-[780px]:hidden">
+                        <Target size={14} className="pointer-events-none absolute left-2.5 text-muted-foreground" aria-hidden />
+                        <select className="h-8 max-w-48 cursor-pointer appearance-none !py-0 !pl-8 !pr-7" aria-label="按目标聚焦"
+                          value={mapGoal} onChange={(event) => setMapGoal(event.target.value)}>
+                          <option value="">全部目标</option>
+                          {course.goals.map((goal) => <option key={goal.id} value={goal.id}>{goal.title}</option>)}
+                        </select>
+                        <ChevronDown size={14} className="pointer-events-none absolute right-2 text-muted-foreground" aria-hidden />
+                      </label>}
                       {course.nodes.some((n) => n.week) && <label className="relative flex items-center max-[780px]:hidden">
                         <CalendarDays size={14} className="pointer-events-none absolute left-2.5 text-muted-foreground" aria-hidden />
                         <select
@@ -626,7 +744,7 @@ export function App() {
                             }
                           }}
                         />
-                        <kbd className="rounded border border-border px-1.5 font-sans text-[10px] leading-4 text-muted-foreground max-[780px]:hidden">Ctrl K</kbd>
+                        <kbd className="rounded border border-border px-1.5 font-sans text-xs leading-4 text-muted-foreground max-[780px]:hidden">Ctrl K</kbd>
                       </label>
                       <datalist id="map-targets">
                         {eligibleNodes.map((n) => <option key={n.id} value={n.title} />)}
@@ -651,16 +769,25 @@ export function App() {
                   }
                   onSelect={(node) => {
                     if (directWeek && node.week !== directWeek) setDirectWeek("");
+                    setActiveRelationId("");
+                    setRelationBackStack([]);
                     setSelected(node);
                     setSheetOpen(true);
                   }}
+                  onRelationSelect={(edge) => {
+                    setRelationContextNodeId(selectedNode?.id || edge.target);
+                    setActiveRelationId(edge.id);
+                    const target = course.nodes.find((node) => node.id === edge.target);
+                    if (target) { setSelected(target); setSheetOpen(true); }
+                  }}
                 />
+                <div className="study-content-host" ref={setContentContainer} />
               </section>
               <div
                 className={cn(
                   "node-dock flex w-[380px] shrink-0 flex-col overflow-hidden border-l border-border bg-sidebar max-[1180px]:w-[340px]",
-                  "max-[780px]:fixed max-[780px]:inset-x-0 max-[780px]:bottom-14 max-[780px]:z-30 max-[780px]:h-[62dvh] max-[780px]:w-auto max-[780px]:rounded-t-2xl max-[780px]:border-l-0 max-[780px]:border-t max-[780px]:shadow-2xl max-[780px]:transition-transform",
-                  !sheetOpen && "max-[780px]:translate-y-[calc(100%-44px)]",
+                  "max-[781px]:fixed max-[781px]:inset-x-0 max-[781px]:bottom-14 max-[781px]:z-30 max-[781px]:h-[62dvh] max-[781px]:w-auto max-[781px]:rounded-t-2xl max-[781px]:border-l-0 max-[781px]:border-t max-[781px]:shadow-2xl max-[781px]:transition-transform",
+                  !sheetOpen && "max-[781px]:translate-y-[calc(100%-44px)]",
                   sheetOpen && "open",
                 )}
               >
@@ -670,13 +797,29 @@ export function App() {
                 </button>
                 {selectedNode ? (
                   <NodePanel
-                    key={`${selectedNode.id}-${reviewUiKey}`}
+                    key={`${course.id}-${selectedNode.id}-${reviewUiKey}-${noteTarget === selectedNode.id ? noteRequest : 0}-${goalChatTarget === selectedNode.id}`}
                     course={course}
                     node={selectedNode}
+                    initialNote={noteTarget === selectedNode.id}
+                    initialNoteId={noteTarget === selectedNode.id ? noteTargetId : ""}
+                    initialChat={goalChatTarget === selectedNode.id}
+                    contentContainer={contentContainer}
                     reviewActive={Boolean(course.review_scope?.enabled)}
-                    reviewStrict={Boolean(course.review_scope?.enabled && course.review_scope.ai_scope === "selected")}
+                    reviewStrict={reviewStrict}
+                    relation={activeRelation}
+                    relationReturnAvailable={Boolean(relationBackStack.at(-1)?.scopeKey === reviewUiKey)}
+                    onNavigateNode={navigateRelatedNode}
+                    onReturnToTarget={returnToRelationTarget}
+                    onOpenReview={openReview}
+                    onExitReview={() => void saveReviewScope(false)}
+                    onCloseRelation={closeRelationDetail}
+                    onOpenGoal={(goalId) => { setGoalFocus(goalId); setModal("goals"); }}
+                    directEntryId={directNodeId}
+                    directWeek={directWeek}
                     busy={busy}
                     aiEnabled={aiEnabled}
+                    aiAvailable={Boolean(health?.ai.available)}
+                    noteReviewModel={settings?.note_review_model || "gpt-6-luna"}
                     run={run}
                     onRefresh={refreshCourse}
                     onRecall={() => void showRecall()}
@@ -712,14 +855,15 @@ export function App() {
             </small>
           </div>
         )}
-        <nav className="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-4 border-t border-border bg-sidebar min-[781px]:hidden" aria-label="主要功能">
+        <nav className="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-5 border-t border-border bg-sidebar min-[781px]:hidden" aria-label="主要功能">
           {[
-            { label: "地图", Icon: MapIcon, on: true, onClick: () => { setModal(null); setSheetOpen(false); } },
-            { label: "复习", Icon: FileSearch, on: false, onClick: openReview, disabled: !course || busy },
-            { label: "档案", Icon: Archive, on: false, onClick: () => void openProfile() },
-            { label: "设置", Icon: Settings2, on: false, onClick: () => void openSettings() },
+            { label: "地图", Icon: MapIcon, on: !modal, onClick: () => { setModal(null); setSheetOpen(false); } },
+            { label: "目标", Icon: Target, on: modal === "goals", onClick: () => { setGoalFocus(""); setModal("goals"); }, disabled: !course || busy },
+            { label: "笔记", Icon: NotebookPen, on: modal === "course-notes", onClick: () => void openCourseNotes(), disabled: !course },
+            { label: "复习", Icon: FileSearch, on: modal === "review", onClick: openReview, disabled: !course || busy },
+            { label: "更多", Icon: Menu, on: false, onClick: () => setNavOpen(true) },
           ].map(({ label, Icon, on, onClick, disabled }) => (
-            <button key={label} className={cn("flex cursor-pointer flex-col items-center justify-center gap-0.5 text-[11px] text-muted-foreground disabled:opacity-40", on && "text-foreground")}
+            <button key={label} className={cn("flex cursor-pointer flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground disabled:opacity-40", on && "text-foreground")}
               onClick={onClick} disabled={disabled}>
               <Icon size={18} />{label}
             </button>
@@ -735,7 +879,7 @@ export function App() {
           }}
         >
           <section
-            className={`modal ${["profile", "versions", "obsidian", "recall", "import", "materials"].includes(modal) ? "modal-wide" : ""}`}
+            className={`modal ${["profile", "versions", "obsidian", "recall", "import", "materials", "goals", "course-notes"].includes(modal) ? "modal-wide" : ""}`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="modal-title"
@@ -751,6 +895,22 @@ export function App() {
                 <X size={18} />
               </button>
             </div>
+            {modal === "goals" && course && <GoalBoard key={`${course.id}:${goalFocus}`} initialGoalId={goalFocus} course={course} busy={busy} aiEnabled={aiOn} run={run} onRefresh={refreshCourse} onNode={(id, destination) => {
+              const node = course.nodes.find((item) => item.id === id);
+              if (node) {
+                setGoalChatTarget(destination === "chat" ? node.id : "");
+                setNoteTarget(""); setDirectWeek(""); setDirectQuery("");
+                setActiveRelationId(""); setRelationBackStack([]);
+                setSelected(node); setDirectNodeId(node.id); setModal(null); setSheetOpen(true);
+              }
+            }} />}
+            {modal === "course-notes" && course && <CourseNotes course={course}
+              onExitReview={() => void saveReviewScope(false).then(() => setModal("course-notes"))}
+              onOpen={(node, noteId = "") => {
+                setNoteTarget(node.id); setNoteTargetId(noteId); setNoteRequest((value) => value + 1);
+                setDirectWeek(""); setDirectQuery(""); setActiveRelationId(""); setRelationBackStack([]);
+                setSelected(node); setDirectNodeId(node.id); setModal(null); setSheetOpen(true);
+              }} />}
             {modal === "materials" && course && (
               <div className="modal-body">
                 {course.materials.length ? (
@@ -794,7 +954,7 @@ export function App() {
                                 </span>
                               ))}
                               <a
-                                href={`/api/courses/${course.id}/materials/${material.id}/file#page=${page.number}`}
+                                href={materialFileUrl(course.id, material.id, page.number)}
                                 target="_blank"
                                 rel="noreferrer"
                               >
@@ -969,7 +1129,7 @@ export function App() {
                   />
                 </label>
                 <label className="field-label">
-                  模型 / 提供方
+                  学习对话模型 / 提供方
                   <input
                     value={settings.model}
                     onChange={(e) =>
@@ -990,6 +1150,13 @@ export function App() {
                     <option value="medium">中等</option>
                     <option value="high">高</option>
                   </select>
+                </label>
+                <label className="field-label">
+                  笔记自动检查模型（独立）
+                  <input value={settings.note_review_model || "gpt-6-luna"}
+                    onChange={(event) => setSettings({ ...settings, note_review_model: event.target.value })}
+                    placeholder="gpt-6-luna" />
+                  <span className="text-xs text-muted-foreground">笔记检查默认 Luna／中等推理；不改变学习对话模型。</span>
                 </label>
                 <label className="field-label">
                   Obsidian 笔记库路径
@@ -1448,6 +1615,8 @@ function modalIcon(m: Modal) {
     recall: Clock3,
     review: FileSearch,
     materials: FolderOpen,
+    goals: Layers,
+    "course-notes": BookMarked,
   };
   const Icon = icons[m || ""] || CircleHelp;
   return <Icon size={18} />;
@@ -1466,6 +1635,8 @@ function modalTitle(m: Modal) {
         delete: "删除课程",
         recall: "找回思路",
         materials: "已导入材料",
+        goals: "课程目标看板",
+        "course-notes": "课程笔记",
         review: "选择复习资料",
       } as Record<string, string>
     )[m || ""] || ""

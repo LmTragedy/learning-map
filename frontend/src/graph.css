@@ -29,6 +29,7 @@
 .gdot.role-focus .gdot-label, .gdot.role-up .gdot-label, .gdot.role-down .gdot-label, .gdot.is-selected .gdot-label { opacity: 1; color: #fafafa; }
 .gdot.role-focus .gdot-label, .gdot.is-selected .gdot-label { font-weight: 600; }
 .react-flow__edge path { transition: opacity .15s, stroke .15s; }
+.react-flow__edge.relationship-edge { cursor: pointer; }
 .graph-focus-note .up { color: var(--state-new, #fbbf24); }
 .graph-focus-note .down { color: var(--state-mastered, #60a5fa); }
 .graph-canvas .react-flow__controls { border: 1px solid var(--border, #27272a); border-radius: 8px; overflow: hidden; box-shadow: none; }

@@ -16,6 +16,8 @@ import type { Course, LearningNode } from "./types";
 import { forceLayout, lineage } from "./graphLayout";
 import { Button } from "./components/ui/button";
 import { cn } from "./lib/utils";
+import { isRelationVisible, needsExplanation } from "./relationVisibility";
+import { isNodeVisible } from "./nodeVisibility";
 
 type Tone = "passed" | "mastered" | "studied" | "available" | "locked";
 type Role = "focus" | "up" | "down" | "dim" | "none";
@@ -51,15 +53,21 @@ export function MapView({
   directEntryId,
   directWeek,
   reviewActive,
+  reviewStrict,
   onSelect,
+  onRelationSelect,
+  focusIds,
 }: {
   course: Course;
   selected?: LearningNode;
   directEntryId?: string;
   directWeek?: string;
   reviewActive?: boolean;
+  reviewStrict?: boolean;
   prerequisiteNodes?: LearningNode[];
+  focusIds?: string[];
   onSelect: (node: LearningNode) => void;
+  onRelationSelect?: (edge: Course["edges"][number]) => void;
 }) {
   const flow = useRef<ReactFlowInstance<GraphNode, Edge>>();
   const clickedInside = useRef(false);
@@ -67,12 +75,15 @@ export function MapView({
   const [focusOnly, setFocusOnly] = useState(false);
   const [alwaysLabels, setAlwaysLabels] = useState(false);
   const [zoom, setZoom] = useState(1);
-  const isVisible = useCallback((n: LearningNode) =>
-    Boolean(reviewActive) || n.unlocked || n.id === directEntryId || Boolean(directWeek && n.week === directWeek),
-  [reviewActive, directEntryId, directWeek]);
+  const isVisible = useCallback((node: LearningNode) => isNodeVisible(node, { reviewActive: Boolean(reviewActive), directEntryId, directWeek }),
+    [reviewActive, directEntryId, directWeek]);
 
   const nodeIds = useMemo(() => new Set(course.nodes.map((n) => n.id)), [course.nodes]);
-  const links = useMemo(() => course.edges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target)), [course.edges, nodeIds]);
+  const links = useMemo(() => course.edges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target) && isRelationVisible(course, e, Boolean(reviewStrict))), [course, nodeIds, reviewStrict]);
+  const prerequisiteLinks = useMemo(() => links.filter((edge) =>
+    course.nodes.find((node) => node.id === edge.target)?.prerequisites.includes(edge.source),
+  ), [course.nodes, links]);
+  const prerequisiteEdgeIds = useMemo(() => new Set(prerequisiteLinks.map((edge) => edge.id)), [prerequisiteLinks]);
   const centres = useMemo(() => forceLayout(course.nodes, links), [course.nodes, links]);
   const degree = useMemo(() => {
     const count = new Map<string, number>();
@@ -85,11 +96,21 @@ export function MapView({
 
   // Like Obsidian, the graph stays neutral until the pointer rests on a node; the selection only gets a ring.
   const focusId = hovered ?? (focusOnly ? selected?.id : undefined);
-  const chain = useMemo(() => lineage(focusId, links), [focusId, links]);
-  const selectedChain = useMemo(() => lineage(selected?.id, links), [selected?.id, links]);
+  const chain = useMemo(() => lineage(focusId, prerequisiteLinks), [focusId, prerequisiteLinks]);
+  const selectedChain = useMemo(() => lineage(selected?.id, prerequisiteLinks), [selected?.id, prerequisiteLinks]);
   const filtering = focusOnly && Boolean(selected);
   const inSelectedChain = useCallback((id: string) =>
     id === selected?.id || selectedChain.up.has(id) || selectedChain.down.has(id), [selected?.id, selectedChain]);
+  const relatedContextIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const edge of links) {
+      if (prerequisiteEdgeIds.has(edge.id)) continue;
+      if (inSelectedChain(edge.source)) ids.add(edge.target);
+      if (inSelectedChain(edge.target)) ids.add(edge.source);
+    }
+    return ids;
+  }, [links, prerequisiteEdgeIds, inSelectedChain]);
+  const inRelatedContext = useCallback((id: string) => inSelectedChain(id) || relatedContextIds.has(id), [inSelectedChain, relatedContextIds]);
 
   const { nodes, edges } = useMemo(() => {
     const byId = new Map(course.nodes.map((n) => [n.id, n]));
@@ -112,7 +133,9 @@ export function MapView({
         position: { x: centre.x - radius, y: centre.y - radius },
         width: radius * 2,
         height: radius * 2,
-        hidden: filtering && !inSelectedChain(n.id),
+        hidden: filtering && !inRelatedContext(n.id),
+        // Focusing on a goal fades every node outside it.
+        style: focusIds && !focusIds.includes(n.id) ? { opacity: 0.15 } : undefined,
         draggable: false,
         selectable: visible,
         data: {
@@ -123,19 +146,21 @@ export function MapView({
           next: n.id === course.route?.next_node_id,
           radius,
           hint: visible
-            ? `${n.title} · ${toneLabel[tone]}`
+            ? `${n.title} · ${toneLabel[tone]}${n.personal_note?.trim() ? " · 有笔记" : ""}`
             : `未解锁${missing.length ? `：还需先完成 ${missing.length} 个先修` : ""}；通过先修节点后显示，也可以从考点搜索临时直达`,
         },
       };
     });
-    const edgeRole = (source: string, target: string) => {
+    const edgeRole = (edge: Course["edges"][number]) => {
+      const { source, target } = edge;
+      if (!prerequisiteEdgeIds.has(edge.id)) return "none";
       if (!focusId) return "none";
       if ((target === focusId || chain.up.has(target)) && chain.up.has(source)) return "up";
       if ((source === focusId || chain.down.has(source)) && chain.down.has(target)) return "down";
       return "dim";
     };
     const lines: Edge[] = links.map((edge) => {
-      const role = edgeRole(edge.source, edge.target);
+      const role = edgeRole(edge);
       const lit = role === "up" || role === "down";
       const color = role === "up" ? "#fbbf24" : role === "down" ? "#60a5fa" : "#52525b";
       return {
@@ -143,19 +168,23 @@ export function MapView({
         source: edge.source,
         target: edge.target,
         type: "straight",
-        hidden: filtering && !(inSelectedChain(edge.source) && inSelectedChain(edge.target)),
-        ariaLabel: edge.relation,
+        className: "relationship-edge",
+        selectable: false,
+        focusable: true,
+        interactionWidth: 24,
+        hidden: filtering && !(inRelatedContext(edge.source) && inRelatedContext(edge.target)),
+        ariaLabel: `${edge.relation}：${needsExplanation(edge) ? "原因待补充" : (edge.explanation || "").split("\n")[0]}`,
         style: {
           stroke: color,
           strokeWidth: lit ? 1.6 : 1,
           opacity: role === "dim" ? 0.06 : role === "none" ? 0.32 : 0.9,
-          strokeDasharray: lit && edge.uncertain ? "4 3" : undefined,
+          strokeDasharray: edge.uncertain || !edge.confirmed ? "4 3" : undefined,
         },
         markerEnd: lit ? { type: "arrowclosed", color, width: 12, height: 12 } : undefined,
       };
     });
     return { nodes: dots, edges: lines };
-  }, [course, centres, degree, links, focusId, chain, selected?.id, isVisible, filtering, inSelectedChain]);
+  }, [course, centres, degree, links, prerequisiteEdgeIds, focusId, chain, selected?.id, isVisible, filtering, inRelatedContext, focusIds]);
 
   const fitAll = useCallback((duration = 300) => {
     void flow.current?.fitView({ padding: 0.18, maxZoom: 1.4, duration });
@@ -177,7 +206,7 @@ export function MapView({
   useEffect(() => {
     if (!flow.current) return;
     if (!filtering) { requestAnimationFrame(() => fitAll()); return; }
-    const ids = course.nodes.filter((n) => inSelectedChain(n.id)).map((n) => ({ id: n.id }));
+    const ids = course.nodes.filter((n) => inRelatedContext(n.id)).map((n) => ({ id: n.id }));
     requestAnimationFrame(() => void flow.current?.fitView({ nodes: ids, padding: 0.2, maxZoom: 1.6, duration: 300 }));
   }, [filtering]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -201,7 +230,7 @@ export function MapView({
           <Maximize /> 看全图
         </Button>
         <Button variant="outline" size="sm" className={cn(filtering && "border-zinc-500 bg-accent text-foreground")} aria-pressed={filtering}
-          disabled={!selected} onClick={() => setFocusOnly((value) => !value)} title="只显示当前节点的全部先修和后续">
+          disabled={!selected} onClick={() => setFocusOnly((value) => !value)} title="显示当前先修链及其一跳关系">
           <Focus /> 只看相关
         </Button>
         <Button variant="outline" size="sm" className={cn(alwaysLabels && "border-zinc-500 bg-accent text-foreground")} aria-pressed={alwaysLabels}
@@ -233,6 +262,12 @@ export function MapView({
           onNodeClick={(_, node) => {
             const found = course.nodes.find((n) => n.id === node.id);
             if (found && isVisible(found)) { clickedInside.current = true; onSelect(found); }
+          }}
+          onEdgeClick={(_, edge) => {
+            const found = links.find((item) => item.id === edge.id);
+            const source = found && course.nodes.find((item) => item.id === found.source);
+            const target = found && course.nodes.find((item) => item.id === found.target);
+            if (found && source && target && isVisible(source) && isVisible(target)) onRelationSelect?.(found);
           }}
           proOptions={{ hideAttribution: false }}
         >

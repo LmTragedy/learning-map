@@ -1,13 +1,23 @@
 import { useState } from "react";
-import { BadgeCheck, BookOpen, Check, ChevronRight, CircleCheck, CircleHelp, Clock3, ExternalLink, FileText, Info, Lightbulb, MessageCircle, Send, Sparkles, Target } from "lucide-react";
-import { api } from "./api";
+import { createPortal } from "react-dom";
+import { BadgeCheck, BookOpen, Check, ChevronRight, CircleCheck, CircleHelp, Clock3, ExternalLink, FileText, Info, Lightbulb, MessageCircle, NotebookPen, Send, Sparkles, Target } from "lucide-react";
+import { api, lessonHtmlUrl, materialFileUrl } from "./api";
 import { cn } from "./lib/utils";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { statusIcon } from "./status";
 import { PracticePanel } from "./PracticePanel";
-import { LessonPanel } from "./LessonPanel";
+import { LessonPanel, LessonReader } from "./LessonPanel";
+import { RelationPanel } from "./RelationPanel";
+import { RelationsSection } from "./RelationsSection";
+import { PersonalNote } from "./PersonalNote";
+import { Workbench } from "./workbench/Workbench";
+import { BridgeCard } from "./BridgeCard";
+import { useWorkbenchState } from "./workbench/useWorkbenchState";
+import { quoteBlock } from "./noteFormatting";
+import { NodeGoals } from "./NodeGoals";
+import { isNodeVisible } from "./nodeVisibility";
 import { splitSummary } from "./summary";
 import type { Course, LearningNode } from "./types";
 
@@ -39,31 +49,74 @@ export function NodePanel({
   node,
   busy,
   aiEnabled,
+  aiAvailable,
+  noteReviewModel,
   run,
   onRefresh,
   onRecall,
   onRatingSubmitted,
   reviewActive,
   reviewStrict,
+  relation,
+  relationReturnAvailable,
+  onNavigateNode,
+  onReturnToTarget,
+  onOpenReview,
+  onExitReview,
+  onCloseRelation,
+  onOpenGoal,
+  directEntryId,
+  directWeek,
+  initialNote = false,
+  initialNoteId = "",
+  initialChat = false,
+  contentContainer,
 }: {
   course: Course;
   node: LearningNode;
   busy: boolean;
   aiEnabled: boolean;
+  aiAvailable: boolean;
+  noteReviewModel: string;
   run: <T>(key: string, action: () => Promise<T>) => Promise<T | undefined>;
   onRefresh: (course: Course) => void;
   onRecall: () => void;
   onRatingSubmitted: () => void;
   reviewActive: boolean;
   reviewStrict: boolean;
+  relation?: Course["edges"][number];
+  relationReturnAvailable: boolean;
+  onNavigateNode: (node: LearningNode, edge?: Course["edges"][number]) => void;
+  onReturnToTarget: () => void;
+  onOpenReview: () => void;
+  onExitReview: () => void;
+  onCloseRelation: () => void;
+  onOpenGoal: (goalId: string) => void;
+  directEntryId?: string;
+  directWeek?: string;
+  initialNote?: boolean;
+  initialNoteId?: string;
+  initialChat?: boolean;
+  contentContainer: HTMLDivElement | null;
 }) {
-  const [tab, setTab] = useState<"lesson" | "learn" | "practice">("lesson");
+  const [tab, setTab] = useState<"lesson" | "learn" | "practice">(initialChat ? "learn" : "lesson");
   const [reviewMastered, setReviewMastered] = useState(false);
   const [message, setMessage] = useState("");
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const bench = useWorkbenchState(initialNote, initialNoteId);
+  const { noteOpen, noteId, material, pendingAppend, appendToNote, openMaterial } = bench;
+  const noteCount = 1 + (course.notes || []).filter((entry) => entry.node_ids.includes(node.id)).length;
+  const readingLesson = bench.lessonId ? node.lessons?.find((lesson) => lesson.id === bench.lessonId) : undefined;
+  const discuss = (text: string) => {
+    setMessage((draft) => draft || text);
+    setTab("learn");
+  };
   const parts = splitSummary(node.summary || "");
   const longSummary = parts.explain.length + parts.check.length > 160;
   const stage = course.route?.stages.find((entry) => entry.node_ids.includes(node.id));
+  const materialVariants = (node.material_variants || []).filter((variant) =>
+    !reviewStrict || (variant.sources.length > 0 && variant.sources.every((source) => course.review_scope.material_ids.includes(source.material_id))),
+  );
   const act = async (key: string, fn: () => Promise<Course>) => {
     const value = await run(key, fn);
     if (value) onRefresh(value);
@@ -88,16 +141,44 @@ export function NodePanel({
   const note = (text: string) => <p className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">{text}</p>;
   return (
     <aside className="node-panel flex min-h-0 flex-1 flex-col overflow-y-auto">
+      {(noteOpen || readingLesson || material) && contentContainer && createPortal(
+        <Workbench course={course} node={node} material={material} active={bench.active} noteOpen={noteOpen}
+          lesson={readingLesson ? {
+            title: readingLesson.title,
+            downloadUrl: lessonHtmlUrl(course.id, node.id, readingLesson.id),
+            onClose: bench.closeLesson,
+            content: <LessonReader lesson={readingLesson} courseId={course.id} nodeId={node.id} busy={busy} embedded
+              onClose={bench.closeLesson}
+              onRead={() => void act("lesson-read", () => api.readLesson(course.id, node.id, readingLesson.id))}
+              onPractice={() => setTab("practice")}
+              onDiscuss={() => discuss(`关于小课「${readingLesson.title}」：`)} />,
+          } : null}
+          renderNote={() => <PersonalNote key={`${course.id}:${node.id}:${noteId}`} course={course} node={node} noteId={noteId}
+            busy={busy} run={run} onRefresh={onRefresh} embedded pendingAppend={pendingAppend}
+            aiEnabled={aiEnabled} aiAvailable={aiAvailable} reviewModel={noteReviewModel}
+            onOpenNote={bench.setNoteId} onClose={bench.closeNote} />}
+          onActivate={bench.activate} onMaterial={openMaterial} onCloseMaterial={bench.closeMaterial}
+          onToggleNote={bench.toggleNote} onCloseAll={bench.closeAll}
+          onExcerpt={appendToNote}
+          onAsk={(text) => { setMessage(text); setTab("learn"); }} />,
+        contentContainer,
+      )}
       <div className="border-b border-border px-5 pb-4 pt-4">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-xs text-muted-foreground">{stage ? `${stage.title} · 知识点` : "知识点"}</span>
+          <span className="truncate text-xs text-muted-foreground">{node.kind === "synthesis" ? "综合节点" : stage ? `${stage.title} · 知识点` : "知识点"}</span>
           <Button variant="ghost" size="sm" className="-mr-2 h-7 px-2 text-xs" onClick={onRecall} title="回看这个知识点的历史对话">
             <Clock3 /> 找回思路
           </Button>
         </div>
-        <h2 className="mt-1 text-lg font-semibold leading-snug">{node.title}</h2>
+        <h2 className="t-section mt-1">{node.title}</h2>
+        <Button variant={noteOpen ? "secondary" : "outline"} size="sm" className="mt-3" aria-pressed={noteOpen}
+          onClick={bench.openNote}>
+          <NotebookPen /> 笔记 · {noteCount} 份{node.personal_note?.trim() ? "" : "（主笔记为空）"}
+        </Button>
+        <NodeGoals course={course} node={node} busy={busy} act={act} onOpenGoal={onOpenGoal} />
         <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <Badge variant={statusKey}><StatusIcon aria-hidden />{statusText}</Badge>
+          {node.kind === "synthesis" && <Badge variant="secondary">综合节点</Badge>}
           <Steps status={node.status} />
           {node.verification === "review" && <Badge variant="warning">待复查</Badge>}
           {reviewStrict && node.review_verification && node.review_verification !== "none" && (
@@ -112,14 +193,43 @@ export function NodePanel({
         </div>
       </div>
       <div className="flex flex-col gap-3 px-5 py-4">
+        {relationReturnAvailable && <Button variant="outline" size="sm" className="self-start" onClick={onReturnToTarget}>返回原复习目标</Button>}
+        {relation && <RelationPanel key={`${relation.id}:${course.revision}`} course={course} relation={relation} busy={busy} reviewStrict={reviewStrict} run={run}
+          onRefresh={onRefresh} onNavigateNode={onNavigateNode} onClose={onCloseRelation} onOpenReview={onOpenReview} onExitReview={onExitReview} />}
+        {node.kind === "synthesis" && <section className="rounded-xl border border-border bg-card p-3.5">
+          <h3 className="t-label">综合关联知识点</h3>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {(node.related_node_ids || []).map((id) => {
+              const related = course.nodes.find((entry) => entry.id === id);
+              const inReviewScope = course.review_scope.node_ids.includes(id);
+              const available = related && (reviewStrict
+                ? inReviewScope
+                : isNodeVisible(related, { reviewActive, directEntryId, directWeek }));
+              return available && related
+                ? <Button key={id} size="sm" variant="outline" onClick={() => onNavigateNode(related)}>{related.title}</Button>
+                : <div key={id} className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                    <span>{reviewStrict || (reviewActive && !inReviewScope)
+                      ? "另有相关点不在本次范围；可调整范围或退出复习访问。"
+                      : reviewActive ? "退出复习后可用搜索临时直达相关点。" : "另有未解锁相关点；完成先修或用搜索临时直达。"}</span>
+                    {reviewStrict && !inReviewScope && <><Button size="sm" variant="ghost" onClick={onOpenReview}>调整范围</Button><Button size="sm" variant="ghost" onClick={onExitReview}>退出复习</Button></>}
+                  </div>;
+            })}
+          </div>
+        </section>}
+        <BridgeCard course={course} node={node}
+          canOpen={(entry) => reviewStrict ? course.review_scope.node_ids.includes(entry.id) : isNodeVisible(entry, { reviewActive, directEntryId, directWeek })}
+          onNavigate={onNavigateNode}
+          onSelfCheck={(pre) => { setMessage(`请就前置知识「${pre.title}」出一道 10 秒能答完的小题，检查我学「${node.title}」前是否真的掌握了它。先不要给答案，等我回答后再点评。`); setTab("learn"); }} />
+        <RelationsSection course={course} node={node} reviewActive={reviewActive} reviewStrict={reviewStrict} directEntryId={directEntryId} directWeek={directWeek}
+          onNavigateNode={onNavigateNode} onOpenReview={onOpenReview} onExitReview={onExitReview} />
         {reviewStrict && note("本次范围的结果单独记录，不改变整门课程的掌握与解锁；“自我掌握”仍适用于整个节点。")}
         {reviewActive && !reviewStrict && note("当前仅筛选地图。学习对话与验收沿用整门课程，验收通过会更新课程掌握与解锁。")}
         {reviewStrict && node.summary && note(`课程总览（跨材料）：${node.summary}`)}
         {(!reviewStrict || !node.summary) && <div className="rounded-xl border border-border bg-card p-4">
-          <h3 className="mb-1.5 flex items-center gap-1.5 text-[13px] font-semibold"><Lightbulb size={14} className="text-st-new" aria-hidden /> 讲解</h3>
+          <h3 className="t-label mb-1.5 flex items-center gap-1.5"><Lightbulb size={14} className="text-st-new" aria-hidden /> 讲解</h3>
           <p className={cn("text-[13px] leading-relaxed text-muted-foreground", !summaryOpen && longSummary && "line-clamp-3")}>{parts.explain || "还没有补充说明。"}</p>
           {parts.check && (summaryOpen || !longSummary) && <>
-            <h3 className="mb-1.5 mt-3 flex items-center gap-1.5 text-[13px] font-semibold"><Target size={14} className="text-st-passed" aria-hidden /> 验收标准</h3>
+            <h3 className="t-label mb-1.5 mt-3 flex items-center gap-1.5"><Target size={14} className="text-st-passed" aria-hidden /> 验收标准</h3>
             <p className="text-[13px] leading-relaxed text-muted-foreground">{parts.check}</p>
           </>}
           {longSummary && (
@@ -127,7 +237,7 @@ export function NodePanel({
               {summaryOpen ? "收起" : parts.check ? "展开全文与验收标准" : "展开全文"}
             </button>
           )}
-          {parts.note && <p className="mt-3 flex items-center gap-1 border-t border-border pt-2.5 text-[11px] text-muted-foreground" title={parts.note}><Info size={12} aria-hidden /> 依据提取文本生成，公式和表格未核对原图</p>}
+          {parts.note && <p className="mt-3 flex items-center gap-1 border-t border-border pt-2.5 text-xs text-muted-foreground" title={parts.note}><Info size={12} aria-hidden /> 依据提取文本生成，公式和表格未核对原图</p>}
         </div>}
         <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" size="sm"
@@ -152,8 +262,14 @@ export function NodePanel({
               const page = material?.pages.find((p) => p.number === source.page);
               return (
                 <a className="flex flex-col gap-0.5 rounded-lg border border-border px-3 py-2 no-underline transition-colors hover:bg-accent/50"
-                  href={`/api/courses/${course.id}/materials/${source.material_id}/file#page=${source.page}`}
-                  target="_blank" rel="noreferrer" key={`${source.material_id}-${source.page}-${i}`}>
+                  href={materialFileUrl(course.id, source.material_id, source.page)}
+                  target="_blank" rel="noreferrer" key={`${source.material_id}-${source.page}-${i}`}
+                  onClick={(event) => {
+                    // Plain click opens the page beside the notes; Ctrl/middle click still opens a new tab.
+                    if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+                    event.preventDefault();
+                    openMaterial({ materialId: source.material_id, page: source.page });
+                  }}>
                   <strong className="flex items-center gap-1 text-[13px] font-medium text-foreground">{material?.name || "课程材料"} <ExternalLink size={11} /></strong>
                   <span>第 {source.page} 页 · 自动提取节选{page?.uncertain || node.uncertain ? " · 识别可能不确定" : ""}</span>
                   <span className="line-clamp-2">{source.quote || "打开原始页面查看"}</span>
@@ -162,6 +278,21 @@ export function NodePanel({
             }) : <p>暂无材料引用</p>}
           </div>
         </details>
+        {!!materialVariants.length && <details className="rounded-lg border border-border px-3 py-2 text-xs">
+          <summary className="cursor-pointer font-medium">材料中的不同表述（待核对） · {materialVariants.length}</summary>
+          <div className="mt-2 flex flex-col gap-2">
+            {materialVariants.map((variant, index) => <div key={`${index}-${variant.summary}`} className="rounded-md bg-muted/30 px-2.5 py-2">
+              <p className="text-[13px] leading-relaxed">{variant.summary}</p>
+              {variant.sources.map((source, sourceIndex) => {
+                const material = course.materials.find((item) => item.id === source.material_id);
+                return <a className="mt-1 block text-muted-foreground underline-offset-2 hover:underline" target="_blank" rel="noreferrer" key={`${source.material_id}-${source.page}-${sourceIndex}`}
+                  href={materialFileUrl(course.id, source.material_id, source.page)}>
+                  {material?.name || "课程材料"} · 第 {source.page} 页{source.quote ? ` · ${source.quote}` : ""}
+                </a>;
+              })}
+            </div>)}
+          </div>
+        </details>}
         {course.suggestions.filter((suggestion) => suggestion.node_id === node.id && !suggestion.accepted).map((suggestion) => (
           <div className="flex items-center gap-3 rounded-xl border border-st-new/30 bg-st-new/5 p-3" key={suggestion.id}>
             <div className="min-w-0 flex-1">
@@ -174,7 +305,7 @@ export function NodePanel({
             </Button>
           </div>
         ))}
-        {node.status === "mastered" && !reviewMastered && !reviewActive ? (
+        {node.status === "mastered" && !reviewMastered && !reviewActive && !initialChat ? (
           <div className="flex gap-3 rounded-xl border border-st-mastered/30 bg-st-mastered/5 p-4">
             <Check size={17} className="shrink-0 text-st-mastered" />
             <div className="flex flex-col items-start gap-1">
@@ -187,7 +318,7 @@ export function NodePanel({
           <>
             {reviewActive && Object.values(node.review_archived || {}).some((count) => count > 0) &&
               note("此前的全课程记录已保留；当前只显示本复习范围的记录。「找回思路」仍可查看全部原始对话。")}
-            <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="mt-1 gap-3">
+            <Tabs value={tab} onValueChange={(value: string) => setTab(value as typeof tab)} className="mt-1 gap-3">
               <TabsList className="w-full">
                 <TabsTrigger value="lesson"><BookOpen /> 小课</TabsTrigger>
                 <TabsTrigger value="learn"><MessageCircle /> 学习对话</TabsTrigger>
@@ -196,16 +327,18 @@ export function NodePanel({
               {!aiEnabled && note("AI 辅助已关闭。打开设置并确认数据发送说明后，可使用对话、出题和验收。")}
               <TabsContent value="lesson">
                 <LessonPanel course={course} node={node} busy={busy} aiEnabled={aiEnabled}
-                  act={act} onPractice={() => setTab("practice")}
-                  onDiscuss={(text) => { setMessage(text); setTab("learn"); }} />
+                  act={act} onDiscuss={discuss} onOpenLesson={bench.openLesson} />
               </TabsContent>
               <TabsContent value="learn" className="flex flex-col gap-3">
+                <div className="learning-dialogue flex min-w-0 flex-col gap-3">
                 <div className="conversation flex flex-col gap-2.5">
                   {node.chats.length ? node.chats.map((chat) => (
-                    <div className={cn("flex flex-col gap-1", chat.role === "assistant" ? "items-start" : "items-end")} key={chat.id}>
-                      <span className="text-[11px] text-muted-foreground">{chat.role === "assistant" ? "AI 导师" : "我"}</span>
-                      <p className={cn("max-w-[92%] whitespace-pre-wrap rounded-xl px-3 py-2 text-[13px] leading-relaxed",
+                    <div className={cn("flex shrink-0 flex-col gap-1", chat.role === "assistant" ? "items-start" : "items-end")} key={chat.id}>
+                      <span className="text-xs text-muted-foreground">{chat.role === "assistant" ? "AI 导师" : "我"}</span>
+                      <p className={cn("max-w-[92%] whitespace-pre-wrap [overflow-wrap:anywhere] rounded-xl px-3 py-2 text-[13px] leading-relaxed",
                         chat.role === "assistant" ? "border border-border bg-card" : "bg-secondary")}>{chat.content}</p>
+                      {chat.role === "assistant" && <button className="cursor-pointer text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => appendToNote(quoteBlock(chat.content, "AI 导师 · 学习对话"))}>＋ 存入笔记</button>}
                     </div>
                   )) : (
                     <div className="flex items-center gap-2.5 rounded-xl border border-dashed border-border p-4 text-[13px] text-muted-foreground">
@@ -215,10 +348,11 @@ export function NodePanel({
                   )}
                 </div>
                 <form className="flex items-end gap-2 rounded-xl border border-input p-2 focus-within:border-zinc-600" onSubmit={(event) => { event.preventDefault(); void sendChat(); }}>
-                  <textarea className="min-h-[44px] flex-1 resize-none !border-0 !bg-transparent !p-1 text-[13px] !shadow-none outline-none" aria-label="学习对话" value={message}
+                  <textarea className="min-h-[44px] min-w-0 flex-1 resize-none !border-0 !bg-transparent !p-1 text-[13px] !shadow-none outline-none" aria-label="学习对话" value={message}
                     onChange={(event) => setMessage(event.target.value)} placeholder="说说你的想法或疑问…" rows={2} disabled={!aiEnabled} />
                   <Button size="icon-sm" disabled={busy || !message.trim() || !aiEnabled} title="发送" aria-label="发送"><Send /></Button>
                 </form>
+                </div>
               </TabsContent>
               <TabsContent value="practice">
                 <PracticePanel course={course} node={node} busy={busy} aiEnabled={aiEnabled} run={run} onRefresh={onRefresh} onRatingSubmitted={onRatingSubmitted} />

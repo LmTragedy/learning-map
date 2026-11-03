@@ -3,7 +3,8 @@
 from collections import defaultdict, deque
 
 
-def learning_route(nodes):
+def learning_route(nodes, preferred=()):
+    """`preferred` holds node ids of goals in progress; their available nodes are suggested first."""
     by_id = {node["id"]: node for node in nodes}
     children = defaultdict(list)
     incoming, depth = {}, dict.fromkeys(by_id, 0)
@@ -23,9 +24,10 @@ def learning_route(nodes):
             if incoming[child] == 0:
                 queue.append(child)
     completed = {node["id"] for node in nodes if node["status"] in {"mastered", "passed"}}
-    next_id = next(
-        (nid for nid in order if nid not in completed and set(by_id[nid]["prerequisites"]) <= completed), None
-    )
+    available = [nid for nid in order if nid not in completed and set(by_id[nid]["prerequisites"]) <= completed]
+    preferred = set(preferred)
+    goal_next = next((nid for nid in available if nid in preferred), None)
+    next_id = goal_next or next(iter(available), None)
     groups = defaultdict(list)
     for node_id in order:
         groups[depth[node_id] // 2].append(node_id)
@@ -40,6 +42,7 @@ def learning_route(nodes):
     return dict(
         stages=stages,
         next_node_id=next_id,
+        next_for_goal=bool(goal_next),
         completed_count=len(completed),
         total=len(nodes),
         warning="部分先修关系缺失或存在循环，请核对完整地图。" if unresolved else "",

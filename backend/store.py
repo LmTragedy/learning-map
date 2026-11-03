@@ -200,7 +200,8 @@ class Store:
             with self.connect() as opened:
                 return self.settings(opened)
         defaults = dict(
-            ai_enabled=False, model="", reasoning_effort="medium", obsidian_vault="", parser="basic"
+            ai_enabled=False, model="", note_review_model="gpt-6-luna", reasoning_effort="medium",
+            obsidian_vault="", parser="basic"
         )
         row = connection.execute("SELECT body FROM settings WHERE key='main'").fetchone()
         return defaults | (json.loads(row[0]) if row else {})

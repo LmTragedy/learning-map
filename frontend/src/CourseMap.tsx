@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from "react";
-import { ArrowRight, BookOpen, Check, ChevronDown, Flag, Info, Lock, Network, Route, Sparkles, Waypoints } from "lucide-react";
+import { ArrowRight, BookOpen, Check, ChevronDown, Flag, Info, Lock, Network, NotebookPen, Route, Sparkles, Waypoints } from "lucide-react";
 import { cn } from "./lib/utils";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { MapView } from "./MapView";
+import { isRelationVisible } from "./relationVisibility";
 import { statusIcon, statusLabel } from "./status";
 import { splitSummary } from "./summary";
 import type { Course, LearningNode } from "./types";
@@ -16,24 +17,31 @@ type MapProps = {
   directEntryId?: string;
   directWeek?: string;
   onSelect: (node: LearningNode) => void;
+  onRelationSelect?: (edge: Course["edges"][number]) => void;
   reviewActive?: boolean;
+  reviewStrict?: boolean;
   prerequisiteNodes?: LearningNode[];
+  /** Nodes of the goal in focus; the rest are faded. */
+  focusIds?: string[];
 };
 
 export function CourseMap({ toolbar, ...props }: MapProps & { toolbar?: ReactNode }) {
   const [view, setView] = useState<"route" | "graph">("route");
   const filtered = props.directWeek
     ? props.course.nodes.filter((node) => node.week === props.directWeek) : props.course.nodes;
+  const visibleIds = new Set(filtered.map((node) => node.id));
+  const visibleEdges = props.course.edges.filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target)
+    && isRelationVisible(props.course, edge, Boolean(props.reviewStrict)));
   const graph = view === "graph" || !props.course.nodes.length;
   return <>
     <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-3">
-      <Tabs value={graph ? "graph" : "route"} onValueChange={(value) => setView(value as "route" | "graph")} className="max-[780px]:w-full">
+      <Tabs value={graph ? "graph" : "route"} onValueChange={(value: string) => setView(value as "route" | "graph")} className="max-[780px]:w-full">
         <TabsList aria-label="地图视图" className="max-[780px]:w-full">
           <TabsTrigger value="route"><Route /> 学习主线</TabsTrigger>
           <TabsTrigger value="graph"><Network /> 完整关系图</TabsTrigger>
         </TabsList>
       </Tabs>
-      <LegendPopover graph={graph} count={filtered.length} edges={props.course.edges} />
+      <LegendPopover graph={graph} count={filtered.length} edges={visibleEdges} />
       <div className="flex-1" />
       {toolbar}
     </div>
@@ -61,29 +69,29 @@ function LegendPopover({ graph, count, edges }: { graph: boolean; count: number;
       {graph ? <>
         <div className="mb-2 mt-4 text-xs font-medium text-muted-foreground">连线</div>
         <div className="grid gap-1.5 text-muted-foreground">
-          <span className="flex items-center gap-2"><i className="h-0.5 w-6 rounded bg-st-new" />先修链（往前要学的）</span>
+          <span className="flex items-center gap-2"><i className="h-0.5 w-6 rounded bg-st-new" />先修链（只按节点现有先修条件计算）</span>
           <span className="flex items-center gap-2"><i className="h-0.5 w-6 rounded bg-st-mastered" />后续链（学完能解锁的）</span>
-          <span className="flex items-center gap-2"><i className="h-0 w-6 border-t border-dotted border-zinc-500" />AI 推断关系</span>
+          <span className="flex items-center gap-2"><i className="h-0 w-6 border-t border-dotted border-zinc-500" />虚线：待核对或识别不确定</span>
         </div>
+        <p className="mt-2 text-xs text-muted-foreground">普通联系：点击查看说明及依据。</p>
         <p className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
-          {count} 个节点 · {edges.length} 条先修{inferredNote(edges)}。悬停节点看整条链；直达只临时显示，不解锁邻区。
+          {count} 个节点 · {edges.length} 条联系{relationStatusNote(edges)}。悬停节点看先修链；直达只临时显示，不解锁邻区。
         </p>
       </> : <p className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">阶段是导航分组，完成条件沿用原有记录。</p>}
     </PopoverContent>
   </Popover>;
 }
 
-function inferredNote(edges: Course["edges"]) {
-  const inferred = edges.filter((edge) => edge.uncertain).length;
-  if (!inferred) return "";
-  return inferred === edges.length ? "（全部为 AI 推断）" : `（${inferred} 条为 AI 推断）`;
+function relationStatusNote(edges: Course["edges"]) {
+  const pending = edges.filter((edge) => edge.uncertain || !edge.confirmed).length;
+  return pending ? ` · ${pending} 条待核对或识别不确定` : "";
 }
 
 const stateText = {
   new: "text-st-new", studied: "text-st-studied", mastered: "text-st-mastered", passed: "text-st-passed", locked: "text-muted-foreground",
 } as const;
 
-function LearningPath({ course, selected, directEntryId, directWeek, onSelect, reviewActive, prerequisiteNodes }: MapProps) {
+function LearningPath({ course, selected, directEntryId, directWeek, onSelect, reviewActive, prerequisiteNodes, focusIds }: MapProps) {
   const [expansion, setExpansion] = useState<{ selected?: string; stages: Record<string, boolean> }>({ stages: {} });
   const expanded = expansion.selected === selected?.id ? expansion.stages : {};
   const route = course.route;
@@ -92,13 +100,14 @@ function LearningPath({ course, selected, directEntryId, directWeek, onSelect, r
   const visibleById = new Map(course.nodes.map((node) => [node.id, node]));
   const next = visibleById.get(route.next_node_id ?? "");
   const complete = route.total > 0 && route.completed_count === route.total;
+  const noted = new Set([...course.nodes.filter((node) => node.personal_note?.trim()).map((node) => node.id), ...(course.notes || []).flatMap((note) => note.node_ids)]);
   return <div className="learning-path min-h-0 flex-1 overflow-y-auto px-4 pb-6">
     <div className="mx-auto flex max-w-3xl flex-col gap-3">
       {next && !complete && <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 max-[480px]:flex-wrap">
         <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-st-new/10 text-st-new"><Sparkles size={18} aria-hidden /></span>
         <div className="min-w-0 flex-1">
-          <div className="text-xs text-muted-foreground">建议下一步 · {reviewActive && !next.unlocked ? "复习模式临时开放，不改变解锁状态" : "先修已满足"}</div>
-          <div className="truncate text-[15px] font-semibold">{next.title}</div>
+          <div className="text-xs text-muted-foreground">建议下一步 · {reviewActive && !next.unlocked ? "复习模式临时开放，不改变解锁状态" : route.next_for_goal ? "属于进行中的目标，先修已满足" : "先修已满足"}</div>
+          <div className="t-section truncate">{next.title}</div>
         </div>
         <Button className="max-[480px]:w-full" onClick={() => {
           const stage = route.stages.find((entry) => entry.node_ids.includes(next.id));
@@ -114,7 +123,7 @@ function LearningPath({ course, selected, directEntryId, directWeek, onSelect, r
           if (!nodes.length) return null;
           const open = expanded[stage.id] ?? nodes.some((node) => node.id === (selected?.id ?? next?.id));
           return <PathStage key={stage.id} stage={stage} nodes={nodes} byId={byId} open={open}
-            selectedId={selected?.id} directEntryId={directEntryId} directWeek={directWeek} reviewActive={reviewActive} onSelect={onSelect}
+            selectedId={selected?.id} directEntryId={directEntryId} directWeek={directWeek} reviewActive={reviewActive} onSelect={onSelect} focusIds={focusIds} noted={noted}
             onToggle={() => setExpansion({ selected: selected?.id, stages: { ...expanded, [stage.id]: !open } })} />;
         })}
       </div>
@@ -128,10 +137,10 @@ function LearningPath({ course, selected, directEntryId, directWeek, onSelect, r
   </div>;
 }
 
-function PathStage({ stage, nodes, byId, open, selectedId, directEntryId, directWeek, reviewActive, onSelect, onToggle }: {
+function PathStage({ stage, nodes, byId, open, selectedId, directEntryId, directWeek, reviewActive, onSelect, onToggle, focusIds, noted }: {
   stage: { id: string; title: string }; nodes: LearningNode[]; byId: Map<string, LearningNode>;
   open: boolean; selectedId?: string; directEntryId?: string; directWeek?: string; reviewActive?: boolean;
-  onSelect: (node: LearningNode) => void; onToggle: () => void;
+  onSelect: (node: LearningNode) => void; onToggle: () => void; focusIds?: string[]; noted: Set<string>;
 }) {
   const completed = nodes.filter((node) => node.status === "passed" || node.status === "mastered").length;
   const isAvailable = (node: LearningNode) =>
@@ -147,7 +156,7 @@ function PathStage({ stage, nodes, byId, open, selectedId, directEntryId, direct
         {done ? <Check size={14} /> : <ChevronDown size={15} className={cn("transition-transform", !open && "-rotate-90")} />}
       </span>
       <span className="min-w-0 flex-1">
-        <strong className="block truncate text-sm font-semibold">{stage.title}</strong>
+        <strong className="t-section block truncate">{stage.title}</strong>
         <small className="flex items-center gap-1 text-xs text-muted-foreground"><Waypoints size={12} aria-hidden /> {nodes.length} 个知识点 · {shown.length ? `${shown.length} 个可学习` : "均未解锁"}</small>
       </span>
       <span className="h-1.5 w-24 overflow-hidden rounded-full bg-secondary max-[480px]:hidden"><span className="block h-full rounded-full bg-st-passed" style={{ width: `${Math.round(completed / nodes.length * 100)}%` }} /></span>
@@ -155,6 +164,7 @@ function PathStage({ stage, nodes, byId, open, selectedId, directEntryId, direct
     </button>
     {open && <div className="flex flex-col gap-2 border-t border-border p-3" id={`stage-${stage.id}`}>
       {shown.map((node) => <PathNode key={node.id} node={node} selected={selectedId === node.id}
+        dimmed={Boolean(focusIds && !focusIds.includes(node.id))} hasNote={noted.has(node.id)}
         available={isAvailable(node)} reveal={Boolean(reviewActive)}
         parents={node.prerequisites.map((id) => byId.get(id)).filter((parent) => parent !== undefined)}
         onSelect={onSelect} />)}
@@ -164,8 +174,8 @@ function PathStage({ stage, nodes, byId, open, selectedId, directEntryId, direct
   </section>;
 }
 
-function PathNode({ node, selected, available, reveal, parents, onSelect }: {
-  node: LearningNode; selected: boolean; available: boolean; reveal: boolean; parents: LearningNode[];
+function PathNode({ node, selected, available, reveal, parents, onSelect, dimmed, hasNote }: {
+  node: LearningNode; selected: boolean; available: boolean; reveal: boolean; parents: LearningNode[]; dimmed?: boolean; hasNote: boolean;
   onSelect: (node: LearningNode) => void;
 }) {
   const missing = parents.filter((parent) => parent.status !== "passed" && parent.status !== "mastered");
@@ -175,15 +185,18 @@ function PathNode({ node, selected, available, reveal, parents, onSelect }: {
   const named = missing.filter((parent) => reveal || parent.unlocked);
   const unnamed = missing.length - named.length;
   return <button className={cn("path-node group flex w-full cursor-pointer flex-col gap-1 rounded-lg border border-border bg-background px-3.5 py-3 text-left transition-colors hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-60",
-    selected && "selected border-zinc-400 ring-[3px] ring-ring/15")}
+    selected && "selected border-zinc-400 ring-[3px] ring-ring/15", dimmed && "opacity-35")}
     disabled={!available} onClick={() => onSelect(node)} aria-current={selected ? "step" : undefined}>
     <span className="flex items-center gap-2">
       <StatusIcon size={15} className={cn("shrink-0", stateText[statusKey])} aria-hidden />
-      <strong className="min-w-0 flex-1 truncate text-sm font-medium">{node.title}</strong>
+      <strong className="t-item min-w-0 flex-1 truncate">{node.title}</strong>
       <Badge variant={statusKey}>{statusLabel[statusKey]}</Badge>
     </span>
     <span className="line-clamp-2 pl-[23px] text-[13px] text-muted-foreground">{splitSummary(node.summary || "").explain}</span>
     {missing.length > 0 && <small className="flex items-center gap-1 pl-[23px] text-xs text-muted-foreground"><Lock size={12} aria-hidden /> 还需：{[...named.map((parent) => parent.title), ...(unnamed ? [`${unnamed} 个未解锁先修`] : [])].join("、")}</small>}
-    {!!node.lessons?.length && <small className="flex items-center gap-1 pl-[23px] text-xs text-muted-foreground"><BookOpen size={12} aria-hidden /> {node.lessons.length} 节已保存小课</small>}
+    {(!!node.lessons?.length || hasNote) && <small className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-[23px] text-xs text-muted-foreground">
+      {!!node.lessons?.length && <span className="flex items-center gap-1"><BookOpen size={12} aria-hidden /> {node.lessons.length} 节已保存小课</span>}
+      {hasNote && <span className="flex items-center gap-1 text-foreground/80"><NotebookPen size={12} aria-hidden /> 有笔记</span>}
+    </small>}
   </button>;
 }

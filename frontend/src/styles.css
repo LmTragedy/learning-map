@@ -16,7 +16,6 @@
   font-family: var(--font-sans);
   color: var(--text);
   background: var(--bg);
-  font-size: var(--fs-md);
   line-height: 1.6;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -529,15 +528,17 @@ a {
 .lesson-supplement { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--border-strong); padding-top: 18px; }
 .lesson-supplement label { font-size: var(--fs-sm); }
 .lesson-supplement textarea { width: 100%; font-size: var(--fs-xs); line-height: 1.8; }
-.lesson-reader { padding: 0; width: min(1120px, 94vw); height: 92vh; max-width: 94vw; max-height: 94vh; border: 1px solid #666670; border-radius: var(--r-lg); color: #e8e8eb; background: #1d1d20; }
-.lesson-reader[open] { display: flex; flex-direction: column; }
-.lesson-reader::backdrop { background: #040d16d9; backdrop-filter: blur(5px); }
+.study-content-host { position: absolute; inset: 0; z-index: 1; min-width: 0; min-height: 0; }
+.study-content-host:empty { display: none; }
+.graph-area:has(.lesson-reader, .node-note-document) > :not(.study-content-host) { visibility: hidden; }
+.lesson-reader { display: flex; flex-direction: column; padding: 0; width: 100%; height: 100%; min-width: 0; min-height: 0; color: #e8e8eb; background: #1d1d20; }
 .lesson-reader > header { display: flex; align-items: center; gap: 16px; padding: 16px 22px; }
-.lesson-reader > header > div { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.lesson-reader > header > div { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.lesson-reader > header strong { overflow-wrap: anywhere; }
 .lesson-reader > header strong { font-size: var(--fs-lg); }
 .lesson-reader a { display: flex; gap: 7px; align-items: center; font-size: var(--fs-xs); color: #c2c2c7; }
 .lesson-reader iframe { display: block; width: 100%; flex: 1; min-height: 0; border: none; background: #f4f4f5; }
-.lesson-reader > footer { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 14px 22px; }
+.lesson-reader > footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 16px; }
 .lesson-reader > footer > span { margin-right: auto; font-size: var(--fs-xs); color: #b7b7bd; }
 .source-box > summary { cursor: pointer; }
 @media (max-width: 720px) {
