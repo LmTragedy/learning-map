@@ -63,7 +63,8 @@ export function GoalBoard({ course, initialGoalId = "", busy, aiEnabled, run, on
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => void perform(() => api.course(course.id)).then((updated) => updated && onRefresh(updated))} title="读取最新节点进度"><RefreshCw />刷新进度</Button>
         {/* With no goals yet these live in the first-run block below instead. */}
         {(goals.length > 0 || !!editor || !!preview) && <>
-        <Button size="sm" variant="outline" disabled={busy || !!editor || !!preview || !aiEnabled || !course.materials.length} onClick={() => void extract()} title={!aiEnabled ? "先在设置中开启 AI" : !course.materials.length ? "先导入课程材料" : "分析整门课程材料，确认后加入"}><Sparkles />从材料提取</Button>
+        <Button size="sm" variant="outline" disabled={busy || !!editor || !!preview || !aiEnabled || !course.materials.length} onClick={() => void extract()} title="分析整门课程材料，确认后加入"><Sparkles />从材料提取</Button>
+        {(!aiEnabled || !course.materials.length) && <span className="goal-muted text-xs">{!aiEnabled ? "从材料提取需先在设置中开启 AI" : "从材料提取需先导入课程材料"}</span>}
         <Button size="sm" disabled={busy || !!editor || !!preview} onClick={() => { setEditor({ goal: emptyGoal, revision: course.revision }); }}><Plus />添加目标</Button>
         </>}
       </div>

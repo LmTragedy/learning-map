@@ -53,7 +53,7 @@ export function BridgeEditor({ course, edge, source, target, busy, act, onDone }
     </fieldset>)}
     <Button type="button" size="sm" variant="outline" className="self-start" onClick={() => setRows((current) => [...current, { id: "", from_piece: "", to_step: "", how: "", if_missing: "", strength: "required", question: "", answer: "" }])}><Plus /> 加一座桥</Button>
     <p className="text-xs text-muted-foreground">保存后这些桥算你写的：之后 AI 补充时不会覆盖。强度只用于推荐，解锁仍按整个知识点。</p>
-    <div className="flex gap-2"><Button size="sm" disabled={busy}>保存知识桥</Button><Button size="sm" type="button" variant="ghost" onClick={onDone}>取消</Button></div>
+    <div className="flex justify-end gap-2"><Button size="sm" type="button" variant="ghost" onClick={onDone}>取消</Button><Button size="sm" disabled={busy}>保存知识桥</Button></div>
   </form>;
 }
 
@@ -82,6 +82,6 @@ export function PieceEditor({ course, node, busy, act, onDone }: { course: Cours
       <Button type="button" size="icon-sm" variant="ghost" aria-label="删除这一步" onClick={() => setSteps((current) => current.filter((_, i) => i !== index))}><Trash2 /></Button>
     </div>)}
     <Button type="button" size="sm" variant="ghost" className="self-start" onClick={() => setSteps((current) => [...current, { id: "", title: "" }])}><Plus /> 加一步</Button>
-    <div className="flex gap-2"><Button size="sm" disabled={busy}>保存</Button><Button size="sm" type="button" variant="ghost" onClick={onDone}>取消</Button></div>
+    <div className="flex justify-end gap-2"><Button size="sm" type="button" variant="ghost" onClick={onDone}>取消</Button><Button size="sm" disabled={busy}>保存</Button></div>
   </form>;
 }

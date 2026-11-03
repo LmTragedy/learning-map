@@ -9,6 +9,8 @@ import subprocess
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -43,6 +45,7 @@ class _AIRequest:
     schema: dict[str, Any] | None
     images: list[Path]
     conversation: ConversationIdentity | None
+    observer: Callable[[str, dict[str, Any]], None] | None
 
 
 class _StderrBuffer:
@@ -96,21 +99,60 @@ class _AppServerSession:
             if "id" in message and "method" in message:
                 self.reject_server_request(message)
 
-    def collect_turn(self, request_id: int) -> str:
-        fragments: list[str] = []
+    def collect_turn(
+        self,
+        request_id: int,
+        observer: Callable[[str, dict[str, Any]], None] | None,
+        thread_id: str,
+    ) -> tuple[str, str | None]:
+        fragments_by_item: dict[str, list[str]] = {}
+        unkeyed_fragments: list[str] = []
+        completed_messages: list[dict[str, Any]] = []
         output_chars = 0
+        turn_id: str | None = None
         while True:
             message = self.next_message()
             method = message.get("method")
+            if message.get("id") == request_id and "result" in message:
+                result = message.get("result") or {}
+                result_turn = result.get("turn") if isinstance(result, dict) else None
+                turn_id = _identify_turn(
+                    result_turn.get("id") if isinstance(result_turn, dict) else None,
+                    None,
+                    thread_id,
+                    turn_id,
+                    observer,
+                )
+                continue
+            if method:
+                _observe(observer, "stream/message", message)
             params = message.get("params") or {}
+            if not isinstance(params, dict):
+                raise AIError("Codex app-server sent invalid notification parameters.")
+            turn = params.get("turn")
+            turn = turn if isinstance(turn, dict) else {}
+            candidate = _notification_turn_id(params, turn)
+            turn_id = _identify_turn(candidate, params.get("threadId"), thread_id, turn_id, observer)
             if "id" in message and method:
                 self.reject_server_request(message)
             if method == "item/agentMessage/delta":
-                output_chars = self.append_delta(params.get("delta"), fragments, output_chars)
+                delta = params.get("delta")
+                item_id = params.get("itemId")
+                if not isinstance(delta, str):
+                    raise AIError("Codex returned an invalid message fragment.")
+                target = fragments_by_item.setdefault(item_id, []) if isinstance(item_id, str) and item_id else unkeyed_fragments
+                output_chars = self.append_delta(delta, target, output_chars)
             elif method in {"item/started", "item/completed"}:
-                self.validate_item(params.get("item") or {})
+                item = params.get("item") or {}
+                self.validate_item(item)
+                if method == "item/completed" and item.get("type") == "agentMessage":
+                    completed_messages.append(item)
             elif method == "turn/completed":
-                return self.completed_text(params.get("turn") or {}, fragments)
+                if not isinstance(turn, dict):
+                    raise AIError("Codex returned an invalid completed turn.")
+                return _completed_turn_text(
+                    turn, completed_messages, fragments_by_item, unkeyed_fragments
+                ), turn_id
             if message.get("id") == request_id and "error" in message:
                 raise AIError(f"Codex turn failed: {_error_message(message['error'])}")
 
@@ -152,18 +194,8 @@ class _AppServerSession:
 
     @staticmethod
     def validate_item(item: dict[str, Any]) -> None:
-        if item.get("type") not in _SAFE_ITEM_TYPES:
+        if not isinstance(item, dict) or item.get("type") not in _SAFE_ITEM_TYPES:
             raise AIError("Codex attempted to use a tool; the turn was stopped.")
-
-    @staticmethod
-    def completed_text(turn: dict[str, Any], fragments: list[str]) -> str:
-        if turn.get("status") != "completed":
-            raise AIError(f"Codex turn {turn.get('status', 'failed')}.")
-        response = "".join(fragments).strip()
-        if not response:
-            raise AIError("Codex completed without an assistant message.")
-        return response
-
 
 class CodexAI:
     def __init__(self, working_dir: Path, model: str = "", effort: str = "medium") -> None:
@@ -202,9 +234,10 @@ class CodexAI:
         schema: dict[str, Any] | None = None,
         images: list[Path] | None = None,
         conversation: ConversationIdentity | None = None,
+        observer: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> dict[str, str]:
         request = self._validated_request(
-            _AIRequest(prompt, thread_id, schema, images or [], conversation)
+            _AIRequest(prompt, thread_id, schema, images or [], conversation, observer)
         )
         stderr_buffer = _StderrBuffer()
         try:
@@ -216,7 +249,23 @@ class CodexAI:
         except (OSError, EOFError, UnicodeError, json.JSONDecodeError, TypeError) as exc:
             raise self._communication_error(stderr_buffer) from exc
 
-    def organize_thread(self, thread_id: str, conversation: ConversationIdentity) -> None:
+    def read_turn(
+        self, thread_id: str, turn_id: str | None = None, prompt: str | None = None
+    ) -> dict[str, str]:
+        """Read an existing turn by exact ID, or by a unique exact user prompt."""
+        if not isinstance(thread_id, str) or not thread_id.strip():
+            raise AIError("Thread ID must not be empty.")
+        if turn_id is not None and (not isinstance(turn_id, str) or not turn_id.strip()):
+            raise AIError("Turn ID must not be empty.")
+        if turn_id is None and (not isinstance(prompt, str) or not prompt):
+            raise AIError("An exact prompt is required when turn ID is not provided.")
+        executable = self._codex_executable()
+        stderr_buffer = _StderrBuffer()
+        return _read_turn_request(
+            executable, self.working_dir, thread_id, turn_id, prompt, stderr_buffer
+        )
+
+    def organize_thread(self, thread_id: str, conversation: ConversationIdentity) -> str:
         """Set thread title and course section without resuming or generating a turn."""
         if not isinstance(thread_id, str) or not thread_id.strip():
             raise AIError("Codex thread ID must not be empty.")
@@ -225,7 +274,7 @@ class CodexAI:
         try:
             executable = self._codex_executable()
             self._prepare_working_dir()
-            self._run_organization(executable, thread_id, identity, stderr_buffer)
+            return self._run_organization(executable, thread_id, identity, stderr_buffer)
         except AIError:
             raise
         except (OSError, EOFError, UnicodeError, json.JSONDecodeError, TypeError) as exc:
@@ -237,13 +286,13 @@ class CodexAI:
         thread_id: str,
         conversation: ConversationIdentity,
         stderr_buffer: _StderrBuffer,
-    ) -> None:
+    ) -> str:
         process: subprocess.Popen[bytes] | None = None
         try:
             process, incoming = _start_process(executable, self.working_dir, stderr_buffer)
             session = _AppServerSession(process, incoming, time.monotonic() + _TIMEOUT_SECONDS)
             self._initialize_session(session)
-            self._organize_thread(session, thread_id, conversation, 4)
+            return self._organize_thread(session, thread_id, conversation, 4)
         finally:
             if process is not None:
                 _stop_process(process)
@@ -290,10 +339,27 @@ class CodexAI:
         session = _AppServerSession(process, incoming, time.monotonic() + _TIMEOUT_SECONDS)
         self._initialize_session(session)
         thread_id = self._open_thread(session, request.thread_id)
+        _observe(request.observer, "thread/opened", {"thread_id": thread_id})
         if request.conversation is not None:
-            self._organize_thread(session, thread_id, request.conversation, 4)
-        text = self._start_turn(session, thread_id, request)
-        return {"text": text, "thread_id": thread_id}
+            try:
+                section_id = self._organize_thread(session, thread_id, request.conversation, 4)
+                _observe(request.observer, "metadata/organized", {"section_id": section_id})
+            except AIError as exc:
+                if request.observer is None:
+                    raise
+                _observe(request.observer, "metadata/failed", {
+                    "thread_id": thread_id, "error": str(exc),
+                })
+        text, turn_id = self._start_turn(session, thread_id, request)
+        if request.observer is not None and turn_id is None:
+            raise AIError("Codex completed without a turn ID required for recovery.")
+        _observe(request.observer, "response/completed", {
+            "text": text, "thread_id": thread_id, "turn_id": turn_id,
+        })
+        result = {"text": text, "thread_id": thread_id}
+        if request.observer is not None and turn_id is not None:
+            result["turn_id"] = turn_id
+        return result
 
     def _organize_thread(
         self,
@@ -301,19 +367,20 @@ class CodexAI:
         thread_id: str,
         conversation: ConversationIdentity,
         request_id: int,
-    ) -> None:
+    ) -> str:
         self._metadata_request(session, request_id, "thread/name/set", {
             "threadId": thread_id,
             "name": conversation.title,
         })
         request_id += 1
-        section_id, request_id = self._find_or_create_section(
-            session, conversation.group, request_id
-        )
+        section_id = conversation.native_section_id
+        if section_id is None:
+            section_id, request_id = self._find_or_create_section(session, conversation.group, request_id)
         self._metadata_request(session, request_id, "thread/section/move", {
             "threadId": thread_id,
             "sectionId": section_id,
         })
+        return section_id
 
     @staticmethod
     def _metadata_request(
@@ -393,6 +460,8 @@ class CodexAI:
         actual_thread_id = thread.get("id")
         if not isinstance(actual_thread_id, str) or not actual_thread_id:
             raise AIError("Codex did not return a thread ID.")
+        if thread_id and actual_thread_id != thread_id:
+            raise AIError("Codex resumed a different thread; no turn was sent.")
         return actual_thread_id
 
     def _thread_params(self, thread_id: str | None) -> dict[str, Any]:
@@ -409,7 +478,9 @@ class CodexAI:
             params["model"] = self.model
         return params
 
-    def _start_turn(self, session: _AppServerSession, thread_id: str, request: _AIRequest) -> str:
+    def _start_turn(
+        self, session: _AppServerSession, thread_id: str, request: _AIRequest
+    ) -> tuple[str, str | None]:
         user_input: list[dict[str, Any]] = [{"type": "text", "text": request.prompt}]
         user_input.extend({"type": "localImage", "path": str(path)} for path in request.images)
         turn_params: dict[str, Any] = {
@@ -420,8 +491,13 @@ class CodexAI:
         }
         if request.schema is not None:
             turn_params["outputSchema"] = request.schema
-        session.send({"id": 3, "method": "turn/start", "params": turn_params})
-        return session.collect_turn(3)
+        send_guard = getattr(request.observer, "send_guard", nullcontext)
+        with send_guard():
+            _observe(request.observer, "turn/sending", {
+                "thread_id": thread_id, "params": turn_params,
+            })
+            session.send({"id": 3, "method": "turn/start", "params": turn_params})
+        return session.collect_turn(3, request.observer, thread_id)
 
     @staticmethod
     def _validated_request(request: _AIRequest) -> _AIRequest:
@@ -444,6 +520,7 @@ class CodexAI:
             request.schema,
             CodexAI._validated_images(request.images),
             conversation,
+            request.observer,
         )
 
     @staticmethod
@@ -531,6 +608,194 @@ def _error_message(error: Any) -> str:
     return "invalid protocol response"
 
 
+def _observe(
+    observer: Callable[[str, dict[str, Any]], None] | None,
+    event: str,
+    payload: dict[str, Any],
+) -> None:
+    if observer is not None:
+        try:
+            observer(event, payload)
+        except Exception as exc:
+            raise AIError(f"The AI event observer failed during {event}.") from exc
+
+
+def _identify_turn(
+    candidate: Any,
+    actual_thread_id: Any,
+    expected_thread_id: str,
+    current_turn_id: str | None,
+    observer: Callable[[str, dict[str, Any]], None] | None,
+) -> str | None:
+    if actual_thread_id is not None and actual_thread_id != expected_thread_id:
+        raise AIError("Codex stream notification belonged to a different thread.")
+    if candidate is None:
+        return current_turn_id
+    if not isinstance(candidate, str) or not candidate:
+        raise AIError("Codex stream notification contained an invalid turn ID.")
+    if current_turn_id is not None and candidate != current_turn_id:
+        raise AIError("Codex stream notification belonged to a different turn.")
+    if current_turn_id is None:
+        _observe(observer, "turn/identified", {
+            "thread_id": expected_thread_id,
+            "turn_id": candidate,
+        })
+    return candidate
+
+
+def _notification_turn_id(params: dict[str, Any], turn: dict[str, Any]) -> Any:
+    identifiers = [value for value in (params.get("turnId"), turn.get("id")) if value is not None]
+    if any(not isinstance(value, str) or not value for value in identifiers):
+        raise AIError("Codex stream notification contained an invalid turn ID.")
+    if len(set(identifiers)) > 1:
+        raise AIError("Codex stream notification included conflicting turn IDs.")
+    return identifiers[0] if identifiers else None
+
+
+def _completed_turn_text(
+    turn: dict[str, Any],
+    completed_messages: list[dict[str, Any]],
+    fragments_by_item: dict[str, list[str]],
+    unkeyed_fragments: list[str],
+) -> str:
+    status = turn.get("status")
+    if status != "completed":
+        raise AIError(f"Codex turn {status or 'failed'}.")
+    items = turn.get("items")
+    if isinstance(items, list):
+        for item in items:
+            _AppServerSession.validate_item(item)
+        answer = _final_assistant_text(items)
+        if answer:
+            return answer
+    answer = _final_assistant_text(completed_messages)
+    if answer:
+        return answer
+    if unkeyed_fragments and not fragments_by_item:
+        answer = "".join(unkeyed_fragments).strip()
+        if answer:
+            return answer
+    if len(fragments_by_item) == 1 and not unkeyed_fragments:
+        answer = "".join(next(iter(fragments_by_item.values()))).strip()
+        if answer:
+            return answer
+    if len(fragments_by_item) > 1 or (fragments_by_item and unkeyed_fragments):
+        raise AIError("Codex completed with multiple assistant messages but no final message marker.")
+    raise AIError("Codex completed without an assistant message.")
+
+
+def _read_turn_request(
+    executable: str,
+    working_dir: Path,
+    thread_id: str,
+    turn_id: str | None,
+    prompt: str | None,
+    stderr_buffer: _StderrBuffer,
+) -> dict[str, str]:
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        process, incoming = _start_process(executable, working_dir, stderr_buffer)
+        session = _AppServerSession(process, incoming, time.monotonic() + _TIMEOUT_SECONDS)
+        CodexAI._initialize_session(session)
+        response = session.request(2, "thread/read", {
+            "threadId": thread_id, "includeTurns": True,
+        })
+        thread = response.get("thread") or {}
+        if not isinstance(thread, dict):
+            raise AIError("Codex thread/read returned invalid thread data.")
+        if thread.get("id") != thread_id:
+            raise AIError("Codex thread/read returned a different thread.")
+        turns = thread.get("turns")
+        if not isinstance(turns, list):
+            raise AIError("Codex thread/read did not include turns.")
+        return _read_turn_result(thread_id, _select_read_turn(turns, turn_id, prompt))
+    except AIError:
+        raise
+    except (OSError, EOFError, UnicodeError, json.JSONDecodeError, TypeError) as exc:
+        raise CodexAI._communication_error(stderr_buffer) from exc
+    finally:
+        if process is not None:
+            _stop_process(process)
+
+
+def _select_read_turn(
+    turns: list[Any], turn_id: str | None, prompt: str | None
+) -> dict[str, Any]:
+    if turn_id is not None:
+        matches = [turn for turn in turns if isinstance(turn, dict) and turn.get("id") == turn_id]
+    else:
+        matches = [
+            turn for turn in turns
+            if isinstance(turn, dict) and _turn_user_prompt(turn) == prompt
+        ]
+    if len(matches) != 1:
+        raise AIError("The requested turn was not identified uniquely in this thread.")
+    return matches[0]
+
+
+def _turn_user_prompt(turn: dict[str, Any]) -> str | None:
+    items = turn.get("items")
+    if not isinstance(items, list):
+        return None
+    prompts: list[str] = []
+    for item in items:
+        if not isinstance(item, dict) or item.get("type") != "userMessage":
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            return None
+        text_parts = [
+            part.get("text")
+            for part in content
+            if isinstance(part, dict) and part.get("type") == "text"
+        ]
+        if not text_parts or not all(isinstance(part, str) for part in text_parts):
+            return None
+        prompts.append("".join(text_parts))
+    return prompts[0] if len(prompts) == 1 else None
+
+
+def _read_turn_result(thread_id: str, turn: dict[str, Any]) -> dict[str, str]:
+    actual_turn_id = turn.get("id")
+    status = turn.get("status")
+    items = turn.get("items")
+    if not isinstance(actual_turn_id, str) or not actual_turn_id:
+        raise AIError("Codex returned a turn without an ID.")
+    if not isinstance(status, str):
+        raise AIError("Codex returned a turn without a status.")
+    if not isinstance(items, list):
+        raise AIError("Codex returned a turn without complete items.")
+    if turn.get("itemsView", "full") != "full":
+        raise AIError("Codex returned a summarized turn without complete items.")
+    unsafe = [
+        item for item in items
+        if not isinstance(item, dict) or item.get("type") not in _SAFE_ITEM_TYPES
+    ]
+    if unsafe:
+        raise AIError("The requested turn contains tool activity and cannot be recovered safely.")
+    final_text = _final_assistant_text(items)
+    if status == "completed" and not final_text:
+        raise AIError("The completed turn has no recoverable final assistant message.")
+    return {
+        "status": status,
+        "thread_id": thread_id,
+        "turn_id": actual_turn_id,
+        "text": final_text,
+    }
+
+
+def _final_assistant_text(items: list[Any]) -> str:
+    for item in reversed(items):
+        if not isinstance(item, dict) or item.get("type") != "agentMessage":
+            continue
+        if item.get("phase") not in {None, "final_answer"}:
+            continue
+        text = item.get("text")
+        if isinstance(text, str) and text.strip():
+            return text
+    return ""
+
+
 def _validated_conversation(conversation: ConversationIdentity) -> ConversationIdentity:
     if not isinstance(conversation, ConversationIdentity):
         raise AIError("Conversation identity must contain a course group and thread title.")
@@ -542,6 +807,10 @@ def _validated_conversation(conversation: ConversationIdentity) -> ConversationI
         raise AIError("Conversation group must not be empty.")
     if len(conversation.group) > 250:
         raise AIError("Conversation group must be at most 250 characters.")
+    if conversation.native_section_id is not None and (
+            not isinstance(conversation.native_section_id, str) or not conversation.native_section_id
+            or len(conversation.native_section_id) > 100):
+        raise AIError("Native section ID must be a non-empty string of at most 100 characters.")
     return conversation
 
 

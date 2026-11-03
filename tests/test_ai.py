@@ -47,10 +47,12 @@ def _rpc_reply(request_id: int, result: dict[str, object]) -> dict[str, object]:
     return {"id": request_id, "result": result}
 
 
-def _messages(*, tool_item: bool = False, status: str = "completed") -> list[dict[str, object]]:
+def _messages(
+    *, tool_item: bool = False, status: str = "completed", thread_id: str = "thread-123",
+) -> list[dict[str, object]]:
     events: list[dict[str, object]] = [
         _rpc_reply(1, {}),
-        _rpc_reply(2, {"thread": {"id": "thread-123"}}),
+        _rpc_reply(2, {"thread": {"id": thread_id}}),
         _rpc_reply(3, {}),
     ]
     if tool_item:
@@ -62,7 +64,7 @@ def _messages(*, tool_item: bool = False, status: str = "completed") -> list[dic
                 "params": {
                     "delta": "A concise answer.",
                     "itemId": "item-1",
-                    "threadId": "thread-123",
+                    "threadId": thread_id,
                     "turnId": "turn-1",
                 },
             }
@@ -70,7 +72,7 @@ def _messages(*, tool_item: bool = False, status: str = "completed") -> list[dic
     events.append(
         {
             "method": "turn/completed",
-            "params": {"threadId": "thread-123", "turn": {"id": "turn-1", "status": status}},
+            "params": {"threadId": thread_id, "turn": {"id": "turn-1", "status": status}},
         }
     )
     return events
@@ -134,14 +136,14 @@ def test_ask_resumes_saved_thread_and_attaches_image(tmp_path: Path) -> None:
     image.write_bytes(b"image")
     response, _, sent, _ = _run_with_messages(
         tmp_path,
-        _messages(),
+        _messages(thread_id="thread-existing"),
         thread_id="thread-existing",
         model="gpt-6.1-terra",
         effort="high",
         images=[image],
     )
 
-    assert response == {"text": "A concise answer.", "thread_id": "thread-123"}
+    assert response == {"text": "A concise answer.", "thread_id": "thread-existing"}
     resume = next(message for message in sent if message.get("method") == "thread/resume")
     turn = next(message for message in sent if message.get("method") == "turn/start")
     assert resume["params"]["threadId"] == "thread-existing"
@@ -150,6 +152,18 @@ def test_ask_resumes_saved_thread_and_attaches_image(tmp_path: Path) -> None:
     assert resume["params"]["model"] == "gpt-6.1-terra"
     assert turn["params"]["effort"] == "high"
     assert turn["params"]["input"][-1] == {"type": "localImage", "path": str(image.resolve())}
+
+
+def test_resume_returning_another_thread_rejects_before_sending_a_turn(tmp_path: Path) -> None:
+    server = FakeAppServer(_messages())
+    with (
+        patch("backend.codex_installation.shutil.which", return_value="codex.exe"),
+        patch("backend.ai.subprocess.Popen", return_value=server),
+        pytest.raises(AIError, match="resumed a different thread"),
+    ):
+        CodexAI(tmp_path).ask("Continue this topic.", thread_id="thread-existing")
+    sent = [json.loads(line) for line in server.stdin.getvalue().splitlines()]
+    assert not any(message.get("method") == "turn/start" for message in sent)
 
 
 def test_ask_stops_if_app_server_emits_tool_item(tmp_path: Path) -> None:

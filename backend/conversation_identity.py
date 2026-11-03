@@ -7,3 +7,4 @@ from dataclasses import dataclass
 class ConversationIdentity:
     title: str
     group: str
+    native_section_id: str | None = None

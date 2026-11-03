@@ -36,13 +36,13 @@
   --ring: #d4d4d8;
   --sidebar: #0e0e11;
   /* learning states: always shown with a word and an icon too */
-  --state-new: #fbbf24;
+  --state-new: var(--state-new);
   --state-studied: #a1a1aa;
   --state-mastered: #60a5fa;
   --state-passed: #4ade80;
   --state-locked: #71717a;
   /* empty part of progress bars: 1.9:1 on the ground so the scale itself reads */
-  --track: #3a3a41;
+  --track: var(--track);
 }
 
 @theme inline {
@@ -89,8 +89,8 @@
 @layer base {
   *, ::before, ::after { box-sizing: border-box; border: 0 solid var(--border); }
   html, body { background: var(--background); color: var(--foreground); }
-  body { margin: 0; font-family: var(--font-sans); font-size: 14px; line-height: 1.6; -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01"; }
-  code, kbd, pre, .mono { font-family: var(--font-mono); }
+  body { margin: 0; font-family: var(--font-sans); font-size: var(--fs-md); line-height: 1.6; -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01"; }
+  code, kbd, pre{ font-family: var(--font-mono); }
   button { background: none; color: inherit; font: inherit; padding: 0; }
   h1, h2, h3, h4, p { margin: 0; }
 }
@@ -119,13 +119,6 @@
     .shell-side .course-item { align-items: center; }
   }
   @media not all and (min-width: 781px) and (max-width: 1279px) { .rail-tip { display: none; } }
-  /* The study workbench needs the width: the course list folds into the icon rail while it is open. */
-  @media (min-width: 781px) {
-    .shell:has(.workbench) .shell-side { width: 64px !important; padding-left: 8px !important; padding-right: 8px !important; }
-    .shell:has(.workbench) .rail-hide { display: none !important; }
-    .shell:has(.workbench) .rail-center { justify-content: center !important; padding-left: 0 !important; padding-right: 0 !important; }
-    .shell:has(.workbench) .shell-side .course-item { align-items: center; }
-  }
 
   /* Shared token names (--border) are declared in :root above too, unlayered; keep them equal. */
   .shell-side .course-item { border: 0; box-shadow: none; }
@@ -141,75 +134,70 @@
   a { color: #e4e4e7; text-underline-offset: 3px; }
 
   /* Legacy buttons inside dialogs and practice: shadcn button look */
-  .modal button:not([class*="inline-flex"]), .practice-panel button, .recall-panel button, .lesson-reader button,
-  .decision-row button, .mastered-note button, .suggestion-card button {
+  .modal button:not([class*="inline-flex"]), .recall-panel button,
+  .decision-row button{
     display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px;
     border: 1px solid transparent; border-radius: 8px; background: var(--control); color: var(--foreground);
-    font-size: 13px; font-weight: 500; cursor: var(--cursor-pointer); transition: background .15s;
+    font-size: var(--fs-sm); font-weight: 500; cursor: var(--cursor-pointer); transition: background .15s;
   }
-  .modal button:not([class*="inline-flex"]):hover, .practice-panel button:hover, .recall-panel button:hover,
-  .lesson-reader button:hover, .decision-row button:hover { background: var(--control-hover); }
-  button.primary, .modal button.primary, .practice-panel button.primary, .lesson-reader button.primary, .decision-row button.primary {
+  .modal button:not([class*="inline-flex"]):hover, .recall-panel button:hover, .decision-row button:hover { background: var(--control-hover); }
+  button.primary, .modal button.primary, .decision-row button.primary {
     background: var(--primary); color: var(--primary-foreground); border-color: var(--primary);
   }
   button.primary:hover { background: #e4e4e7 !important; }
-  button.danger-button { background: var(--destructive); color: #fff; border-color: var(--destructive); }
   button.full { width: 100%; }
-  .modal button.icon-btn, .lesson-reader button.icon-btn { width: 36px; padding: 0; border-color: transparent; color: var(--muted-foreground); }
 
   /* Inputs */
   input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), select, textarea {
     background: var(--field); border: 1px solid var(--input); border-radius: 8px; color: var(--foreground);
-    padding: 7px 11px; font-size: 13px; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .45);
+    padding: 7px 11px; font-size: var(--fs-sm); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .45);
   }
   input:hover, textarea:hover, select:hover { border-color: var(--input-hover); }
   /* 5:1 on --field: a hint you have to squint at is no hint */
   input::placeholder, textarea::placeholder { color: #8b8b95; }
-  input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; border-color: #71717a; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .45), 0 0 0 3px rgba(212, 212, 216, .16); }
-  select option { background: #18181b; color: #fafafa; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; border-color: var(--state-locked); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .45), 0 0 0 3px rgba(212, 212, 216, .16); }
+  select option { background: var(--primary-foreground); color: var(--foreground); }
   /* Group labels in native dropdowns otherwise fall back to the light system style. */
-  select optgroup { background: #18181b; color: #a1a1aa; font-style: normal; font-weight: 600; }
+  select optgroup { background: var(--primary-foreground); color: var(--state-studied); font-style: normal; font-weight: 600; }
 
   /* Dialogs: shadcn Dialog look */
   .modal-scrim { background: rgba(0, 0, 0, .7); backdrop-filter: none; }
   .modal { background: var(--background); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 16px 48px rgba(0, 0, 0, .6); }
   .modal-head { border-bottom: 1px solid var(--border); padding: 16px 20px; gap: 10px; }
-  .modal-head h2 { font-size: 16px; font-weight: 600; }
+  .modal-head h2 { font-size: var(--fs-lg); font-weight: 600; }
   .modal-icon { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--secondary); color: var(--foreground); }
   .modal-body { padding: 20px; }
   .muted { color: var(--muted-foreground); }
 
   /* Cards and callouts reused by dialogs and practice */
-  .preview-card, .material-card, .quiet-card, .suggestion-card, .mastered-note, .review-history-note, .ai-disabled-note,
-  .warning-callout, .dropzone, .settings-card, .profile-card {
+  .preview-card, .material-card,
+  .warning-callout, .dropzone{
     border-radius: 10px; border-color: var(--border);
   }
-  .tag { border-radius: 999px; font-size: 12px; }
+  .tag { border-radius: 999px; font-size: var(--fs-xs); }
   .busy-indicator { background: var(--popover); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.5); color: var(--foreground); }
   .bubble.user p { background: var(--secondary); }
   .bubble.assistant p { background: transparent; border: 1px solid var(--border); }
-  .lesson-reader { background: var(--background); border: 0; border-radius: 0; color: var(--foreground); }
-  .toggle-row input[type="checkbox"]:checked::after { background: #18181b; }
+  .toggle-row input[type="checkbox"]:checked::after { background: var(--primary-foreground); }
   .toggle-row input[type="checkbox"]:checked { background: var(--primary); }
 }
 
 
-.study-workspace:has(.workbench) > .node-dock { width: 360px; }
+.study-workspace:has(.workbench) > .node-dock { width: 400px; }
 @media (max-width: 780px) {
-  .study-workspace:has(.workbench) { flex-direction: column; padding-bottom: 56px; }
-  .study-workspace:has(.workbench) > .graph-area { flex: 0 0 42%; height: auto; min-height: 150px; }
-  .study-workspace:has(.workbench) > .node-dock { position: static; flex: 1; width: 100%; height: auto; min-height: 0; transform: none; border-radius: 0; border-top: 1px solid var(--border); }
-  .study-workspace:has(.workbench) > .node-dock > button { display: none; }
-  .lesson-reader > header strong { font-size: var(--fs-sm); }
+  .study-workspace:has(.workbench) { flex-direction: column; padding-bottom: 44px; }
+  .study-workspace:has(.workbench) > .graph-area { flex: 1; height: auto; min-height: 0; }
+  .study-workspace:has(.workbench) > .node-dock { position: fixed; width: 100%; height: 62dvh; min-height: 0; border-top: 1px solid var(--border); }
+  .study-workspace:has(.workbench) > .node-dock:has(textarea:focus) { transform: none; }
 }
 
 /* Type scale: one style per level, used everywhere instead of ad-hoc sizes.
    page 20/700 > section 17/600 > item 14/600 > body 14/400 > label 13/600 > meta 13/400; buttons stay 13/500. */
-.t-page { font-size: 20px; font-weight: 700; line-height: 1.35; letter-spacing: -0.01em; }
-.t-section { font-size: 17px; font-weight: 600; line-height: 1.4; }
-.t-item { font-size: 14px; font-weight: 600; line-height: 1.5; }
-.t-label { font-size: 13px; font-weight: 600; line-height: 1.5; letter-spacing: 0.04em; color: var(--muted-foreground); }
-.t-meta { font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--muted-foreground); }
+.t-page { font-size: var(--fs-xl); font-weight: 700; line-height: 1.35; letter-spacing: -0.01em; }
+.t-section { font-size: var(--fs-section); font-weight: 600; line-height: 1.4; }
+.t-item { font-size: var(--fs-md); font-weight: 600; line-height: 1.5; }
+.t-label { font-size: var(--fs-sm); font-weight: 600; line-height: 1.5; letter-spacing: 0.04em; color: var(--muted-foreground); }
+.t-meta { font-size: var(--fs-sm); font-weight: 400; line-height: 1.5; color: var(--muted-foreground); }
 
 /* Cartoon cursors: a chunky white arrow, and an amber one with a spark for anything clickable.
    Unlayered so they win over the kit and the utilities; text fields keep the system I-beam. */

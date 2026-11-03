@@ -4,6 +4,8 @@ import { useState } from "react";
 export type PanelName = "list" | "map" | "dock";
 export type PanelLayout = Record<PanelName, boolean> & {
   toggle: (name: PanelName) => void;
+  /** Reveals a hidden module, e.g. the details dock when a node is picked. */
+  show: (name: PanelName) => void;
   /** Whether hiding this module is allowed: the centre always keeps the list or the map. */
   canHide: (name: PanelName) => boolean;
 };
@@ -32,5 +34,6 @@ export function usePanelLayout(): PanelLayout {
     try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(next)); } catch { /* per-viewer convenience only */ }
     return next;
   });
-  return { ...shown, toggle, canHide: (name) => hideable(shown, name) };
+  const show = (name: PanelName) => { if (!shown[name]) toggle(name); };
+  return { ...shown, toggle, show, canHide: (name) => hideable(shown, name) };
 }

@@ -7,6 +7,7 @@ export function useNoteReview(context: ReviewContext) {
   const [controller] = useState(() => new NoteReviewController((snapshot, requestId, signal) =>
     api.reviewPersonalNote(snapshot.courseId, snapshot.nodeId, {
       content: snapshot.content, revision: snapshot.revision, request_id: requestId, note_id: snapshot.noteId || "",
+      scope_key: snapshot.scopeKey, model: snapshot.model,
     }, signal)));
   const { courseId, nodeId, noteId, revision, scopeKey, model, content, enabled, available } = context;
   useLayoutEffect(() => {

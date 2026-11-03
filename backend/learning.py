@@ -1,9 +1,11 @@
+import copy
 import json
 import re
 from dataclasses import dataclass
 
 from pydantic import ValidationError
 
+from .ai_tasks import TaskManager, current_task_id, has_saved_reply, task_ai
 from .bridges import apply_draft_bridges, record_attempt_bridges, stamp_generated
 from .conversation_labels import conversation_label, remember_conversation
 from .domain import append_chat, find_node, make_node, propose_streak, record_attempt
@@ -55,7 +57,7 @@ def structured(ai, prompt, model, options=None):
     try:
         payload = model.model_validate_json(reply["text"]).model_dump()
     except ValidationError as error:
-        raise LearningError("AI 结果未符合数据契约，已保留当前状态，请重试或核对模型") from error
+        raise LearningError("AI 结果未符合数据契约，原始结果已保留；可查看任务或人工处理，不会自动重新生成") from error
     return StructuredReply(payload=payload, thread_id=reply["thread_id"])
 
 
@@ -383,8 +385,12 @@ def require_same_materials(before, current):
 class Learning:
     def __init__(self, store, ai_factory):
         self.store, self.ai_factory = store, ai_factory
+        self.tasks = TaskManager(store, ai_factory)
+        self.tasks.reconcile_startup()
 
     def ai(self, *, model=None, effort=None):
+        if has_saved_reply():
+            return task_ai(None)
         settings = self.store.settings()
         if not settings["ai_enabled"]:
             raise LearningError("AI 尚未启用。请先在设置中了解发送范围并开启；本地来源与 Recall 仍可使用")
@@ -392,9 +398,19 @@ class Learning:
             settings["model"] = model
         if effort is not None:
             settings["reasoning_effort"] = effort
-        return self.ai_factory(settings)
+        return task_ai(self.ai_factory(settings), settings)
 
-    def generate(self, course_id):
+    def generate(self, course_id, request_id=None):
+        return self.tasks.run(
+            course_id,
+            "map",
+            "course",
+            {},
+            lambda: self._generate(course_id),
+            request_id=request_id,
+        )
+
+    def _generate(self, course_id):
         course = self.store.course(course_id)
         context = course_material_context(course)
         with self.store.connect() as connection:
@@ -427,13 +443,25 @@ class Learning:
         )
         label = conversation_label(course, purpose="知识地图生成")
         draft = structured(self.ai(), prompt, MapDraft, {"conversation": label})
-        with self.store.edit(course_id) as (current, _):
+        with self.store.edit(course_id, task_id=current_task_id()) as (current, _):
             require_same_materials(course, current)
             append_map(current, draft.payload)
             remember_conversation(current, draft.thread_id, label)
         return self.store.course(course_id)
 
-    def chat(self, course_id, node_id, message):
+    def chat(self, course_id, node_id, message, *, request_id=None):
+        if wants_recall(message):
+            return self._chat(course_id, node_id, message)
+        return self.tasks.run(
+            course_id,
+            "chat",
+            node_id,
+            {"message": message},
+            lambda: self._chat(course_id, node_id, message),
+            request_id=request_id,
+        )
+
+    def _chat(self, course_id, node_id, message):
         course = self.store.course(course_id)
         node = find_node(course, node_id)
         require_review_node(course, node)
@@ -442,7 +470,7 @@ class Learning:
             thread_id = thread_for(course, node)
         else:
             reply, thread_id = self._chat_reply(course, node, message)
-        with self.store.edit(course_id) as (current, _):
+        with self.store.edit(course_id, task_id=current_task_id()) as (current, _):
             require_same_node(course, current, node_id)
             updated = find_node(current, node_id)
             append_chat(updated, "user", message)
@@ -469,7 +497,17 @@ class Learning:
         )
         return reply["text"], reply["thread_id"]
 
-    def question(self, course_id, node_id):
+    def question(self, course_id, node_id, request_id=None):
+        return self.tasks.run(
+            course_id,
+            "question",
+            node_id,
+            {},
+            lambda: self._question(course_id, node_id),
+            request_id=request_id,
+        )
+
+    def _question(self, course_id, node_id):
         course = self.store.course(course_id)
         node = find_node(course, node_id)
         question = structured(
@@ -482,7 +520,7 @@ class Learning:
             Question,
             {"conversation": review_label(course, node, "出题")},
         )
-        with self.store.edit(course_id) as (current, _):
+        with self.store.edit(course_id, task_id=current_task_id()) as (current, _):
             require_same_node(course, current, node_id)
             updated = find_node(current, node_id)
             if strict_scope(course):
@@ -530,6 +568,19 @@ class Learning:
         )
 
     def submit(self, course, node_id, submission, image_paths):
+        submitted = copy.deepcopy(submission)
+        submitted.setdefault("id", identity())
+        images = [str(path) for path in image_paths]
+        return self.tasks.run(
+            course["id"],
+            "assessment",
+            node_id,
+            {"submission": copy.deepcopy(submitted), "image_paths": images},
+            lambda: self._submit(course, node_id, submitted, images),
+            request_id=submitted["id"],
+        )
+
+    def _submit(self, course, node_id, submission, image_paths):
         node = find_node(course, node_id)
         require_review_node(course, node)
         question = question_for(course, node)
@@ -540,8 +591,10 @@ class Learning:
         try:
             graded = self.grade(course, node, submission, image_paths)
             judgment, thread_id = graded.payload, graded.thread_id
+            task_id = current_task_id()
         except (LearningError, RuntimeError) as error:
             thread_id = None
+            task_id = None
             judgment = dict(
                 outcome="uncertain",
                 reasoning=f"未完成可靠 AI 判断：{error}",
@@ -549,10 +602,11 @@ class Learning:
                 next_step="可补充清晰作答后重试，或由你决定通过、补题、通过并待复查。",
             )
         submission["judgment"] = judgment
-        with self.store.edit(course["id"]) as (current, _):
+        with self.store.edit(course["id"], task_id=task_id) as (current, _):
             require_same_node(course, current, node_id)
             updated = find_node(current, node_id)
-            record_attempt(updated, submission)
+            attempt = record_attempt(updated, {key: value for key, value in submission.items() if key != "id"})
+            attempt["id"] = submission["id"]
             record_attempt_bridges(current, updated, incoming_bridges(current, updated), judgment)
             propose_streak(current, updated)
             if thread_id:

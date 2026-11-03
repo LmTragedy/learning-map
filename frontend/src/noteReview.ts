@@ -14,8 +14,9 @@ export type ReviewState = {
 type ReviewRequest = (context: ReviewContext, requestId: string, signal: AbortSignal) => Promise<NoteReviewResponse>;
 const empty: ReviewState = { phase: "idle", message: "", suggestions: [], activeId: null, snapshot: "", warnings: [] };
 const fingerprint = (suggestion: NoteSuggestion) => JSON.stringify([suggestion.original, suggestion.replacement]);
+// The revision is left out: autosaving the note bumps it, and the draft is sent whole anyway.
 const contextKey = (context: ReviewContext) => JSON.stringify([
-  context.courseId, context.nodeId, context.noteId || "", context.revision, context.scopeKey, context.model,
+  context.courseId, context.nodeId, context.noteId || "", context.scopeKey, context.model,
 ]);
 
 export class NoteReviewController {
@@ -57,8 +58,13 @@ export class NoteReviewController {
     this.generation++;
     this.lastEdit = Date.now();
     clearTimeout(this.timer);
+    // Aborting client waiting may leave paid provider work running. Serialize the next draft behind it.
     if (changedContext) { this.paused = false; this.dismissed.clear(); }
-    this.publish({ ...empty, phase: this.phase(context), message: this.paused ? this.state.message : "" });
+    const phase = this.phase(context);
+    // Plain edits keep the marks in the editor; it maps them and prunes the ones the edit touched.
+    const keep = !restarting && !changedContext && (phase === "waiting" || phase === "error");
+    this.publish(keep ? { phase, message: this.paused ? this.state.message : "" }
+      : { ...empty, phase, message: this.paused ? this.state.message : "" });
     this.schedule();
   }
 
@@ -104,7 +110,7 @@ export class NoteReviewController {
     try {
       const response = await Promise.race([this.request(context, requestId, abort.signal), deadline]);
       if (this.disposed || generation !== this.generation) return;
-      if (response.request_id !== requestId || response.revision !== context.revision
+      if (response.request_id !== requestId
         || (response.note_id || "") !== (context.noteId || "")
         || response.scope_key !== context.scopeKey || response.model !== context.model) throw new Error("检查上下文已变化，建议未应用。请重新检查。");
       this.checked = generation;
@@ -114,8 +120,9 @@ export class NoteReviewController {
     } catch (error) {
       if (abort.signal.aborted && !timedOut) return;
       if (this.disposed || !this.context || contextKey(context) !== contextKey(this.context)) return;
+      // Failure pauses this note even after typing, so another paid attempt requires an explicit retry.
       this.paused = true;
-      this.publish({ phase: "error", suggestions: [], activeId: null,
+      this.publish({ phase: "error",
         message: timedOut ? "检查超过 60 秒，已停止等待。笔记可继续编辑保存，请手动重试。"
           : error instanceof Error ? error.message : "AI 检查失败；编辑和保存不受影响。" });
     } finally {
@@ -126,9 +133,17 @@ export class NoteReviewController {
   }
 
   select(id: string) { this.publish({ activeId: id }); }
+  deselect() { this.publish({ activeId: null }); }
+  /** The editor checks the mapped text still reads `original` before replacing it. */
   current(id = this.state.activeId) {
-    const suggestion = this.state.suggestions.find((entry) => entry.id === id);
-    return suggestion && this.context && suggestionMatches(this.context.content, this.state.snapshot, suggestion) ? suggestion : undefined;
+    return id ? this.state.suggestions.find((entry) => entry.id === id) : undefined;
+  }
+  /** Drops suggestions whose text was edited; they are not dismissed and may come back on the next check. */
+  prune(ids: string[]) {
+    const gone = new Set(ids);
+    if (!this.state.suggestions.some((entry) => gone.has(entry.id))) return;
+    this.publish({ suggestions: this.state.suggestions.filter((entry) => !gone.has(entry.id)),
+      activeId: this.state.activeId && gone.has(this.state.activeId) ? null : this.state.activeId });
   }
   reject(id: string) {
     const suggestion = this.current(id);
@@ -137,9 +152,7 @@ export class NoteReviewController {
     if (this.dismissed.size > 100) this.dismissed.delete(this.dismissed.values().next().value!);
     this.publish({ suggestions: this.state.suggestions.filter((entry) => entry.id !== id), activeId: null });
   }
-  accepted() {
-    this.publish({ ...empty, phase: "waiting" });
-  }
+  accepted(id: string) { this.prune([id]); }
   dispose() {
     this.disposed = true; this.generation++; clearTimeout(this.timer); this.pending?.abort();
   }

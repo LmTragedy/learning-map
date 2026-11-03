@@ -12,16 +12,21 @@ import type {
   Strength,
 } from "./types";
 import type { NoteReviewResponse } from "./noteReviewTypes";
+import { clearAiReceipt, prepareAiReceipt } from "./aiReceipts.ts";
+import type { AiTask } from './aiTaskModel';
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  const isMutation = !!init.method && init.method !== "GET";
+  const prepared = await prepareAiReceipt(path, init);
+  if (prepared.receipt) window.dispatchEvent(new Event('lm:ai-tasks-changed'));
+  const requestInit = prepared.init;
+  const headers = new Headers(requestInit.headers);
+  const isMutation = !!requestInit.method && requestInit.method !== "GET";
   if (isMutation) headers.set("X-Learning-Map", "1");
-  if (init.body && !(init.body instanceof FormData))
+  if (requestInit.body && !(requestInit.body instanceof FormData))
     headers.set("Content-Type", "application/json");
   let response: Response;
   try {
-    response = await fetch(`/api${path}`, { ...init, headers });
+    response = await fetch(`/api${path}`, { ...requestInit, headers });
   } catch {
     throw new Error("无法连接本地服务。请确认学习地图服务正在运行。");
   }
@@ -35,8 +40,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     throw new Error(detail);
   }
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+  if (response.status === 204) {
+    await clearAiReceipt(prepared.receipt);
+    return undefined as T;
+  }
+  const result = (await response.json()) as T;
+  await clearAiReceipt(prepared.receipt);
+  return result;
 }
 type LineFields = { name: string; goal: string; node_ids: string[]; endpoint: string; story: { node_id: string; text: string }[] };
 const json = (method: string, value?: unknown): RequestInit => ({
@@ -49,7 +59,16 @@ export const materialFileUrl = (cid: string, mid: string, page?: number) =>
 export const lessonHtmlUrl = (cid: string, nid: string, lid: string) => `/api/courses/${cid}/nodes/${nid}/lessons/${lid}/html`;
 
 export const api = {
-  reviewPersonalNote: (cid: string, nid: string, draft: { content: string; revision: number; request_id: string; note_id?: string }, signal: AbortSignal) =>
+  aiTasks: (cid: string) => request<AiTask[]>(`/courses/${cid}/ai-tasks`),
+  aiTask: (cid: string, tid: string) => request<AiTask>(`/courses/${cid}/ai-tasks/${encodeURIComponent(tid)}`),
+  recoverAiTask: (cid: string, tid: string) => request<{ task: AiTask; course: Course | null; result?: unknown }>(`/courses/${cid}/ai-tasks/${encodeURIComponent(tid)}/recover`, json('POST', {})),
+  regenerateAiTask: (cid: string, tid: string, request_id: string) => request<unknown>(`/courses/${cid}/ai-tasks/${encodeURIComponent(tid)}/regenerate`, json('POST', { request_id })),
+  organizeAiTask: (cid: string, tid: string) => request<AiTask>(`/courses/${cid}/ai-tasks/${encodeURIComponent(tid)}/organize`, json('POST', {})),
+  importAiHistory: (cid: string) => request<{ tasks: AiTask[]; unmatched: number }>(`/courses/${cid}/ai-tasks/import-history`, json('POST', {})),
+  collectAiTask: (cid: string, tid: string) => request<{ task: AiTask; course: null }>(`/courses/${cid}/ai-tasks/${encodeURIComponent(tid)}/collect`, json('POST', {})),
+  aiTaskResult: (cid: string, tid: string) => request<{ result_ref: AiTask['result_ref']; object: unknown }>(`/courses/${cid}/ai-tasks/${encodeURIComponent(tid)}/result`),
+  resetNodeConversation: (cid: string, nid: string, revision: number) => request<Course>(`/courses/${cid}/nodes/${encodeURIComponent(nid)}/conversations/reset`, json('POST', { revision })),
+  reviewPersonalNote: (cid: string, nid: string, draft: { content: string; revision: number; request_id: string; note_id?: string; scope_key: string; model: string }, signal: AbortSignal) =>
     request<NoteReviewResponse>(`/courses/${cid}/nodes/${nid}/personal-note/review`, { ...json("POST", draft), signal }),
   health: () =>
     request<{
@@ -76,6 +95,8 @@ export const api = {
     request<Course>(`/courses/${cid}/relations/${encodeURIComponent(rid)}/confirm`, json("POST", { revision })),
   backfillRelations: (cid: string, revision: number) =>
     request<Course>(`/courses/${cid}/relations/backfill`, json("POST", { revision })),
+  backfillRelation: (cid: string, rid: string, revision: number) =>
+    request<Course>(`/courses/${cid}/relations/${rid}/backfill`, json("POST", { revision })),
   editBridges: (cid: string, rid: string, revision: number, bridges: { id: string; from_piece: string; to_step: string; how: string; if_missing: string; strength: Strength; check: { question: string; answer: string } }[]) =>
     request<Course>(`/courses/${cid}/relations/${encodeURIComponent(rid)}/bridges`, json("PUT", { revision, bridges })),
   editPieces: (cid: string, nid: string, revision: number, pieces: { id: string; kind: PieceKind; title: string; detail: string }[], steps: { id: string; title: string }[]) =>
@@ -109,8 +130,12 @@ export const api = {
   lesson: (cid: string, nid: string, lesson: { kind: "initial" | "supplement"; focus: string; request_id: string }) =>
     request<Course>(`/courses/${cid}/nodes/${nid}/lessons`,
       json("POST", lesson)),
+  recoverLessonVisuals: (cid: string, nid: string, lid: string, revision: number, processes?: { title: string; material_id: string; pages: number[] }[]) =>
+    request<Course>(`/courses/${encodeURIComponent(cid)}/nodes/${encodeURIComponent(nid)}/lessons/${encodeURIComponent(lid)}/visuals/recover`, json("POST", processes ? { revision, processes } : { revision })),
   readLesson: (cid: string, nid: string, lid: string) =>
     request<Course>(`/courses/${cid}/nodes/${nid}/lessons/${lid}/read`, json("POST", {})),
+  unreadLesson: (cid: string, nid: string, lid: string) =>
+    request<Course>(`/courses/${cid}/nodes/${nid}/lessons/${lid}/read`, json("DELETE")),
   mark: (cid: string, nid: string, status: string) =>
     request<Course>(
       `/courses/${cid}/nodes/${nid}/mark`,

@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { formatTime } from "./formatTime";
 import { AlertCircle, LoaderCircle, Sparkles } from "lucide-react";
 import type { Chat, RecallSummary } from "./types";
+import { Button } from "./components/ui/button";
 
 type RecallPanelProps = {
   messages: Chat[];
@@ -47,14 +49,14 @@ export function RecallPanel({
           <span>根据本节点保存的对话生成带原文依据的学习脉络。</span>
           {reviewLabel && <small className="review-recall-label">{reviewLabel}</small>}
         </div>
-        <button
-          className="primary"
+        <Button
+          
           onClick={() => void summarize()}
           disabled={!canSummarize}
         >
           {busy ? <LoaderCircle size={15} /> : <Sparkles size={15} />}
           {busy ? "正在整理…" : summary ? "重新整理" : "开始整理"}
-        </button>
+        </Button>
       </div>
       {!aiEnabled && (
         <p className="recall-unavailable">
@@ -87,7 +89,7 @@ function RecallSummaryView({ summary, label }: { summary: RecallSummary; label?:
           <h3>{summary.title}</h3>
         </div>
         <small>
-          {new Date(summary.created_at).toLocaleString("zh-CN")} · 对话版本 {summary.history_revision}
+          {formatTime(summary.created_at)} · 对话版本 {summary.history_revision}
         </small>
       </div>
       <div className="recall-items">

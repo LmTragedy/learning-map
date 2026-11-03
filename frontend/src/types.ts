@@ -122,6 +122,8 @@ export type LearningNode = {
   review_archived?: { chats: number; attempts: number; lessons: number };
 };
 export type Lesson = {
+  request_id?: string;
+  visuals?: import('./workbench/visualTypes').VisualItem[];
   id: string;
   title: string;
   goal: string;
@@ -269,3 +271,4 @@ export type Preview = {
   content?: string;
   warning: string;
 };
+

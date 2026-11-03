@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { formatTime } from "./formatTime";
+import { AI_KEYS, setBusyActivity, useBusyActivity, useElapsedSeconds } from "./busyActivity";
 import {
   AlertCircle,
   Archive,
@@ -38,6 +40,8 @@ import {
   FileText,
   Waypoints,
   Target,
+  CircleCheck,
+  FolderSync,
 } from "lucide-react";
 import { api, materialFileUrl } from "./api";
 import { cn } from "./lib/utils";
@@ -52,7 +56,10 @@ import { NodePanel } from "./NodePanel";
 import { GoalBoard } from "./GoalBoard";
 import { GoalActionsContext } from "./goalActions";
 import { goalProgressDiff, goalsForNode, type GoalChange } from "./goalContext";
+import * as Dialog from "@radix-ui/react-dialog";
 import { needsBridges } from "./bridges";
+import { Callout } from "./components/ui/callout";
+import { useDismissals } from "./dismissals";
 import { LinesPanel } from "./LinesPanel";
 import { usePanelLayout } from "./panelLayout";
 import { useResizableWidth } from "./useResizableWidth";
@@ -60,6 +67,8 @@ import { CourseNotes } from "./CourseNotes";
 import { hasUnsavedNotes } from "./noteDrafts";
 import { hasVolatileAnswerDrafts } from "./answerDrafts";
 import { RecallPanel } from "./RecallPanel";
+import { AiTaskProvider, TaskBanners, TaskEntry } from './aiTasks';
+import type { AiTask } from './aiTaskModel';
 import type {
   Course,
   CourseSummary,
@@ -90,12 +99,13 @@ export function App() {
   const [courses, setCourses] = useState<CourseSummary[]>([]);
   const [course, setCourse] = useState<Course | null>(null);
   const [selected, setSelected] = useState<LearningNode>();
+  const [taskNavigation, setTaskNavigation] = useState<{task:AiTask; sequence:number}>();
   const [noteTarget, setNoteTarget] = useState("");
   const [noteRequest, setNoteRequest] = useState(0);
   const [noteTargetId, setNoteTargetId] = useState("");
   const [goalChatTarget, setGoalChatTarget] = useState("");
   const [goalFocus, setGoalFocus] = useState("");
-  const [explainHidden, setExplainHidden] = useState(false);
+  const hints = useDismissals("learning-map:dismissed-hints");
   const [lineFocus, setLineFocus] = useState("");
   const [mapGoal, setMapGoal] = useState("");
   const [goalChanges, setGoalChanges] = useState<{ courseId: string; changes: GoalChange[] }>();
@@ -115,9 +125,19 @@ export function App() {
     data_dir: string;
   }>();
   const [modal, setModal] = useState<Modal>(null);
+  // The "discard unsaved input?" prompt belongs to one dialog; opening another one drops it.
+  const [discardFor, setDiscardFor] = useState<Modal>(null);
+  const discardAsk = discardFor !== null && discardFor === modal;
   const [busy, setBusy] = useState(false);
   const [busyKey, setBusyKey] = useState("");
   const [error, setError] = useState("");
+  // Confirmations of finished work; kept apart from errors so success never shows in red.
+  const [notice, setNotice] = useState("");
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(""), 6000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   const [settings, setSettings] = useState<Settings>();
   const [aiEnabled, setAiEnabled] = useState(false);
   const [profile, setProfile] = useState<Profile>();
@@ -131,6 +151,7 @@ export function App() {
   const [pickedFiles, setPickedFiles] = useState<File[]>([]);
   const [notePath, setNotePath] = useState("");
   const [noteContent, setNoteContent] = useState("");
+  const [writtenNote, setWrittenNote] = useState("");
   const [noteQuery, setNoteQuery] = useState("");
   const [notes, setNotes] = useState<{ path: string; content: string }[]>([]);
   const [recall, setRecall] =
@@ -191,10 +212,9 @@ export function App() {
           input.focus();
         }
       }
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !event.defaultPrevented) {
         setMenuOpen(false);
         setNavOpen(false);
-        setModal(null);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -212,6 +232,7 @@ export function App() {
   const run = useCallback(async <T,>(key: string, action: () => Promise<T>) => {
     setBusy(true);
     setBusyKey(key);
+    setBusyActivity(key);
     setError("");
     try {
       return await action();
@@ -221,6 +242,8 @@ export function App() {
     } finally {
       setBusy(false);
       setBusyKey("");
+      setBusyActivity("");
+      window.dispatchEvent(new Event('lm:ai-tasks-changed'));
     }
   }, []);
   const refreshCourse = useCallback((value: Course) => {
@@ -300,10 +323,16 @@ export function App() {
       setDirectQuery("");
     }
   };
+  /** Selects a knowledge point and makes sure its details are on screen (sheet on phones, dock on desktop). */
+  const revealNode = (node: LearningNode) => { setSelected(node); setSheetOpen(true); layout.show("dock"); };
+  /** Opens a node from outside the map (goals, notes, lines, tasks): clears filters and relation state, closes dialogs. */
+  const openNode = (node: LearningNode, relationId = "") => {
+    setDirectWeek(""); setDirectQuery(""); setActiveRelationId(relationId); setRelationBackStack([]);
+    setDirectNodeId(node.id); setModal(null); revealNode(node);
+  };
   const openMapNote = (node: LearningNode, noteId: string) => {
     setNoteTarget(node.id); setNoteTargetId(noteId); setNoteRequest((value) => value + 1);
-    setDirectWeek(""); setDirectQuery(""); setActiveRelationId(""); setRelationBackStack([]);
-    setSelected(node); setDirectNodeId(node.id); setModal(null); setSheetOpen(true);
+    openNode(node);
   };
   const lineAct = async (key: string, fn: () => Promise<Course>) => {
     const value = await run(key, fn);
@@ -420,8 +449,7 @@ export function App() {
     setDirectWeek("");
     setDirectQuery("");
     setDirectNodeId(node.id);
-    setSelected(node);
-    setSheetOpen(true);
+    revealNode(node);
   };
   const closeRelationDetail = () => {
     setActiveRelationId("");
@@ -442,8 +470,7 @@ export function App() {
     setRelationContextNodeId("");
     if (target) {
       setDirectNodeId(target.id);
-      setSelected(target);
-      setSheetOpen(true);
+      revealNode(target);
     }
   };
   const saveReviewScope = async (enabled: boolean) => {
@@ -478,6 +505,13 @@ export function App() {
 
   const percent = (done: number, total: number) => (total ? Math.round((done / total) * 100) : 0);
   const aiOn = Boolean(health?.ai.available && aiEnabled);
+  /** Whether closing the open dialog now would lose something the learner typed. */
+  const modalDirty = () => hasUnsavedNotes()
+    || (modal === "create" && (Boolean(title.trim()) || pickedFiles.length > 0))
+    || (modal === "import" && pickedFiles.length > 0)
+    || (modal === "obsidian" && Boolean(noteContent.trim()) && noteContent !== writtenNote);
+  const requestCloseModal = () => { if (modalDirty()) setDiscardFor(modal); else setModal(null); };
+  const bridgeGapCount = course ? course.edges.filter(needsBridges).length : 0;
   const openCourseNotes = useCallback(async () => {
     if (!course) return;
     setModal("course-notes");
@@ -488,27 +522,38 @@ export function App() {
     const node = course?.nodes.find((item) => item.id === id);
     if (!node) return;
     setGoalChatTarget(destination === "chat" ? node.id : "");
-    setNoteTarget(""); setDirectWeek(""); setDirectQuery("");
-    setActiveRelationId(""); setRelationBackStack([]);
-    setSelected(node); setDirectNodeId(node.id); setModal(null); setSheetOpen(true);
+    setNoteTarget("");
+    openNode(node);
   };
-  const sideTools = [
-    { label: "目标看板", Icon: Target, onClick: () => { setGoalFocus(""); setModal("goals"); }, disabled: !course || busy },
-    { label: "课程笔记", Icon: BookMarked, onClick: openCourseNotes, disabled: !course },
+  // The desktop sidebar and the phone tab bar open the same places; both read these entries.
+  const goalsTool = { Icon: Target, onClick: () => { setGoalFocus(""); setModal("goals"); }, disabled: !course };
+  const notesTool = { Icon: NotebookPen, onClick: () => void openCourseNotes(), disabled: !course };
+  type NavTool = { label: string; Icon: typeof Target; onClick: () => void; disabled?: boolean; on?: boolean };
+  const sideTools: NavTool[] = [
+    { label: "目标看板", ...goalsTool },
+    { label: "课程笔记", ...notesTool },
     { label: "学习档案", Icon: Archive, onClick: () => void openProfile() },
-    { label: "Obsidian 导入导出", Icon: NotebookPen, onClick: () => void showObsidian() },
+    { label: "Obsidian 导入导出", Icon: FolderSync, onClick: () => void showObsidian() },
     { label: "设置", Icon: Settings2, onClick: () => void openSettings() },
   ];
 
   return (
     <TooltipProvider delayDuration={250}>
+    <AiTaskProvider key={course?.id||'none'} course={course} onCourse={refreshCourse} aiEnabled={aiEnabled && !!health?.ai.available} onNavigate={(task)=>{
+      const edge=course?.edges.find(e=>e.id===task.target);
+      const target=course?.nodes.find(n=>n.id===(edge?.target||task.target));
+      if(target)openNode(target,edge?.id||'');
+      if(task.kind==='lines'||task.kind==='retell'){setLineFocus(task.kind==='retell'?task.target:'');setModal('lines');}
+      if(task.kind==='goals')setModal('goals');
+      setTaskNavigation({task,sequence:Date.now()});
+    }}>
     <div className={cn("shell flex h-dvh overflow-hidden bg-background text-foreground", navOpen && "nav-open")}>
       {navOpen && <div className="fixed inset-0 z-40 bg-black/60 min-[781px]:hidden" onClick={() => setNavOpen(false)} aria-hidden />}
       <aside
         className={cn(
-          "shell-side z-50 flex w-60 shrink-0 flex-col border-r border-border bg-sidebar px-3 py-4",
-          "max-[780px]:fixed max-[780px]:inset-y-0 max-[780px]:left-0 max-[780px]:w-72 max-[780px]:shadow-2xl max-[780px]:transition-transform",
-          !navOpen && "max-[780px]:-translate-x-full",
+          "shell-side z-50 flex w-[232px] shrink-0 flex-col border-r border-border bg-sidebar px-3 py-4",
+          "max-[781px]:fixed max-[781px]:inset-y-0 max-[781px]:left-0 max-[781px]:w-72 max-[781px]:shadow-2xl max-[781px]:transition-transform",
+          !navOpen && "max-[781px]:-translate-x-full",
         )}
         aria-label="课程与工具"
       >
@@ -602,17 +647,11 @@ export function App() {
           </Tooltip>
         </div>
       </aside>
-      <main className="flex min-w-0 flex-1 flex-col max-[780px]:pb-14">
-        {error && (
-          <div className="mx-4 mt-3 flex items-center gap-2.5 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
-            <AlertCircle size={16} className="shrink-0" />
-            <span className="flex-1">{error}</span>
-            <Button variant="ghost" size="icon-sm" onClick={() => setError("")} aria-label="关闭错误"><X /></Button>
-          </div>
-        )}
+      <main className="flex min-w-0 flex-1 flex-col max-[781px]:pb-14">
+        {error && <Callout tone="danger" icon={<AlertCircle />} className="mx-4 mt-3" dismissLabel="关闭错误" onDismiss={() => setError("")}>{error}</Callout>}
         {course ? (
           <>
-            <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 max-[780px]:h-auto max-[780px]:flex-wrap max-[780px]:py-2.5">
+            <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 max-[781px]:h-auto max-[781px]:flex-wrap max-[781px]:py-2.5">
               <Button variant="ghost" size="icon-sm" className="min-[781px]:hidden" onClick={() => setNavOpen(true)} aria-label="打开课程列表">
                 <Menu />
               </Button>
@@ -637,13 +676,14 @@ export function App() {
                     <Button variant="ghost" size="sm" className="h-7 px-2 text-st-new hover:text-st-new" onClick={() => void saveReviewScope(false)} disabled={busy}><LogOut /> 退出</Button>
                   </div>
                 ) : (
-                  <Button variant="outline" size="sm" className="max-[780px]:hidden" onClick={openReview} disabled={busy}>
+                  <Button variant="outline" size="sm" className="max-[781px]:hidden" onClick={openReview}>
                     <FileSearch /> 复习所选 PDF
                   </Button>
                 )}
-                <Button size="sm" onClick={() => void openImport()} disabled={busy}>
+                <Button size="sm" variant="outline" onClick={() => void openImport()}>
                   <Upload /> <span className="max-[480px]:hidden">导入材料</span>
                 </Button>
+                <TaskEntry />
                 <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="icon-sm" aria-label="更多课程操作"><Ellipsis /></Button>
@@ -676,45 +716,35 @@ export function App() {
                 </DropdownMenu>
               </div>
             </header>
-            {course.materials.length > 0 && !course.nodes.length && (
-              <div className="mx-4 mt-4 flex items-center gap-3 rounded-xl border border-border bg-card p-4">
-                <span className="grid size-9 place-items-center rounded-lg bg-secondary"><Sparkles size={17} aria-hidden /></span>
-                <div className="flex-1">
-                  <div className="text-sm font-semibold">材料已就绪</div>
-                  <div className="text-[13px] text-muted-foreground">
-                    {aiEnabled ? "分析课程材料并生成知识地图。" : "请先在设置中启用 AI，并确认数据发送说明。"}
-                  </div>
-                </div>
-                <Button
-                  onClick={() => void run("generate", () => api.generate(course.id)).then((v) => v && refreshCourse(v))}
-                  disabled={busy || !aiEnabled || !health?.ai.available}
-                >
-                  <Sparkles /> 生成知识地图
-                </Button>
-              </div>
-            )}
-            {!explainHidden && course.edges.some(needsBridges) && (
-              <div className="mx-4 mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
-                <Waypoints size={17} className="shrink-0 text-muted-foreground" aria-hidden />
-                <div className="min-w-0 flex-1 text-sm">
-                  <strong className="font-semibold">{course.edges.filter(needsBridges).length} 条联系还没有知识桥</strong>
-                  <span className="block text-xs text-muted-foreground max-[780px]:hidden">让 AI 根据材料写清“后一个知识点的哪一步用到了前一个的哪一块”，并配一道检验题。每次处理 12 条，结果标为待核对，不改变进度和解锁。</span>
-                </div>
-                {aiOn ? <Button size="sm" disabled={busy}
-                  onClick={() => void run("backfill-relations", () => api.backfillRelations(course.id, course.revision)).then((v) => v && refreshCourse(v))}>
-                  <Sparkles /> 用 AI 补充知识桥
-                </Button> : <Button size="sm" variant="outline" onClick={() => void openSettings()}>先在设置中开启 AI</Button>}
-                <Button size="icon-sm" variant="ghost" aria-label="暂时隐藏" onClick={() => setExplainHidden(true)}><X /></Button>
-              </div>
-            )}
+            {/* Every page-level message stacks here in one style, most urgent first. */}
+            <div className="page-notices flex shrink-0 flex-col gap-2 px-4 pt-3 empty:hidden">
+              {notice && <Callout tone="success" icon={<CircleCheck />} onDismiss={() => setNotice("")}>{notice}</Callout>}
+              <TaskBanners />
+              {course.materials.length > 0 && !course.nodes.length && (
+                <Callout tone="neutral" icon={<Sparkles />} title="材料已就绪"
+                  actions={<Button size="sm" onClick={() => void run("generate", () => api.generate(course.id)).then((v) => v && refreshCourse(v))}
+                    disabled={busy || !aiEnabled || !health?.ai.available}><Sparkles /> 生成知识地图</Button>}>
+                  {aiEnabled ? "分析课程材料并生成知识地图。" : "请先在设置中启用 AI，并确认数据发送说明。"}
+                </Callout>
+              )}
+              {bridgeGapCount > 0 && !hints.hidden(`bridges:${course.id}`, bridgeGapCount) && (
+                <Callout tone="neutral" icon={<Waypoints />} title={`${bridgeGapCount} 条联系还没有知识桥`}
+                  dismissLabel="不再提示（新增缺口时再提醒）" onDismiss={() => hints.dismiss(`bridges:${course.id}`, bridgeGapCount)}
+                  actions={aiOn ? <Button size="sm" variant="outline" disabled={busy}
+                    onClick={() => void run("backfill-relations", () => api.backfillRelations(course.id, course.revision)).then((v) => v && refreshCourse(v))}>
+                    <Sparkles /> 用 AI 补充知识桥
+                  </Button> : <Button size="sm" variant="outline" onClick={() => void openSettings()}>先在设置中开启 AI</Button>}>
+                  <span className="max-[781px]:hidden">让 AI 根据材料写清“后一个知识点的哪一步用到了前一个的哪一块”，并配一道检验题。每次处理 12 条，结果标为待核对，不改变进度和解锁。</span>
+                </Callout>
+              )}
+              {course.review_scope?.enabled && activeNodes.length === 0 && (
+                <Callout tone="neutral" icon={<FileSearch />} title="所选 PDF 暂无匹配知识点">
+                  这份材料当前没有关联到已生成的节点。可以更换复习资料，或退出复习；无需重新导入文件。
+                </Callout>
+              )}
+            </div>
             <div className="study-workspace flex min-h-0 flex-1">
               <section className="graph-area relative flex min-w-0 flex-1 flex-col">
-                {course.review_scope?.enabled && activeNodes.length === 0 && (
-                  <div className="mx-4 mt-3 flex gap-3 rounded-lg border border-border bg-card p-3 text-[13px]">
-                    <FileSearch size={18} className="shrink-0 text-muted-foreground" />
-                    <div><strong className="block font-medium">所选 PDF 暂无匹配知识点</strong><span className="text-muted-foreground">这份材料当前没有关联到已生成的节点。可以更换复习资料，或退出复习；无需重新导入文件。</span></div>
-                  </div>
-                )}
                 <CourseMap
                   layout={layout}
                   key={`${course.id}-${reviewUiKey}`}
@@ -729,13 +759,11 @@ export function App() {
                   hintIds={goalHintIds}
                   onOpenLine={(id) => { setLineFocus(id); setModal("lines"); }}
                   toolbar={
-                    <div className="flex min-w-0 items-center gap-2 max-[780px]:w-full">
+                    <div className="flex min-w-0 items-center gap-2 max-[781px]:w-full">
                       <Button size="sm" variant="outline" onClick={() => { setLineFocus(""); setModal("lines"); }}>课程全貌</Button>
-                      {selectedNode && <Button size="sm" variant="ghost" disabled={busy || reviewStrict} onClick={() => void lineAct("goal-endpoint", () => api.addGoal(course.id, {
-                        title: `学会 ${selectedNode.title}`, description: "以图上的这个知识点为终点", kind: "personal", status: "doing", node_ids: [selectedNode.id], subtasks: [],
-                      })).then((updated) => { const goal = updated?.goals?.at(-1); if (goal) setMapGoal(goal.id); })} aria-label="设为目标终点" title="把选中的知识点设为一个目标的终点"><Target /><span className="max-[1599px]:hidden">设为目标终点</span></Button>}
+                      {/* Making a node a goal's endpoint lives in the node's 目标 section, next to adding it to existing goals. */}
 
-                      {!!course.goals?.length && <label className="relative flex items-center max-[780px]:hidden">
+                      {!!course.goals?.length && <label className="relative flex items-center max-[781px]:hidden">
                         <Target size={14} className="pointer-events-none absolute left-2.5 text-muted-foreground" aria-hidden />
                         <select className="h-8 max-w-48 cursor-pointer appearance-none !py-0 !pl-8 !pr-7" aria-label="按目标聚焦"
                           value={mapGoal} onChange={(event) => setMapGoal(event.target.value)}>
@@ -744,7 +772,7 @@ export function App() {
                         </select>
                         <ChevronDown size={14} className="pointer-events-none absolute right-2 text-muted-foreground" aria-hidden />
                       </label>}
-                      {course.nodes.some((n) => n.week) && <label className="relative flex items-center max-[780px]:hidden">
+                      {course.nodes.some((n) => n.week) && <label className="relative flex items-center max-[781px]:hidden">
                         <CalendarDays size={14} className="pointer-events-none absolute left-2.5 text-muted-foreground" aria-hidden />
                         <select
                           className="h-8 cursor-pointer appearance-none !py-0 !pl-8 !pr-7"
@@ -763,7 +791,7 @@ export function App() {
                         </select>
                         <ChevronDown size={14} className="pointer-events-none absolute right-2 text-muted-foreground" aria-hidden />
                       </label>}
-                      <label className="flex h-8 w-56 min-w-0 items-center max-[1599px]:w-48 gap-2 rounded-md border border-input bg-field px-2.5 text-muted-foreground shadow-[inset_0_1px_2px_rgba(0,0,0,.45)] hover:border-zinc-600 focus-within:border-zinc-500 focus-within:ring-[3px] focus-within:ring-ring/20 max-[1100px]:w-44 max-[780px]:flex-1">
+                      <label className="flex h-8 w-56 min-w-0 items-center max-[1599px]:w-48 gap-2 rounded-md border border-input bg-field px-2.5 text-muted-foreground shadow-[inset_0_1px_2px_rgba(0,0,0,.45)] hover:border-zinc-600 focus-within:border-zinc-500 focus-within:ring-[3px] focus-within:ring-ring/20 max-[1100px]:w-44 max-[781px]:flex-1">
                         <Search size={14} className="shrink-0" aria-hidden />
                         <input
                           id="node-search"
@@ -783,7 +811,7 @@ export function App() {
                             }
                           }}
                         />
-                        <kbd className="rounded border border-border px-1.5 font-sans text-xs leading-4 text-muted-foreground max-[780px]:hidden">Ctrl K</kbd>
+                        <kbd className="rounded border border-border px-1.5 font-sans text-xs leading-4 text-muted-foreground max-[781px]:hidden">Ctrl K</kbd>
                       </label>
                       <datalist id="map-targets">
                         {eligibleNodes.map((n) => <option key={n.id} value={n.title} />)}
@@ -810,14 +838,13 @@ export function App() {
                     if (directWeek && node.week !== directWeek) setDirectWeek("");
                     setActiveRelationId("");
                     setRelationBackStack([]);
-                    setSelected(node);
-                    setSheetOpen(true);
+                    revealNode(node);
                   }}
                   onRelationSelect={(edge) => {
                     setRelationContextNodeId(selectedNode?.id || edge.target);
                     setActiveRelationId(edge.id);
                     const target = course.nodes.find((node) => node.id === edge.target);
-                    if (target) { setSelected(target); setSheetOpen(true); }
+                    if (target) revealNode(target);
                   }}
                 />
                 <div className="study-content-host" ref={setContentContainer} />
@@ -852,6 +879,7 @@ export function App() {
                     key={`${course.id}-${selectedNode.id}-${reviewUiKey}-${noteTarget === selectedNode.id ? noteRequest : 0}-${goalChatTarget === selectedNode.id}`}
                     course={course}
                     node={selectedNode}
+                    taskNavigation={taskNavigation}
                     initialNote={noteTarget === selectedNode.id}
                     initialNoteId={noteTarget === selectedNode.id ? noteTargetId : ""}
                     initialChat={goalChatTarget === selectedNode.id}
@@ -877,7 +905,6 @@ export function App() {
                     run={run}
                     onRefresh={refreshCourse}
                     onRecall={() => void showRecall()}
-                    onHide={() => layout.toggle("dock")}
                     onRatingSubmitted={() => void onRatingSubmitted()}
                   />
                   </GoalActionsContext.Provider>
@@ -912,13 +939,13 @@ export function App() {
           </div>
         )}
         <nav className="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-5 border-t border-border bg-sidebar min-[781px]:hidden" aria-label="主要功能">
-          {[
+          {([
             { label: "地图", Icon: MapIcon, on: !modal, onClick: () => { setModal(null); setSheetOpen(false); } },
-            { label: "目标", Icon: Target, on: modal === "goals", onClick: () => { setGoalFocus(""); setModal("goals"); }, disabled: !course || busy },
-            { label: "笔记", Icon: NotebookPen, on: modal === "course-notes", onClick: () => void openCourseNotes(), disabled: !course },
-            { label: "复习", Icon: FileSearch, on: modal === "review", onClick: openReview, disabled: !course || busy },
+            { label: "目标", on: modal === "goals", ...goalsTool },
+            { label: "笔记", on: modal === "course-notes", ...notesTool },
+            { label: "复习", Icon: FileSearch, on: modal === "review", onClick: openReview, disabled: !course },
             { label: "更多", Icon: Menu, on: false, onClick: () => setNavOpen(true) },
-          ].map(({ label, Icon, on, onClick, disabled }) => (
+          ] as NavTool[]).map(({ label, Icon, on, onClick, disabled }) => (
             <button key={label} className={cn("flex cursor-pointer flex-col items-center justify-center gap-0.5 text-xs text-muted-foreground disabled:opacity-40", on && "text-foreground")}
               onClick={onClick} disabled={disabled}>
               <Icon size={18} />{label}
@@ -926,41 +953,33 @@ export function App() {
           ))}
         </nav>
       </main>
-      {modal && (
-        <div
-          className="modal-scrim"
-          role="presentation"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setModal(null);
-          }}
-        >
-          <section
-            className={`modal ${["profile", "versions", "obsidian", "recall", "import", "materials", "goals", "course-notes"].includes(modal) ? "modal-wide" : ""}`}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="modal-title"
+      <Dialog.Root open={Boolean(modal)} onOpenChange={(open) => { if (!open) requestCloseModal(); }}>
+        <Dialog.Portal>
+        <Dialog.Overlay className="modal-scrim">
+          <Dialog.Content
+            className={`modal ${modal && ["profile", "versions", "obsidian", "recall", "import", "materials", "goals", "course-notes"].includes(modal) ? "modal-wide" : ""}`}
+            aria-describedby={undefined}
+            // Clicking the backdrop never throws away typed input; it asks first, like Escape and ×.
+            onPointerDownOutside={(event) => { if (modalDirty()) { event.preventDefault(); setDiscardFor(modal); } }}
           >
+            {modal && <>
             <div className="modal-head">
               <span className="modal-icon" aria-hidden>{modalIcon(modal)}</span>
-              <h2 id="modal-title">{modalTitle(modal)}</h2>
-              <button
-                className="icon-btn"
-                onClick={() => setModal(null)}
-                aria-label="关闭"
-              >
-                <X size={18} />
-              </button>
+              <Dialog.Title asChild><h2>{modalTitle(modal)}</h2></Dialog.Title>
+              <Dialog.Close asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="关闭"><X /></Button>
+              </Dialog.Close>
             </div>
+            {discardAsk && <Callout tone="attention" className="mx-5 mt-3" icon={<AlertCircle />}
+              actions={<><Button size="sm" variant="ghost" autoFocus onClick={() => setDiscardFor(null)}>继续编辑</Button><Button size="sm" variant="destructive" onClick={() => { setDiscardFor(null); setModal(null); }}>放弃并关闭</Button></>}>
+              这里有还没保存的内容，关闭后会丢失。
+            </Callout>}
             {modal === "lines" && course && <LinesPanel key={`${course.id}:${lineFocus}`} course={course} initialLineId={lineFocus} busy={busy} aiEnabled={aiOn} act={lineAct}
-              onNode={(node) => { setSelected(node); setDirectNodeId(node.id); setActiveRelationId(""); setModal(null); setSheetOpen(true); }} onNote={openMapNote} />}
+              onNode={(node) => openNode(node)} onNote={openMapNote} />}
             {modal === "goals" && course && <GoalBoard key={`${course.id}:${goalFocus}`} initialGoalId={goalFocus} course={course} busy={busy} aiEnabled={aiOn} run={run} onRefresh={refreshCourse} onNode={openGoalNode} />}
             {modal === "course-notes" && course && <CourseNotes course={course}
               onExitReview={() => void saveReviewScope(false).then(() => setModal("course-notes"))}
-              onOpen={(node, noteId = "") => {
-                setNoteTarget(node.id); setNoteTargetId(noteId); setNoteRequest((value) => value + 1);
-                setDirectWeek(""); setDirectQuery(""); setActiveRelationId(""); setRelationBackStack([]);
-                setSelected(node); setDirectNodeId(node.id); setModal(null); setSheetOpen(true);
-              }} />}
+              onOpen={(node, noteId = "") => openMapNote(node, noteId)} />}
             {modal === "materials" && course && (
               <div className="modal-body">
                 {course.materials.length ? (
@@ -1040,8 +1059,8 @@ export function App() {
                     placeholder="例如：COMP2041 · 软件构造"
                   />
                 </label>
-                <button
-                  className="primary full"
+                <Button
+                  className="w-full"
                   disabled={!title.trim() || busy}
                   onClick={() =>
                     void run("create", () => api.create(title.trim())).then(
@@ -1056,7 +1075,7 @@ export function App() {
                 >
                   <Plus size={16} />
                   创建课程
-                </button>
+                </Button>
               </div>
             )}
             {modal === "import" && course && (
@@ -1109,8 +1128,8 @@ export function App() {
                     </select>
                   </label>
                 </div>
-                <button
-                  className="primary full"
+                <Button
+                  className="w-full"
                   disabled={!pickedFiles.length || busy}
                   onClick={() =>
                     void run("import", () =>
@@ -1125,7 +1144,7 @@ export function App() {
                 >
                   <Upload size={15} />
                   {pickedFiles.length ? `导入 ${pickedFiles.length} 份材料` : "导入材料"}
-                </button>
+                </Button>
               </div>
             )}
             {modal === "review" && course && (
@@ -1136,8 +1155,8 @@ export function App() {
                 ) : <>
                   <div className="review-select-actions">
                     <strong>选择复习材料</strong>
-                    <button className="quiet-button" onClick={() => setReviewMaterialIds(course.materials.filter((m) => m.kind === "pdf").map((m) => m.id))}>全选</button>
-                    <button className="quiet-button" onClick={() => setReviewMaterialIds([])}>清空</button>
+                    <Button variant="ghost" size="sm" onClick={() => setReviewMaterialIds(course.materials.filter((m) => m.kind === "pdf").map((m) => m.id))}>全选</Button>
+                    <Button variant="ghost" size="sm" onClick={() => setReviewMaterialIds([])}>清空</Button>
                   </div>
                   <div className="review-material-list">
                     {course.materials.filter((material) => material.kind === "pdf").map((material) => (
@@ -1149,8 +1168,8 @@ export function App() {
                   </div>
                   <label className="review-ai-option"><input type="checkbox" checked={reviewAiScope === "selected"} onChange={(event) => setReviewAiScope(event.target.checked ? "selected" : "course")} /> AI 仅参考所选资料</label>
                   <p className="muted small">取消勾选后，AI 可参考整门课程；地图仍只显示与所选 PDF 匹配的节点。</p>
-                  {course.review_scope?.enabled && <button className="quiet-button" onClick={() => void saveReviewScope(false)} disabled={busy}>退出复习模式</button>}
-                  <button className="primary full" onClick={() => void saveReviewScope(true)} disabled={busy || reviewMaterialIds.length === 0}>开始复习 ({reviewMaterialIds.length})</button>
+                  {course.review_scope?.enabled && <Button variant="ghost" size="sm" onClick={() => void saveReviewScope(false)} disabled={busy}>退出复习模式</Button>}
+                  <Button className="w-full" onClick={() => void saveReviewScope(true)} disabled={busy || reviewMaterialIds.length === 0}>开始复习 ({reviewMaterialIds.length})</Button>
                 </>}
               </div>
             )}
@@ -1236,13 +1255,13 @@ export function App() {
                 <p className="muted small">
                   设置仅保存本地配置；不会在此展示密钥。
                 </p>
-                <button
-                  className="primary full"
+                <Button
+                  className="w-full"
                   onClick={() => void saveSettings()}
                   disabled={busy}
                 >
                   保存设置
-                </button>
+                </Button>
               </div>
             )}
             {modal === "profile" && profile && (
@@ -1298,14 +1317,14 @@ export function App() {
                           </div>
                         ))}
                       {!stage.accepted && (
-                        <button
-                          className="secondary"
+                        <Button
+                          variant="outline"
                           onClick={() => void profileAfterAccept(stage.id)}
                           disabled={busy}
                         >
                           <Check size={15} />
                           同意采用建议
-                        </button>
+                        </Button>
                       )}
                     </article>
                   ))
@@ -1332,8 +1351,8 @@ export function App() {
                       {String(suggestion.advice || JSON.stringify(suggestion))}
                     </p>
                     {!suggestion.accepted && (
-                      <button
-                        className="secondary"
+                      <Button
+                        variant="outline"
                         onClick={() => {
                           const courseId = String(suggestion.course_id || "");
                           void run("suggestion", () =>
@@ -1349,7 +1368,7 @@ export function App() {
                       >
                         <Check size={15} />
                         同意采用建议
-                      </button>
+                      </Button>
                     )}
                   </article>
                 ))}
@@ -1361,8 +1380,8 @@ export function App() {
                   恢复前系统会自动保存当前整门课程。地图、节点对话、练习和评分会一起恢复。
                 </p>
                 <div className="version-actions">
-                  <button
-                    className="secondary"
+                  <Button
+                    variant="outline"
                     onClick={() =>
                       course &&
                       void run("snapshot", () => api.snapshot(course.id)).then(
@@ -1378,15 +1397,15 @@ export function App() {
                   >
                     <Archive size={15} />
                     保存当前版本
-                  </button>
-                  <button
-                    className="secondary"
+                  </Button>
+                  <Button
+                    variant="outline"
                     onClick={() => void beginDelete()}
                     disabled={busy}
                   >
                     <Trash2 size={15} />
                     删除课程…
-                  </button>
+                  </Button>
                 </div>
                 {versions.length ? (
                   <div className="version-list">
@@ -1395,18 +1414,18 @@ export function App() {
                         <div>
                           <strong>{v.reason || "课程快照"}</strong>
                           <span>
-                            {new Date(v.created_at).toLocaleString("zh-CN")} ·{" "}
+                            {formatTime(v.created_at)} ·{" "}
                             {v.node_count} 个节点 · v{v.revision}
                           </span>
                         </div>
-                        <button
-                          className="secondary"
+                        <Button
+                          variant="outline"
                           onClick={() => void beginRestore(v.id)}
                           disabled={busy}
                         >
                           <RotateCcw size={14} />
                           预览恢复
-                        </button>
+                        </Button>
                       </article>
                     ))}
                   </div>
@@ -1483,10 +1502,10 @@ export function App() {
                     onChange={(e) => setNoteQuery(e.target.value)}
                     placeholder="搜索笔记内容或路径"
                   />
-                  <button className="secondary">
+                  <Button variant="outline">
                     <FolderOpen size={15} />
                     搜索笔记
-                  </button>
+                  </Button>
                 </form>
                 {notes.map((n) => (
                   <article className="note-result" key={n.path}>
@@ -1527,8 +1546,8 @@ export function App() {
                       placeholder="输入要保存到 Obsidian 的内容"
                     />
                   </label>
-                  <button
-                    className="secondary"
+                  <Button
+                    variant="outline"
                     onClick={() =>
                       void run("note-preview", () =>
                         api.notePreview(notePath, noteContent),
@@ -1539,18 +1558,18 @@ export function App() {
                     disabled={busy || !notePath || !noteContent}
                   >
                     预览写入内容
-                  </button>
+                  </Button>
                   {preview && (
                     <div className="preview-card">
                       <strong>{preview.target}</strong>
                       <pre>{preview.content}</pre>
                       <p>{preview.warning}</p>
                       <div className="decision-row">
-                        <button onClick={() => setPreview(undefined)}>
+                        <Button variant="ghost" onClick={() => setPreview(undefined)}>
                           取消
-                        </button>
-                        <button
-                          className="primary"
+                        </Button>
+                        <Button
+                          
                           onClick={() =>
                             void run("note-write", () =>
                               api.noteWrite(preview.token),
@@ -1558,14 +1577,15 @@ export function App() {
                               if (v) {
                                 setNotePath(v.path);
                                 setPreview(undefined);
-                                setError(`已写入 ${v.path}`);
+                                setWrittenNote(noteContent);
+                                setNotice(`已写入 ${v.path}`);
                               }
                             })
                           }
                           disabled={busy}
                         >
                           确认写入
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   )}
@@ -1594,16 +1614,16 @@ export function App() {
                 }
               />
             )}
-          </section>
-        </div>
-      )}
-      {busy && (
-        <div className="busy-indicator" role="status">
-          <LoaderCircle size={16} />
-          {busyLabel(busyKey)}
-        </div>
+            </>}
+          </Dialog.Content>
+        </Dialog.Overlay>
+        </Dialog.Portal>
+      </Dialog.Root>
+      {busy && !AI_KEYS.has(busyKey) && (
+        <BusyIndicator label={busyLabel(busyKey)} />
       )}
     </div>
+    </AiTaskProvider>
     </TooltipProvider>
   );
 }
@@ -1639,15 +1659,11 @@ function ConfirmPreview({
         ))}
       </div>
       <div className="decision-row">
-        <button onClick={onCancel}>返回</button>
-        <button
-          className={danger ? "danger-button" : "primary"}
-          disabled={busy}
-          onClick={onConfirm}
-        >
+        <Button variant="ghost" onClick={onCancel}>返回</Button>
+        <Button variant={danger ? "destructive" : "default"} disabled={busy} onClick={onConfirm}>
           {icon}
           {confirm}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -1659,7 +1675,7 @@ function modalIcon(m: Modal) {
     settings: Settings2,
     profile: Archive,
     versions: History,
-    obsidian: NotebookPen,
+    obsidian: FolderSync,
     restore: RotateCcw,
     delete: Trash2,
     recall: Clock3,
@@ -1667,7 +1683,7 @@ function modalIcon(m: Modal) {
     materials: FolderOpen,
     goals: Layers,
     lines: Waypoints,
-    "course-notes": BookMarked,
+    "course-notes": NotebookPen,
   };
   const Icon = icons[m || ""] || CircleHelp;
   return <Icon size={18} />;
@@ -1694,6 +1710,17 @@ function modalTitle(m: Modal) {
     )[m || ""] || ""
   );
 }
+function BusyIndicator({ label }: { label: string }) {
+  const activity = useBusyActivity();
+  const seconds = useElapsedSeconds(activity.since);
+  return (
+    <div className="busy-indicator" role="status">
+      <LoaderCircle size={16} />
+      {label}
+      {seconds >= 2 && <span className="ai-thinking-time">{AI_KEYS.has(activity.key) ? `已思考 ${seconds} 秒` : `${seconds} 秒`}</span>}
+    </div>
+  );
+}
 function busyLabel(key: string) {
   return (
     (
@@ -1709,6 +1736,8 @@ function busyLabel(key: string) {
         delete: "正在删除课程…",
         recall: "正在找回对话…",
         "recall-summary": "正在整理学习内容…",
+        "generate-lines": "正在生成主线与课程全貌…",
+        retell: "正在检查复述…",
       } as Record<string, string>
     )[key] || "正在保存…"
   );

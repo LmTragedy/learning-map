@@ -1,5 +1,6 @@
 import json
 
+from .ai_tasks import current_task_id, save_task_result
 from .conversation_labels import remember_conversation
 from .domain import find_node
 from .learning import LearningError, structured
@@ -8,7 +9,18 @@ from .schemas import RecallSummary
 from .store import Conflict, timestamp
 
 
-def summarize_recall(learning, course_id, node_id):
+def summarize_recall(learning, course_id, node_id, request_id=None):
+    return learning.tasks.run(
+        course_id,
+        "recall",
+        node_id,
+        {},
+        lambda: _summarize_recall(learning, course_id, node_id),
+        request_id=request_id,
+    )
+
+
+def _summarize_recall(learning, course_id, node_id):
     course = learning.store.course(course_id)
     node = find_node(course, node_id)
     require_review_node(course, node)
@@ -23,12 +35,14 @@ def summarize_recall(learning, course_id, node_id):
     reply = structured(learning.ai(), _summary_prompt(node, encoded), RecallSummary, {"conversation": label})
     summary = reply.payload
     _validate_evidence(summary, history)
-    with learning.store.edit(course_id) as (current, _):
+    result = summary | dict(messages=history, created_at=timestamp(), history_revision=course["revision"])
+    with learning.store.edit(course_id, task_id=current_task_id()) as (current, connection):
         current_node = find_node(current, node_id)
         if current_node["chats"] != original_history or scope_key(current) != scope_key(course):
             raise Conflict("整理期间对话或复习范围已变化，请刷新后重新整理。")
         remember_conversation(current, reply.thread_id, label, node_id)
-    return summary | dict(messages=history, created_at=timestamp(), history_revision=course["revision"])
+        save_task_result(connection, result)
+    return result
 
 
 def _summary_prompt(node, encoded):

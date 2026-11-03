@@ -20,9 +20,12 @@ export type NoteReviewResponse = {
   warnings: string[];
 };
 
+/** Suggestions live in the editor as marks that follow later edits; positions are the editor's, not the snapshot's. */
 export type NoteEditorActions = {
-  replace: (suggestion: NoteSuggestion, snapshot: string) => string | null;
-  locate: (suggestion: NoteSuggestion, snapshot: string) => boolean;
+  /** Mark suggestions made for `snapshot`; once the text has moved on, only drops marks missing from the list. */
+  sync: (suggestions: NoteSuggestion[], snapshot: string) => void;
+  replace: (suggestion: NoteSuggestion) => string | null;
+  locate: (suggestion: NoteSuggestion) => boolean;
   undo: () => boolean;
 };
 

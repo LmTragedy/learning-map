@@ -8,6 +8,7 @@ import { BridgeEditor, PieceEditor } from "./BridgeEditors";
 import { AnchoredNotes } from "./AnchoredNotes";
 import { needsBridges, pieceLabel, resolveBridges, stepLabel, STRENGTH_LABEL } from "./bridges";
 import { RELATION_KINDS, type Course, type LearningNode, type RelationKind } from "./types";
+import { TaskCards, useCourseTasks } from './aiTasks';
 
 type Edge = Course["edges"][number];
 
@@ -44,6 +45,8 @@ export function BridgeDetail({
     : course.nodes.find((entry) => entry.kind === "synthesis" && entry.relation_id === edge.id);
   const synthesisInScope = Boolean(synthesisNode && course.review_scope?.node_ids.includes(synthesisNode.id));
   const contrast = edge.kind === "对比";
+  const taskLedger=useCourseTasks();
+  const pendingBridge=taskLedger.tasks.some(t=>t.kind==='bridge'&&(t.target===edge.id||t.target==='batch')&&t.state!=='applied');
   return <section className="rounded-xl border border-border bg-card p-3.5" aria-label="知识桥详情">
     <div className="flex items-start gap-2">
       <div className="min-w-0 flex-1">
@@ -75,8 +78,8 @@ export function BridgeDetail({
           {course.materials.find((material) => material.id === entry.material_id)?.name || "课程材料"} · 第 {entry.page} 页{entry.quote ? ` · ${entry.quote}` : ""}</a>)}
       </div>)}
       {!bridges.length && <p className="t-meta">这条联系没有知识桥。</p>}
-      {needsBridges(edge) && <Button size="sm" variant="outline" className="self-start" disabled={busy}
-        onClick={() => void act("backfill-relations", () => api.backfillRelations(course.id, course.revision))}><Sparkles /> 用 AI 补充知识桥</Button>}
+      {pendingBridge ? <><TaskCards kind="bridge" target={edge.id} /><TaskCards kind="bridge" target="batch" /></> : needsBridges(edge) && <Button size="sm" variant="outline" className="self-start" disabled={busy}
+        onClick={() => void act("backfill-relations", () => api.backfillRelation(course.id, edge.id, course.revision))}><Sparkles /> 用 AI 补充知识桥</Button>}
     </div>}
     {editing === "bridges" && source && target && <BridgeEditor key={course.revision} course={course} edge={edge} source={source} target={target} busy={busy} act={act} onDone={() => setEditing("")} />}
     {editing === "pieces" && source && <PieceEditor key={course.revision} course={course} node={source} busy={busy} act={act} onDone={() => setEditing("")} />}
@@ -113,7 +116,7 @@ export function BridgeDetail({
 }
 
 function EditToggle({ on, onClick, children }: { on: boolean; onClick: () => void; children: string }) {
-  return <Button size="sm" variant={on ? "secondary" : "ghost"} aria-pressed={on} onClick={onClick}><Pencil /> {children}</Button>;
+  return <Button size="sm" variant="ghost" aria-pressed={on} onClick={onClick}><Pencil /> {children}</Button>;
 }
 
 function OldText({ edge }: { edge: Edge }) {
@@ -143,6 +146,6 @@ function TextEditor({ course, edge, busy, act, onDone }: { course: Course; edge:
     <label className="grid gap-1">一句话说明<textarea className={`${input} min-h-14`} required value={form.explanation} onChange={(event) => setForm({ ...form, explanation: event.target.value })} /></label>
     <label className="grid gap-1">何时用<textarea className={`${input} min-h-12`} required value={form.when_to_use} onChange={(event) => setForm({ ...form, when_to_use: event.target.value })} /></label>
     <label className="grid gap-1">依据<input className={input} required value={form.basis} onChange={(event) => setForm({ ...form, basis: event.target.value })} /></label>
-    <div className="flex gap-2"><Button size="sm" disabled={busy}>保存说明</Button><Button size="sm" type="button" variant="ghost" onClick={onDone}>取消</Button></div>
+    <div className="flex justify-end gap-2"><Button size="sm" type="button" variant="ghost" onClick={onDone}>取消</Button><Button size="sm" disabled={busy}>保存说明</Button></div>
   </form>;
 }

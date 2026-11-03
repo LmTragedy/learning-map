@@ -90,13 +90,14 @@ function GoalCard({ course, node, entry, busy, onOpenGoal }: {
     })}
     <div className="flex items-center gap-2 border-t border-border pt-2 text-xs">
       <span className="min-w-0 flex-1 truncate text-muted-foreground">
-        {next ? <>下一步：<span className="text-foreground">{next.unlocked ? next.title : "未解锁知识点"}</span></> : "路线上没有其他待学节点"}
+        {next ? <>路线下一站：<span className="text-foreground">{next.unlocked ? next.title : "未解锁知识点"}</span></> : "路线上没有其他待学节点"}
       </span>
       {next && actions && <Button size="sm" variant="outline" className="h-7 shrink-0 px-2 text-xs" disabled={busy || nextOutside}
-        title={nextOutside ? "不在当前 PDF 复习范围，请先调整范围或退出复习" : undefined} onClick={() => actions.onOpenNode(next.id)}>
+        onClick={() => actions.onOpenNode(next.id)}>
         {next.unlocked ? "进入" : "临时直达"} <ArrowRight />
       </Button>}
     </div>
+    {next && actions && nextOutside && <p className="text-xs text-muted-foreground">下一步不在当前 PDF 复习范围，请先调整范围或退出复习。</p>}
     <div className="-mx-1 -mb-1 flex flex-wrap gap-1">
       {actions && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" aria-pressed={focused} onClick={() => actions.onFocusGoal(goal.id)}>
         <Route /> {focused ? "取消路线显示" : "在地图上显示路线"}
@@ -109,28 +110,39 @@ function GoalCard({ course, node, entry, busy, onOpenGoal }: {
 }
 
 /** Goals this node leads to, sits on or completes, plus a quick way to link it to another goal. */
-export function NodeGoals({ course, node, busy, act, onOpenGoal }: {
+const NEW_GOAL = "__new__";
+
+export function NodeGoals({ course, node, busy, canCreate = true, act, onOpenGoal }: {
   course: Course; node: LearningNode; busy: boolean;
+  /** False during a strict PDF review, where new goals are not created. */
+  canCreate?: boolean;
   act: (key: string, fn: () => Promise<Course>) => Promise<Course | undefined>;
   onOpenGoal: (goalId: string) => void;
 }) {
   const [expanded, setExpanded] = useState("");
   const goals = course.goals || [];
-  if (!goals.length) return null;
   const related = goalsForNode(course, node.id);
   const primary = related.find((entry) => entry.goal.id === expanded) || related[0];
   const rest = related.filter((entry) => entry !== primary);
   const others = goals.filter((goal) => !goal.node_ids.includes(node.id) && goal.node_ids.length < 100);
-  const addToGoal = !!others.length && <label className="relative flex items-center text-muted-foreground">
+  // The one place to put this node into a goal: an existing one, or a new goal ending here.
+  const addToGoal = (!!others.length || canCreate) && <label className="relative flex items-center text-muted-foreground">
     <Plus size={12} className="pointer-events-none absolute left-1.5" aria-hidden />
     <select className="h-6 cursor-pointer appearance-none rounded-full border border-dashed border-border bg-transparent !py-0 !pl-5 !pr-2 text-xs"
       aria-label="把这个知识点设为目标终点" value="" disabled={busy}
       onChange={(event) => {
+        if (event.target.value === NEW_GOAL) {
+          void act("goal-endpoint", () => api.addGoal(course.id, {
+            title: `学会 ${node.title}`, description: "以图上的这个知识点为终点", kind: "personal", status: "doing", node_ids: [node.id], subtasks: [],
+          }));
+          return;
+        }
         const goal = others.find((entry) => entry.id === event.target.value);
         if (goal) void act("goal", () => api.updateGoal(course.id, goal.id,
           { ...editableGoal(goal), node_ids: [...goal.node_ids, node.id], revision: course.revision }));
       }}>
       <option value="">加入目标…</option>
+      {canCreate && <option value={NEW_GOAL}>新建目标：以这里为终点</option>}
       {others.map((goal) => <option key={goal.id} value={goal.id}>{goal.title}</option>)}
     </select>
   </label>;

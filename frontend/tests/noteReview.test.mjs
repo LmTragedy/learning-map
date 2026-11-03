@@ -117,3 +117,83 @@ test("switching between named notes with identical text cannot reuse the previou
   await until(() => controller.snapshot().phase === "ready");
   assert.equal(controller.current("suggestion").original, "shared sentence");
 });
+
+test("an autosave bumping the revision neither resets suggestions nor fails a check in flight", async (t) => {
+  const pending = [];
+  const controller = new NoteReviewController((context, id) => new Promise(resolve => pending.push({ context, id, resolve })), 5, 500);
+  t.after(() => controller.dispose());
+  controller.update({ ...base, content: "my wording" });
+  await until(() => pending.length === 1);
+  controller.update({ ...base, revision: 2, content: "my wording" });
+  pending[0].resolve({ ...reply(pending[0].context, pending[0].id, [suggestion("my wording")]), revision: 1 });
+  await until(() => controller.snapshot().phase === "ready");
+  controller.update({ ...base, revision: 3, content: "my wording" });
+  await delay(20);
+  assert.equal(controller.snapshot().suggestions.length, 1);
+  assert.equal(pending.length, 1);
+});
+
+test("edits keep earlier suggestions until the editor prunes the ones it touched", async (t) => {
+  const two = [{ ...suggestion("first"), id: "a" }, { ...suggestion("second", 6), id: "b" }];
+  const controller = new NoteReviewController(async (context, id) => reply(context, id, context.content === "first second" ? two : []), 5, 500);
+  t.after(() => controller.dispose());
+  controller.update({ ...base, content: "first second" });
+  await until(() => controller.snapshot().phase === "ready");
+  controller.update({ ...base, content: "first second!" });
+  assert.deepEqual(controller.snapshot().suggestions.map((entry) => entry.id), ["a", "b"]);
+  controller.prune(["b"]);
+  assert.deepEqual(controller.snapshot().suggestions.map((entry) => entry.id), ["a"]);
+  controller.accepted("a");
+  assert.equal(controller.snapshot().suggestions.length, 0);
+});
+
+for (const [label, change] of [
+  ["review scope", { scopeKey: "selected:node" }],
+  ["course", { courseId: "other-course" }],
+  ["node", { nodeId: "other-node" }],
+  ["model", { model: "gpt-6-astra" }],
+]) test(`switching ${label} with identical text rejects the old asynchronous result`, async (t) => {
+  const pending = [];
+  const controller = new NoteReviewController((context, id) => new Promise(resolve => pending.push({ context, id, resolve })), 5, 500);
+  t.after(() => controller.dispose());
+  controller.update({ ...base, content: "shared sentence" });
+  await until(() => pending.length === 1);
+  controller.update({ ...base, ...change, content: "shared sentence" });
+  pending[0].resolve(reply(pending[0].context, pending[0].id, [suggestion("shared sentence")]));
+  await until(() => pending.length === 2);
+  assert.equal(controller.current("suggestion"), undefined);
+  pending[1].resolve(reply(pending[1].context, pending[1].id, [suggestion("shared sentence")]));
+  await until(() => controller.snapshot().phase === "ready");
+  assert.equal(controller.current("suggestion").original, "shared sentence");
+});
+
+test("unrelated edits keep existing suggestions and reject stale response offsets", async (t) => {
+  const pending = [];
+  const controller = new NoteReviewController((context, id) => new Promise(resolve => pending.push({ context, id, resolve })), 5, 500);
+  t.after(() => controller.dispose());
+  controller.update({ ...base, content: "first second" });
+  await until(() => pending.length === 1);
+  pending[0].resolve(reply(pending[0].context, pending[0].id, [{ ...suggestion("first"), id: "first-mark" }]));
+  await until(() => controller.snapshot().phase === "ready");
+
+  controller.retry();
+  await until(() => pending.length === 2);
+  controller.update({ ...base, content: "first second!" });
+  assert.deepEqual(controller.snapshot().suggestions.map(({ id }) => id), ["first-mark"]);
+  pending[1].resolve(reply(pending[1].context, pending[1].id, [
+    { ...suggestion("second", 6), id: "stale-offset" },
+  ]));
+  await until(() => pending.length === 3);
+  assert.deepEqual(controller.snapshot().suggestions.map(({ id }) => id), ["first-mark"]);
+});
+
+test("disabling AI after a successful check clears existing suggestions", async (t) => {
+  const controller = new NoteReviewController(async (context, id) => reply(context, id, [suggestion(context.content)]), 5, 500);
+  t.after(() => controller.dispose());
+  controller.update({ ...base, content: "my wording" });
+  await until(() => controller.snapshot().phase === "ready");
+  assert.equal(controller.snapshot().suggestions.length, 1);
+  controller.update({ ...base, enabled: false, content: "my wording" });
+  assert.equal(controller.snapshot().phase, "off");
+  assert.equal(controller.snapshot().suggestions.length, 0);
+});

@@ -4,6 +4,8 @@ import { api } from './api'
 import { answerDraft, completeAnswerDraft, subscribeAnswerDrafts, updateAnswerDraft } from './answerDrafts'
 import { BridgeGaps } from './BridgeGaps'
 import type { Attempt, Course, LearningNode } from './types'
+import { TaskCards, useCourseTasks } from './aiTasks'
+import { Button } from './components/ui/button'
 
 type Props = {
   course: Course
@@ -24,6 +26,8 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
   const [mastery, setMastery] = useState<number | null>(null)
   const [comment, setComment] = useState('')
   const latest = node.attempts.at(-1)
+  // Only one white button at a time: answering, unless the last attempt is waiting for its rating.
+  const answerIsMain = Boolean(node.question) && latest?.rating_state !== 'pending'
 
   const act = async (key: string, request: () => Promise<Course>) => {
     const updated = await run(key, request)
@@ -43,25 +47,30 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
   }
 
   const askQuestion = () => void act('question', () => api.question(course.id, node.id))
+  const tasks=useCourseTasks().tasks
+  const asking=tasks.some(t=>t.kind==='question'&&t.target===node.id&&t.state!=='applied')
+  const judging=tasks.some(t=>t.kind==='assessment'&&t.target===node.id&&t.state!=='applied')
   return <div className="practice-pane">
     <div className="practice-main">
       <div className="practice-question">
         <div className="practice-question-head">
           <span className="eyebrow">{node.question?.kind || '节点验收'}</span>
-          {node.question && <button className="link-button" onClick={askQuestion} disabled={busy || !aiEnabled}><RefreshCw size={13}/>换一道题</button>}
+          {node.question && <button className="link-button" onClick={askQuestion} disabled={busy || asking || !aiEnabled}><RefreshCw size={13}/>换一道题</button>}
         </div>
-        {node.question
+        {asking
+          ? <TaskCards kind="question" target={node.id} />
+          : node.question
           ? <p>{node.question.prompt}</p>
           : <><p className="muted">生成一道基于当前节点的验收题，检查理解和应用。</p>
-            <button className="primary" onClick={askQuestion} disabled={busy || !aiEnabled}><Sparkles size={15}/>生成验收题</button></>}
+            <Button  onClick={askQuestion} disabled={busy || !aiEnabled}><Sparkles size={15}/>生成验收题</Button></>}
       </div>
       <div className="practice-editor">
         <textarea rows={10} aria-label="你的作答" value={answer} onChange={event => updateAnswerDraft(scope, { answer: event.target.value })} placeholder="写出你的思路、步骤或解释" disabled={!aiEnabled}/>
-        {files.length > 0 && <div className="file-chips">{files.map(file => <span key={`${file.name}-${file.size}`}>{file.name}</span>)}</div>}
+        {files.length > 0 && <div className="file-chips">{files.map(file => <span key={`${file.name}-${file.size}`}>{file.name}</span>)}<small className="muted">附件不随草稿保存，刷新页面后需要重新选择。</small></div>}
         <div className="practice-editor-foot">
-          <label className={`upload-inline ${!aiEnabled ? 'disabled' : ''}`} title={files.length ? '刷新页面后需要重新选择附件' : undefined}><Paperclip size={14}/>照片或 PDF<input type="file" accept="image/*,.pdf" multiple disabled={!aiEnabled} onChange={event => updateAnswerDraft(scope, { files: Array.from(event.target.files || []) })}/></label>
-          {warning ? <span className="muted small" role="alert">{warning}</span> : (answer || reference) && <span className="muted small" title="保存在当前浏览器">草稿已保存</span>}
-          <button className="primary" onClick={() => void submitAttempt()} disabled={busy || !aiEnabled || !node.question || (!answer.trim() && files.length === 0)}>提交作答并验收</button>
+          <label className={`upload-inline ${!aiEnabled ? 'disabled' : ''}`}><Paperclip size={14}/>照片或 PDF<input type="file" accept="image/*,.pdf" multiple disabled={!aiEnabled} onChange={event => updateAnswerDraft(scope, { files: Array.from(event.target.files || []) })}/></label>
+          {warning ? <span className="muted small" role="alert">{warning}</span> : (answer || reference) && <span className="muted small">草稿已保存在本浏览器</span>}
+          <Button variant={answerIsMain ? 'default' : 'outline'} onClick={() => void submitAttempt()} disabled={busy || judging || !aiEnabled || !node.question || (!answer.trim() && files.length === 0)}>提交作答并验收</Button>
         </div>
       </div>
       <details className="reference-answer" open={Boolean(reference) || undefined}>
@@ -70,6 +79,7 @@ export function PracticePanel({ course, node, busy, aiEnabled, run, onRefresh, o
       </details>
     </div>
     <aside className="practice-side" aria-label="验收结果">
+      {judging && <TaskCards kind="assessment" target={node.id} />}
       {latest ? <>
         <AttemptResult attempt={latest} busy={busy} problem={problem} mastery={mastery} comment={comment} onProblem={setProblem} onMastery={setMastery} onComment={setComment} onResolve={decision => void act('resolve', () => api.resolve(course.id, node.id, latest.id, decision))} onRating={skip => void submitRating(latest, skip)}/>
         {latest.judgment.outcome !== 'passed' && <BridgeGaps course={course} node={node} attempt={latest} busy={busy} act={act} onNavigate={onNavigate}/>}
@@ -86,7 +96,7 @@ function AttemptResult({ attempt, busy, problem, mastery, comment, onProblem, on
     {attempt.judgment.blockers.length > 0 && <ul>{attempt.judgment.blockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul>}
     <p className="muted small">下一步：{attempt.judgment.next_step}</p>
     {attempt.judgment.outcome === 'uncertain' && !attempt.resolution && <div className="decision-row"><button disabled={busy} onClick={() => onResolve('pass')}>仍按通过</button><button disabled={busy} onClick={() => onResolve('supplement')}>补充练习</button><button disabled={busy} onClick={() => onResolve('review')}>通过并待复查</button></div>}
-    {attempt.rating_state === 'pending' && <div className="rating-box"><h4>这次学习体验如何？ <span className="muted">可跳过</span></h4><ScorePicker label="问题解决程度" value={problem} onChange={onProblem}/><ScorePicker label="知识掌握程度" value={mastery} onChange={onMastery}/><label className="field-label">补充反馈（可选）<input value={comment} onChange={event => onComment(event.target.value)} placeholder="比如：哪个解释最有帮助？"/></label><div className="decision-row"><button onClick={() => onRating(true)} disabled={busy}>跳过评分</button><button className="primary" onClick={() => onRating(false)} disabled={busy || (problem === null && mastery === null)}>提交评分</button></div></div>}
+    {attempt.rating_state === 'pending' && <div className="rating-box"><h4>这次学习体验如何？ <span className="muted">可跳过</span></h4><ScorePicker label="问题解决程度" value={problem} onChange={onProblem}/><ScorePicker label="知识掌握程度" value={mastery} onChange={onMastery}/><label className="field-label">补充反馈（可选）<input value={comment} onChange={event => onComment(event.target.value)} placeholder="比如：哪个解释最有帮助？"/></label><div className="decision-row"><Button variant="ghost" onClick={() => onRating(true)} disabled={busy}>跳过评分</Button><Button  onClick={() => onRating(false)} disabled={busy || (problem === null && mastery === null)}>提交评分</Button></div></div>}
   </div>
 }
 

@@ -377,7 +377,8 @@ export function MapView({
           }}
           proOptions={{ hideAttribution: false }}
         >
-          <Controls showInteractive={false} position="bottom-left" />
+          {/* Fitting the whole graph is the toolbar's 看全图; the corner keeps only zoom. */}
+          <Controls showInteractive={false} showFitView={false} position="bottom-left" />
         </ReactFlow>
         {tip && (() => {
           const edge = edges.find((item) => item.id === tip.id);

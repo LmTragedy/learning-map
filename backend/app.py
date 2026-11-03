@@ -1,5 +1,7 @@
+import hashlib
 import importlib.util
 import os
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -8,6 +10,9 @@ from fastapi.staticfiles import StaticFiles
 
 from . import obsidian
 from .ai import AIError, AIUnavailable, CodexAI
+from .ai_task_routes import register_ai_task_routes
+from .ai_tasks import client_request_id, requested_action_id
+from .bridge_backfill import register_bridge_backfill
 from .domain import (
     find_attempt,
     find_node,
@@ -34,11 +39,10 @@ from .lines_ai import register_line_ai
 from .note_review import register_note_review
 from .profile import accept_stage as apply_stage
 from .recall import summarize_recall
-from .bridge_backfill import register_bridge_backfill
 from .relation_routes import register_relation_routes
 from .review_scope import question_for, require_review_record, set_review_scope, strict_scope
+from .runtime_identity import runtime_identity
 from .sample import create_sample
-from .security_headers import DEFAULT_CSP, MATERIAL_FILE_CSP
 from .schemas import (
     CreateCourse,
     Mark,
@@ -51,9 +55,22 @@ from .schemas import (
     Settings,
     Token,
 )
-from .store import Conflict, Store
+from .security_headers import DEFAULT_CSP, MATERIAL_FILE_CSP
+from .store import Conflict, Store, identity
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _require_same_attempt_files(uploads, saved):
+    if len(uploads) != len(saved):
+        raise Conflict("此验收请求身份已用于其他附件")
+    for upload, attachment in zip(uploads, saved, strict=True):
+        try:
+            digest = hashlib.file_digest(upload.file, "sha256").hexdigest()
+        finally:
+            upload.file.seek(0)
+        if digest != attachment["sha256"] or Path(upload.filename or "").name != attachment["name"]:
+            raise Conflict("此验收请求身份已用于其他附件")
 
 
 def create_app(data_dir=None, ai_factory=None):
@@ -64,6 +81,7 @@ def create_app(data_dir=None, ai_factory=None):
     learning = Learning(store, factory)
     app = FastAPI(title="Learning Map", version="0.1.0")
     app.state.store, app.state.learning = store, learning
+    app.state.runtime = runtime_identity()
     _security(app)
     _errors(app)
     _course_routes(app, store, learning)
@@ -77,6 +95,7 @@ def create_app(data_dir=None, ai_factory=None):
     register_line_routes(app, store)
     register_line_ai(app, store, learning)
     register_lesson_routes(app, store, learning)
+    register_ai_task_routes(app, store, learning)
     _protection_routes(app, store)
     _settings_routes(app, store, factory)
     frontend = PROJECT_ROOT / "frontend" / "dist"
@@ -100,7 +119,11 @@ def _security(app):
         length = request.headers.get("content-length", "0")
         if not length.isdigit() or int(length) > 110 * 1024 * 1024:
             return JSONResponse({"detail": "请求超过 110 MB 上限"}, status_code=413)
-        response = await call_next(request)
+        action_id = request.headers.get("x-ai-request-id")
+        if action_id is not None and not re.fullmatch(r"[a-zA-Z0-9-]{16,80}", action_id):
+            return JSONResponse({"detail": "AI 请求身份格式无效"}, status_code=422)
+        with client_request_id(action_id):
+            response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Cache-Control"] = "no-store"
@@ -215,7 +238,7 @@ def _learning_routes(app, store, learning):
 
     @app.post("/api/courses/{cid}/nodes/{nid}/chat")
     def chat(cid: str, nid: str, request: Message):
-        return project_course(learning.chat(cid, nid, request.message))
+        return project_course(learning.chat(cid, nid, request.message, request_id=request.request_id))
 
     @app.get("/api/courses/{cid}/nodes/{nid}/recall")
     def recall(cid: str, nid: str, q: str = ""):
@@ -241,6 +264,19 @@ def _learning_routes(app, store, learning):
         reference: str = Form(""),
         files: list[UploadFile] = File(default=[]),
     ):
+        previous = learning.tasks.find_request(cid, requested_action_id())
+        if previous:
+            if previous["kind"] != "assessment" or previous["target"] != nid:
+                raise Conflict("此请求身份已用于其他操作")
+            submitted_before = previous["inputs"]["submission"]
+            if submitted_before["answer"] != answer or submitted_before["reference"] != reference:
+                raise Conflict("此验收请求身份已用于其他作答")
+            _require_same_attempt_files(files, submitted_before["attachments"])
+            if previous["state"] == "applied":
+                return project_course(store.course(cid))
+            if previous.get("request"):
+                raise Conflict(f"请恢复原验收任务 {previous['id']}，未重新生成或导入附件")
+        submission_id = requested_action_id() or identity()
         current = store.course(cid)
         find_node(current, nid)
         if not answer.strip() and not files:
@@ -255,10 +291,12 @@ def _learning_routes(app, store, learning):
                 answer=answer,
                 reference=reference,
                 attachments=attachments,
+                id=submission_id,
             )
             saved = learning.submit(current, nid, submitted, images)
         except Exception:
-            discard_materials(store, cid, attachments)
+            if not learning.tasks.find_request(cid, submission_id):
+                discard_materials(store, cid, attachments)
             raise
         return project_course(saved)
 
@@ -352,6 +390,7 @@ def _settings_routes(app, store, factory):
             ai=factory(store.settings()).available(),
             data_dir=str(store.root),
             parser=dict(basic=True, docling=importlib.util.find_spec("docling") is not None),
+            runtime=app.state.runtime,
         )
 
     @app.get("/api/settings")

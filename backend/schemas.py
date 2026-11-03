@@ -17,6 +17,7 @@ class Mark(Input):
 
 class Message(Input):
     message: str = Field(min_length=1, max_length=12000)
+    request_id: str | None = Field(default=None, min_length=16, max_length=80, pattern=r"^[a-zA-Z0-9-]+$")
 
 
 class ReviewScope(Input):

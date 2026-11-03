@@ -1,4 +1,5 @@
 import { useDeferredValue, useState } from "react";
+import { flushSync } from "react-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -6,6 +7,7 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { HIGHLIGHT, NOTE_COLORS } from "./noteFormatting";
 import { Button } from "./components/ui/button";
 import { LiveMarkdownEditor } from "./LiveMarkdownEditor";
+import type { ReviewHooks } from "./LiveMarkdownEditor";
 import type { NoteEditorActions } from "./noteReviewTypes";
 
 type View = "live" | "source" | "read";
@@ -26,23 +28,31 @@ const schema = {
   },
 };
 
-export default function MarkdownNoteEditor({ content, onChange, onReady, onTab }: {
+export default function MarkdownNoteEditor({ content, onChange, onReady, onTab, reviewHooks }: {
   content: string;
   onChange: (content: string) => void;
   onReady?: (actions: NoteEditorActions | null) => void;
   onTab?: () => boolean;
+  reviewHooks?: ReviewHooks;
 }) {
   const [view, setView] = useState<View>("live");
   const preview = useDeferredValue(content);
   return <div className="node-note-editor">
     <div className="node-note-editor-toolbar">
       <div role="group" aria-label="笔记显示方式" className="ml-auto flex flex-wrap gap-1">
-        {views.map(({ key, label }) => <Button key={key} size="sm" variant={view === key ? "secondary" : "ghost"}
+        {views.map(({ key, label }) => <Button key={key} size="sm" variant="ghost"
           aria-pressed={view === key} onClick={() => setView(key)}>{label}</Button>)}
       </div>
     </div>
     <div className="node-note-panes" data-view={view}>
-      <div hidden={view === "read"}><LiveMarkdownEditor content={content} onChange={onChange} live={view !== "source"} onReady={onReady} onTab={onTab} /></div>
+      <div hidden={view === "read"}><LiveMarkdownEditor content={content} onChange={onChange} live={view !== "source"} onReady={(actions) => onReady?.(actions && {
+        ...actions,
+        locate: (suggestion) => {
+          // Reveal the existing editor before it measures and focuses the marked range.
+          flushSync(() => setView((current) => current === "read" ? "live" : current));
+          return actions.locate(suggestion);
+        },
+      })} onTab={onTab} reviewHooks={reviewHooks} /></div>
       {view === "read" && <article aria-label="笔记阅读预览" className="node-note-preview">
         {preview ? <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw, [rehypeSanitize, schema]]} components={{
           // Notes remain local: a preview never fetches an embedded image.

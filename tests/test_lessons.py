@@ -83,6 +83,52 @@ def test_old_course_records_survive_lessons_reading_and_restart(session):
     assert not reopened.json()["nodes"][1]["unlocked"]
 
 
+def test_read_can_be_undone_and_persists_without_changing_learning_records(session):
+    client, store, model, course = session
+    model.replies.append(lesson_draft())
+    lesson = generate(client, course).json()["nodes"][0]["lessons"][0]
+    path = lesson_path(course) + f"/{lesson['id']}/read"
+    before = store.course(course["id"])
+
+    marked = client.post(path)
+    assert marked.status_code == 200, marked.text
+    read_at = marked.json()["nodes"][0]["lessons"][0]["read_at"]
+    assert read_at
+    assert client.post(path).json()["nodes"][0]["lessons"][0]["read_at"] == read_at
+    for _ in range(2):
+        undone = client.delete(path)
+        assert undone.status_code == 200, undone.text
+        assert undone.json()["nodes"][0]["lessons"][0]["read_at"] is None
+
+    after = store.course(course["id"])
+    assert {k: v for k, v in after.items() if k != "revision"} == {
+        k: v for k, v in before.items() if k != "revision"
+    }
+    restarted = TestClient(create_app(store.root, lambda _: model), headers={"X-Learning-Map": "1"})
+    reopened = restarted.get(f"/api/courses/{course['id']}")
+    assert reopened.json()["nodes"][0]["lessons"][0]["read_at"] is None
+    assert restarted.post(path).json()["nodes"][0]["lessons"][0]["read_at"]
+
+
+def test_undo_read_rejects_missing_lesson_and_other_review_scope(session):
+    client, store, model, course = session
+    before = store.course(course["id"])
+    assert client.delete(lesson_path(course) + "/missing/read").status_code == 404
+    assert store.course(course["id"]) == before
+
+    model.replies.append(lesson_draft())
+    lesson = generate(client, course).json()["nodes"][0]["lessons"][0]
+    path = lesson_path(course) + f"/{lesson['id']}/read"
+    assert client.post(path).status_code == 200
+    with store.edit(course["id"]) as (current, _):
+        current["review_scope"] = dict(
+            enabled=True, material_ids=[course["materials"][0]["id"]], ai_scope="selected"
+        )
+    before = store.course(course["id"])
+    assert client.delete(path).status_code == 400
+    assert store.course(course["id"]) == before
+
+
 def test_supplement_appends_and_restore_recovers_the_original_html(session):
     client, store, model, course = session
     model.replies.append(lesson_draft())

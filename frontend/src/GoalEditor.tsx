@@ -47,6 +47,6 @@ export function GoalEditor({ course, initial, busy, onSave, onCancel }: {
       </div>)}
       <Button type="button" size="sm" variant="ghost" disabled={draft.subtasks.length >= 50} onClick={() => setDraft({ ...draft, subtasks: [...draft.subtasks, { id: crypto.randomUUID(), title: "", done: false }] })}><Plus />添加小目标</Button>
     </fieldset>
-    <div className="goal-actions"><Button disabled={busy || !draft.title.trim() || draft.subtasks.some((task) => !task.title.trim())}>保存目标</Button><Button type="button" variant="ghost" disabled={busy} onClick={onCancel}>取消</Button></div>
+    <div className="goal-actions"><Button type="button" variant="ghost" disabled={busy} onClick={onCancel}>取消</Button><Button disabled={busy || !draft.title.trim() || draft.subtasks.some((task) => !task.title.trim())}>保存目标</Button></div>
   </form>;
 }

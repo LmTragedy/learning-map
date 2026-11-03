@@ -8,6 +8,7 @@ import { MaterialViewer } from "./MaterialViewer";
 import { SourceTabs } from "./SourceTabs";
 import type { SourceTab } from "./SourceTabs";
 import { useSplitRatio } from "./useSplitRatio";
+import { TaskEntry } from '../aiTasks';
 import type { MaterialView, SourceKind } from "./useWorkbenchState";
 import "./workbench.css";
 
@@ -57,7 +58,7 @@ export function Workbench({ course, node, material, study, active, noteOpen, ren
   onAsk: (text: string) => void;
 }) {
   const { ratio, container, startDrag } = useSplitRatio();
-  const pair = useSplitRatio("learning-map:workbench-pair-ratio");
+  const {ratio:pairRatio,container:pairContainer,startDrag:startPairDrag} = useSplitRatio("learning-map:workbench-pair-ratio");
   const [textMode, setTextMode] = useState(false);
   const [sideBySide, toggleSideBySide] = useSideBySide();
   // The study mode last picked, so it stays on screen beside the material when that tab is active.
@@ -92,7 +93,7 @@ export function Workbench({ course, node, material, study, active, noteOpen, ren
         <MaterialPicker course={course} node={node} showLabel={!tabs.length} onOpen={onMaterial} />
       </SourceTabs>
       <div className="wb-tools">
-        {study && material && <Button size="sm" variant={sideBySide ? "secondary" : "ghost"} aria-pressed={sideBySide} onClick={toggleSideBySide}
+        {study && material && <Button size="sm" variant="ghost" aria-pressed={sideBySide} onClick={toggleSideBySide}
           title={sideBySide ? "改为一次看一个" : "材料和小课左右并排"}><Columns2 /> 并排</Button>}
         {materialShown && <div className="wb-seg" role="group" aria-label="材料显示方式">
           <button aria-pressed={!textMode} onClick={() => setTextMode(false)}>原文</button>
@@ -101,15 +102,16 @@ export function Workbench({ course, node, material, study, active, noteOpen, ren
         {studyShown === "lesson" && study?.downloadUrl && <Button asChild size="icon-sm" variant="ghost">
           <a href={`${study.downloadUrl}?download=true`} download title="下载 HTML 小课" aria-label="下载 HTML 小课"><Download /></a>
         </Button>}
-        <Button size="sm" variant={noteOpen ? "secondary" : "ghost"} aria-pressed={noteOpen} onClick={onToggleNote}><NotebookPen /> 笔记</Button>
+        <TaskEntry location="workbench" />
+        <Button size="sm" variant="ghost" aria-pressed={noteOpen} onClick={onToggleNote}><NotebookPen /> 笔记</Button>
       </div>
     </header>
     <div className="wb-body" ref={container}>
       {shown && <div className="wb-pane" style={noteOpen ? { flex: `0 1 ${ratio * 100}%` } : undefined}>
         {paired
-          ? <div className="wb-split" ref={pair.container}>
-            <div className="wb-pane" style={{ flex: `0 1 ${pair.ratio * 100}%` }}>{studyView}</div>
-            <div className="wb-divider" role="separator" aria-orientation="vertical" aria-label="拖动调整学习和材料的宽度" onPointerDown={pair.startDrag} />
+          ? <div className="wb-split" ref={pairContainer}>
+            <div className="wb-pane" style={{ flex: `0 1 ${pairRatio * 100}%` }}>{studyView}</div>
+            <div className="wb-divider" role="separator" aria-orientation="vertical" aria-label="拖动调整学习和材料的宽度" onPointerDown={startPairDrag} />
             <div className="wb-pane">{materialView}</div>
           </div>
           : materialShown ? materialView : studyView}

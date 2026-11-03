@@ -114,7 +114,7 @@ def test_strict_chat_threads_history_and_recall_are_separate_and_reusable(review
     prompt, options = model.calls[-1]
     assert "A relation stores tuples" in prompt
     assert all(s not in prompt for s in ("EXCLUDED_PDF_SENTINEL", "EXCLUDED_CHAT_SENTINEL", "EXCLUDED_SUMMARY_SENTINEL"))
-    assert options["thread_id"] is None
+    assert options.get("thread_id") is None
     assert "PDF复习" in options["conversation"].title
     model.replies.append("继续这个范围")
     client.post(node_url + "/chat", json={"message": "再举个例子"})
@@ -122,7 +122,7 @@ def test_strict_chat_threads_history_and_recall_are_separate_and_reusable(review
     select(review, [m["id"] for m in course["materials"]])
     model.replies.append("新组合")
     client.post(node_url + "/chat", json={"message": "复习组合"})
-    assert model.calls[-1][1]["thread_id"] is None
+    assert model.calls[-1][1].get("thread_id") is None
     select(review)
     model.replies.append("原范围继续")
     client.post(node_url + "/chat", json={"message": "继续"})

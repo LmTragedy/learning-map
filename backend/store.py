@@ -40,6 +40,18 @@ class Store:
                 CREATE TABLE IF NOT EXISTS confirmations
                   (token TEXT PRIMARY KEY, course_id TEXT, revision INTEGER, created_at TEXT,
                    action TEXT, body TEXT);
+                CREATE TABLE IF NOT EXISTS ai_tasks
+                  (id TEXT PRIMARY KEY, course_id TEXT, request_key TEXT, kind TEXT, target TEXT,
+                   state TEXT, body TEXT, updated_at TEXT, UNIQUE(course_id,request_key));
+                CREATE INDEX IF NOT EXISTS idx_ai_tasks_course_id ON ai_tasks(course_id);
+                CREATE TABLE IF NOT EXISTS ai_task_events
+                  (task_id TEXT, sequence INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT);
+                CREATE TABLE IF NOT EXISTS ai_conversations
+                  (id TEXT PRIMARY KEY, course_id TEXT, logical_key TEXT, identity_json TEXT,
+                   thread_id TEXT, owner_task TEXT, updated_at TEXT);
+                CREATE INDEX IF NOT EXISTS idx_ai_conversations_logical ON ai_conversations(logical_key);
+                CREATE TABLE IF NOT EXISTS codex_sidebar_evidence (course_id TEXT PRIMARY KEY, body TEXT);
+                CREATE TABLE IF NOT EXISTS codex_native_groups (course_id TEXT PRIMARY KEY, section_id TEXT);
             """)
 
     @contextmanager
@@ -103,14 +115,53 @@ class Store:
         ]
 
     @contextmanager
-    def edit(self, course_id, expected=None):
+    def edit(self, course_id, expected=None, *, task_id=None):
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             course = self.course(course_id, connection)
+            original_course = copy.deepcopy(course) if task_id else None
             if expected is not None and course["revision"] != expected:
                 raise Conflict("课程已在其他操作中改变，请刷新后重试；已有进度未覆盖")
             yield course, connection
+            task = None
+            task_body = None
+            if task_id is not None:
+                task = connection.execute("SELECT * FROM ai_tasks WHERE id=?", (task_id,)).fetchone()
+                if task is None:
+                    raise Conflict("AI 任务不存在，课程未应用")
+                if task["course_id"] != course_id:
+                    raise Conflict("AI 任务与课程不匹配，课程未应用")
+                if task["state"] == "applied":
+                    raise Conflict("AI 任务已应用，不能重复应用")
+                if task["state"] not in {"received", "processing"}:
+                    raise Conflict("AI 任务当前状态不能应用，课程未改变")
+                task_body = json.loads(task["body"])
+                from .conversation_sessions import require_current_conversation
+
+                require_current_conversation(task_body | dict(kind=task["kind"], target=task["target"]), course)
+                before = task_body["before"]
+                if (before.get("ai_epoch") != course.get("ai_epoch")
+                        or before["materials"] != course["materials"]
+                        or before.get("review_scope") != course.get("review_scope")):
+                    raise Conflict("AI 请求后课程材料、范围或恢复状态已改变，结果已保留但未应用")
             self.save_course(course, connection)
+            if task is not None:
+                from .ai_result_refs import result_record
+
+                original_body = json.dumps(original_course, ensure_ascii=False)
+                saved = connection.execute("SELECT 1 FROM versions WHERE course_id=? AND body=? LIMIT 1",
+                                           (course_id, original_body)).fetchone()
+                if not saved:
+                    self.snapshot(original_course, "应用 AI 结果前自动备份", connection)
+                task_body["applied_revision"] = course["revision"]
+                if task_body.get("result_type") != "value":
+                    task_body["result"] = {"course_id": course_id, "revision": course["revision"]}
+                receipt = task_body | {"kind": task["kind"], "target": task["target"], "course_id": course_id}
+                task_body.update(result_record(receipt, course))
+                connection.execute(
+                    "UPDATE ai_tasks SET state='applied',body=?,updated_at=? WHERE id=?",
+                    (json.dumps(task_body, ensure_ascii=False), timestamp(), task_id),
+                )
 
     @staticmethod
     def save_course(course, connection):
@@ -164,23 +215,20 @@ class Store:
             raise KeyError("版本不存在")
         return json.loads(row[0])
 
-    def preview(self, action, body, course=None):
+    def preview(self, action, body, course=None, *, connection=None):
+        if connection is None:
+            with self.connect() as opened:
+                opened.execute("BEGIN IMMEDIATE")
+                return self.preview(action, body, course, connection=opened)
         token = identity()
-        with self.connect() as connection:
-            # Confirmations expire after 15 minutes; drop stale ones so the table does not grow forever.
-            expired = (datetime.now(UTC) - timedelta(days=1)).isoformat()
-            connection.execute("DELETE FROM confirmations WHERE created_at < ?", (expired,))
-            connection.execute(
-                "INSERT INTO confirmations VALUES(?,?,?,?,?,?)",
-                (
-                    token,
-                    course["id"] if course else None,
-                    course["revision"] if course else None,
-                    timestamp(),
-                    action,
-                    json.dumps(body, ensure_ascii=False),
-                ),
-            )
+        # Confirmations expire after 15 minutes; drop stale ones so the table does not grow forever.
+        expired = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        connection.execute("DELETE FROM confirmations WHERE created_at < ?", (expired,))
+        connection.execute(
+            "INSERT INTO confirmations VALUES(?,?,?,?,?,?)",
+            (token, course["id"] if course else None, course["revision"] if course else None,
+             timestamp(), action, json.dumps(body, ensure_ascii=False)),
+        )
         return token
 
     def consume(self, token, action, connection, course=None):
@@ -217,13 +265,25 @@ class Store:
         )
 
     def restore(self, course_id, token):
-        with self.edit(course_id) as (course, connection):
+        from .conversation_send_gate import conversation_send_gate
+
+        with conversation_send_gate(self), self.edit(course_id) as (course, connection):
             request = self.consume(token, "restore", connection, course)
             saved = self.version(course_id, request["version_id"], connection)
             self.snapshot(course, "恢复前自动备份", connection)
             revision = course["revision"]
             course.clear()
-            course.update(copy.deepcopy(saved), revision=revision)
+            course.update(copy.deepcopy(saved), revision=revision, ai_epoch=identity())
+            rows = connection.execute(
+                "SELECT id,body FROM ai_tasks WHERE course_id=? AND state!='applied'", (course_id,)
+            ).fetchall()
+            for row in rows:
+                task_body = json.loads(row["body"])
+                task_body["error"] = "课程已恢复，旧任务不会重新应用"
+                connection.execute(
+                    "UPDATE ai_tasks SET state='superseded',body=?,updated_at=? WHERE id=?",
+                    (json.dumps(task_body, ensure_ascii=False), timestamp(), row["id"]),
+                )
             for node in course["nodes"]:
                 node["thread_id"] = None
                 node["review_threads"] = {}

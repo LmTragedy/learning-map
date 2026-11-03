@@ -3,11 +3,11 @@
 import hashlib
 import json
 import threading
-from collections import OrderedDict
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .ai_tasks import complete_task_value, requested_action_id
 from .domain import find_node
 from .learning import LearningError, node_context, structured
 from .review_scope import review_label, scope_key
@@ -20,6 +20,8 @@ class ReviewInput(BaseModel):
     revision: int = Field(ge=0)
     request_id: str = Field(min_length=1, max_length=80)
     note_id: str = Field(default="", max_length=80)
+    scope_key: str = Field(default="", max_length=80)
+    model: str = Field(default="", max_length=160)
 
 
 class ReviewSource(BaseModel):
@@ -41,6 +43,22 @@ class ReviewSuggestion(BaseModel):
 class ReviewDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
     suggestions: list[ReviewSuggestion] = Field(max_length=3)
+
+
+def review_identity(course, node_id, note_id):
+    node = find_node(course, node_id)
+    if note_id:
+        note = next((entry for entry in course.get("notes", []) if entry["id"] == note_id), None)
+        if note is None or node_id not in note["node_ids"]:
+            raise KeyError("这份笔记不存在或未绑定当前知识点。")
+    return dict(epoch=course.get("ai_epoch"), scope=scope_key(course), context=json.loads(node_context(course, node)))
+
+
+def validate_review_request(request, course, settings):
+    if request.scope_key and request.scope_key != scope_key(course):
+        raise Conflict("笔记检查的范围已变化，请使用当前范围重新检查。")
+    if request.model and request.model != settings["note_review_model"].strip():
+        raise Conflict("笔记检查模型已变化，请使用当前模型重新检查。")
 
 
 def _review_prompt(context, content):
@@ -109,25 +127,34 @@ class NoteReviewer:
         self.learning = learning
         self._guard = threading.Lock()
         self._active = set()
-        self._threads = OrderedDict()
 
-    def check(self, cid, nid, request):
+    def check(self, cid, nid, request, *, receipt_id=None):
         key = (cid, nid, request.note_id)
         with self._guard:
             if key in self._active or len(self._active) >= 2:
                 raise Conflict("已有笔记检查仍在进行，请稍后重试；编辑和保存不受影响。")
             self._active.add(key)
         try:
-            return self._check(cid, nid, request)
+            validate_review_request(request, self.learning.store.course(cid), self.learning.store.settings())
+            # This pre-existing field is a correlation label, not a global action UUID.
+            inputs = request.model_dump(exclude={"request_id", "revision"})
+            # Legacy receipts did not contain these optional identity fields.
+            inputs = {field: value for field, value in inputs.items() if field not in {"scope_key", "model"} or value}
+            receipt_id = receipt_id or requested_action_id() or "note-" + hashlib.sha256(json.dumps(
+                [nid, inputs, request.revision], sort_keys=True, ensure_ascii=False,
+            ).encode()).hexdigest()
+            review = self.learning.tasks.run(cid, "note_review", nid, inputs,
+                                             lambda: self._check(cid, nid, request),
+                                             request_id=receipt_id)
+            return review | {"request_id": request.request_id}
         finally:
             with self._guard:
                 self._active.remove(key)
 
     def _check(self, cid, nid, request):
         store = self.learning.store
+        # The draft is sent whole, so autosaves that bump the course revision never invalidate a check.
         course = store.course(cid)
-        if course["revision"] != request.revision:
-            raise Conflict("课程版本已变化，请读取最新已保存版本后重新检查；笔记未修改。")
         node = find_node(course, nid)
         if request.note_id:
             note = next((entry for entry in course.get("notes", []) if entry["id"] == request.note_id), None)
@@ -135,40 +162,31 @@ class NoteReviewer:
                 raise KeyError("这份笔记不存在或未绑定当前知识点。")
         context = json.loads(node_context(course, node))
         settings = store.settings()
+        validate_review_request(request, course, settings)
         model = settings["note_review_model"].strip()
         if not model:
             raise LearningError("请在设置中填写独立的笔记检查模型；不会自动沿用对话模型。")
         ai = self.learning.ai(model=model, effort="medium")
         content_hash = hashlib.sha256(request.content.encode("utf-8", errors="surrogatepass")).hexdigest()
-        thread_key = (cid, nid, request.note_id, scope_key(course))
-        version = (course["revision"], model, "medium", content_hash)
-        with self._guard:
-            cached = self._threads.pop(thread_key, None)
         options = dict(conversation=review_label(course, node, "笔记检查"))
-        if cached and cached[0] == version:
-            options["thread_id"] = cached[1]
         reply = structured(ai, _review_prompt(context, request.content), ReviewDraft, options)
         latest_settings = store.settings()
         if not latest_settings["ai_enabled"]:
-            raise LearningError("AI 已关闭，检查结果已丢弃；笔记未修改。")
-        if (store.course(cid)["revision"] != request.revision
+            raise LearningError("AI 已关闭，原始检查结果已保留；笔记未修改。")
+        if (scope_key(store.course(cid)) != scope_key(course)
                 or latest_settings["note_review_model"].strip() != model):
-            raise Conflict("检查期间课程或 AI 设置已变化，结果已丢弃；笔记未修改。")
+            raise Conflict("检查期间课程或 AI 设置已变化，原始结果已保留；笔记未修改。")
         suggestions, warnings = anchored_suggestions(request.content, reply.payload, context)
-        with self._guard:
-            self._threads[thread_key] = (version, reply.thread_id)
-            self._threads.move_to_end(thread_key)
-            while len(self._threads) > 128:
-                self._threads.popitem(last=False)
-        return dict(
+        return complete_task_value(dict(
             request_id=request.request_id, note_id=request.note_id, revision=request.revision, scope_key=scope_key(course), model=model,
             content_hash=content_hash,
             suggestions=suggestions, warnings=warnings,
-        )
+        ))
 
 
 def register_note_review(app, learning):
     reviewer = NoteReviewer(learning)
+    app.state.note_reviewer = reviewer
 
     @app.post("/api/courses/{cid}/nodes/{nid}/personal-note/review")
     def review(cid: str, nid: str, request: ReviewInput):

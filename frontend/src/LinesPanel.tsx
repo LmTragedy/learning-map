@@ -16,8 +16,8 @@ export function LinesPanel({ course, initialLineId, busy, aiEnabled, act, onNode
   const progress = course.progress;
   return <div className="modal-body">
     <div className="flex flex-wrap items-center gap-2">
-      <Button size="sm" variant={!line ? "secondary" : "outline"} onClick={() => setLineId("")}>课程全貌</Button>
-      {(course.lines || []).map((entry) => <Button key={entry.id} size="sm" variant={line?.id === entry.id ? "secondary" : "outline"} onClick={() => setLineId(entry.id)}>
+      <Button size="sm" variant="ghost" aria-pressed={!line} onClick={() => setLineId("")}>课程全貌</Button>
+      {(course.lines || []).map((entry) => <Button key={entry.id} size="sm" variant="ghost" aria-pressed={line?.id === entry.id} onClick={() => setLineId(entry.id)}>
         <i className="size-2 rounded-full" style={{ background: lineColor(entry) }} />{entry.name}
       </Button>)}
     </div>

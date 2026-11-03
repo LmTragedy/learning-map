@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatTime } from "./formatTime";
 import { ArrowRight, CheckCircle2, CircleDashed, CircleHelp, FileText, Lock, Waypoints } from "lucide-react";
 import { api } from "./api";
 import { Badge } from "./components/ui/badge";
@@ -93,7 +94,7 @@ function IncomingBridge({ item, busy, visible, onCheck, onNavigate, onOpenBridge
       {(item.step || bridge.how) && <p><span className="text-muted-foreground">用在 </span>{[stepLabel(item), bridge.how].filter(Boolean).join(" · ")}</p>}
       {bridge.if_missing && <p><span className="text-muted-foreground">不会会 </span>{bridge.if_missing}</p>}
       {bridge.legacy && <p className="t-meta">这条旧联系还没拆出具体用到哪一块。可以用页面顶部的「用 AI 补充知识桥」，或在详情里手动写。</p>}
-      {state && <p className={cn("t-meta", state === "known" ? "text-st-passed" : "text-destructive")}>{stateText[state]} · {new Date(bridge.state!.at).toLocaleDateString()}</p>}
+      {state && <p className={cn("t-meta", state === "known" ? "text-st-passed" : "text-destructive")}>{stateText[state]} · {formatTime(bridge.state!.at, { date: true })}</p>}
       {bridge.check.question && <div className="mt-1 rounded-md border border-st-new/30 bg-st-new/5 px-2.5 py-2">
         <p className="flex items-start gap-1.5 font-medium"><CircleHelp size={14} className="mt-0.5 shrink-0 text-st-new" aria-hidden />检验：{bridge.check.question}</p>
         <textarea aria-label={`检验作答：${bridge.check.question}`} className="mt-2 w-full" rows={2} maxLength={2000} value={answer} placeholder="先写出你的答案，再自检" onChange={(event) => setAnswer(event.target.value)} />

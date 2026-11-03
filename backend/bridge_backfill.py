@@ -4,12 +4,21 @@ import json
 
 from pydantic import Field
 
-from .bridges import DraftBridge, DraftPiece, apply_draft_bridges, legacy_bridge, needs_bridges, real_text, summarize_bridges
-from .conversation_labels import conversation_label
+from .ai_tasks import current_task_id
+from .bridges import (
+    DraftBridge,
+    DraftPiece,
+    apply_draft_bridges,
+    legacy_bridge,
+    needs_bridges,
+    real_text,
+    summarize_bridges,
+)
+from .conversation_labels import conversation_label, remember_conversation
 from .domain import project_course
 from .learning import LearningError, _validate_sources, course_material_context, structured
-from .schemas import Input
 from .review_scope import strict_scope
+from .schemas import Input
 from .store import Conflict, identity
 
 BATCH = 12
@@ -17,6 +26,7 @@ BATCH = 12
 
 class RelationRevision(Input):
     revision: int = Field(ge=0)
+    request_id: str | None = Field(default=None, min_length=16, max_length=80, pattern=r"^[a-zA-Z0-9-]+$")
 
 
 class BridgedNode(Input):
@@ -78,16 +88,34 @@ def _require_same_inputs(before, current, batch):
                 raise Conflict("补充期间知识块或步骤有变化，请刷新后重试")
 
 
-def backfill(store, learning, cid, revision):
+def backfill(store, learning, cid, revision, relation_id=None, request_id=None):
+    return learning.tasks.run(cid, "bridge", relation_id or "batch", dict(revision=revision),
+                              lambda: _backfill(store, learning, cid, revision, relation_id),
+                              request_id=request_id)
+
+
+def _backfill(store, learning, cid, revision, relation_id):
     course = store.course(cid)
     if strict_scope(course):
         raise LearningError("补充整张地图的知识桥需要完整课程上下文，请先退出所选资料复习")
     if course["revision"] != revision:
         raise Conflict("课程已在其他操作中改变，请刷新后重试；已有进度未覆盖")
     nodes = {node["id"]: node for node in course["nodes"]}
-    batch = [edge for edge in pending_relations(course) if edge["source"] in nodes and edge["target"] in nodes][:BATCH]
+    if relation_id is not None and not any(edge["id"] == relation_id for edge in course["edges"]):
+        raise KeyError("知识联系不存在")
+    batch = [edge for edge in pending_relations(course)
+             if edge["source"] in nodes and edge["target"] in nodes
+             and (relation_id is None or edge["id"] == relation_id)][:BATCH]
     if not batch:
         raise LearningError("没有需要补充知识桥的联系")
+    return fill_batch(store, learning, course, batch)
+
+
+def fill_batch(store, learning, course, batch):
+    if strict_scope(course):
+        raise LearningError("历史知识桥来自完整课程，请先退出严格资料复习；原始结果已保留")
+    cid = course["id"]
+    nodes = {node["id"]: node for node in course["nodes"]}
     endpoint_ids = list(dict.fromkeys(node_id for edge in batch for node_id in (edge["source"], edge["target"])))
     items = [
         dict(id=edge["id"], before=edge["source"], after=edge["target"], relation=edge.get("relation", ""),
@@ -111,18 +139,20 @@ def backfill(store, learning, cid, revision):
         + "\n材料："
         + course_material_context(course)
     )
-    draft = structured(learning.ai(), prompt, BackfillDraft,
-                       {"conversation": conversation_label(course, purpose="补充知识桥")}).payload
+    label = conversation_label(course, purpose="补充知识桥")
+    reply = structured(learning.ai(), prompt, BackfillDraft, {"conversation": label})
+    draft = reply.payload
     wanted = {item["id"] for item in items}
     draft["relations"] = [item for item in draft["relations"] if item["id"] in wanted]
     returned = [item["id"] for item in draft["relations"]]
     if set(returned) != wanted or len(returned) != len(wanted):
-        raise LearningError("AI 未完整返回本批知识联系，已有数据未改变，请重试")
+        raise LearningError("AI 未完整返回本批知识联系，原始结果已保留；已有数据未改变")
     draft["nodes"] = [item for item in draft["nodes"] if item["id"] in endpoint_ids]
     _validate_draft_sources(course, draft)
-    with store.edit(cid) as (current, connection):
+    with store.edit(cid, task_id=current_task_id()) as (current, connection):
         _require_same_inputs(course, current, batch)
         store.snapshot(current, "补充知识桥前自动备份", connection)
+        remember_conversation(current, reply.thread_id, label)
         current_nodes = {node["id"]: node for node in current["nodes"]}
         for item in draft["nodes"]:
             node = current_nodes.get(item["id"])
@@ -158,4 +188,8 @@ def backfill(store, learning, cid, revision):
 def register_bridge_backfill(app, store, learning):
     @app.post("/api/courses/{cid}/relations/backfill")
     def backfill_relations(cid: str, request: RelationRevision):
-        return backfill(store, learning, cid, request.revision)
+        return backfill(store, learning, cid, request.revision, request_id=request.request_id)
+
+    @app.post("/api/courses/{cid}/relations/{rid}/backfill")
+    def backfill_relation(cid: str, rid: str, request: RelationRevision):
+        return backfill(store, learning, cid, request.revision, rid, request.request_id)

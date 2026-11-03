@@ -26,6 +26,6 @@ export function GoalCandidates({ course, preview, busy, onAccept, onCancel }: {
         <span className="block whitespace-pre-wrap">{source.quote}</span>
       </p>)}</details>
     </article>)}
-    <div className="goal-actions"><Button disabled={busy || !checked.length || preview.revision !== course.revision} onClick={() => void onAccept(checked)}>确认加入所选目标（{checked.length}）</Button><Button variant="ghost" disabled={busy} onClick={onCancel}>取消预览</Button></div>
+    <div className="goal-actions"><Button variant="ghost" disabled={busy} onClick={onCancel}>取消预览</Button><Button disabled={busy || !checked.length || preview.revision !== course.revision} onClick={() => void onAccept(checked)}>确认加入所选目标（{checked.length}）</Button></div>
   </section>;
 }

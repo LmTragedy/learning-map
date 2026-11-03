@@ -1,5 +1,6 @@
 import json
 
+from .ai_tasks import complete_task_value
 from .conversation_labels import conversation_label
 from .domain import find_node, project_course
 from .goals import GoalAccept, GoalDraft, GoalInput, GoalUpdate, goal_fields, new_goal
@@ -28,6 +29,10 @@ def validate_candidate(course, candidate):
 
 
 def extract_goals(store, learning, cid):
+    return learning.tasks.run(cid, "goals", "course", {}, lambda: _extract_goals(store, learning, cid))
+
+
+def _extract_goals(store, learning, cid):
     course = store.course(cid)
     context = course_material_context(course)
     nodes = [{"id": node["id"], "title": node["title"]} for node in course["nodes"]]
@@ -50,8 +55,10 @@ def extract_goals(store, learning, cid):
         latest = store.course(cid, connection)
         if latest["revision"] != course["revision"]:
             raise Conflict("提取期间课程已变化，请重新提取；看板未改变")
-    token = store.preview("goals", draft.payload, course)
-    return dict(token=token, revision=course["revision"], **draft.payload)
+    with store.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        token = store.preview("goals", draft.payload, course, connection=connection)
+        return complete_task_value(dict(token=token, revision=course["revision"], **draft.payload), connection)
 
 
 def register_goal_routes(app, store, learning):

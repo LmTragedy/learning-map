@@ -1,8 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { Send, Sparkles } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { cn } from "./lib/utils";
+import { ChatMarkdown } from "./ChatMarkdown";
+import { TaskCards, useCourseTasks } from './aiTasks';
+import { taskTime } from './aiTaskModel';
 import type { LearningNode } from "./types";
 
 /** Follow-ups that fit almost any explanation; a click puts one in the draft, it is never sent on its own. */
@@ -21,25 +24,70 @@ export function NodeChat({ node, busy, aiEnabled, message, fieldRef, context, on
   onSaveToNote: (text: string) => void;
 }) {
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [node.chats.length]);
+  const ledger=useCourseTasks();
+  // The message just sent stays visible above the thinking bubble until the reply is saved.
+  const [sent, setSent] = useState("");
+  const [confirmNewConversation,setConfirmNewConversation]=useState(false), [resettingConversation,setResettingConversation]=useState(false), [resetError,setResetError]=useState('');
+  const pending=ledger.tasks.filter(t=>!t.history_only&&t.kind!=='history'&&t.kind==='chat'&&t.target===node.id&&t.state!=='applied'&&(t.state!=='superseded'||!!t.superseded_by))
+    .sort((left,right)=>left.created_at.localeCompare(right.created_at));
+  const thinking=pending.length;
+  const blocking=pending.some(t=>['prepared','sending','running','processing'].includes(t.state));
+  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [node.chats.length, thinking]);
+  const send = () => {
+    if (busy || pending.length || resettingConversation || !message.trim() || !aiEnabled) return;
+    setSent(message.trim());
+    onSend();
+  };
   const addFollowUp = (text: string) => {
     onMessage(message.trim() ? `${message.trimEnd()}\n${text}` : text);
     fieldRef.current?.focus();
   };
+  const resetConversation = async () => {
+    if (busy || blocking || resettingConversation) return;
+    setResettingConversation(true);
+    setResetError('');
+    try {
+      await ledger.newConversation(node.id);
+      setConfirmNewConversation(false);
+    } catch (error) {
+      setResetError(error instanceof Error ? error.message : '无法新建会话。');
+    } finally {
+      setResettingConversation(false);
+    }
+  };
   return <div className="flex min-h-0 flex-1 flex-col">
-    {context && <div className="flex items-center gap-2 border-b border-border px-5 py-2.5 text-xs text-muted-foreground [&_b]:font-medium [&_b]:text-foreground [&_svg]:size-3.5 [&_svg]:shrink-0">{context}</div>}
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-2.5">
+      {context && <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-muted-foreground [&_b]:font-medium [&_b]:text-foreground [&_svg]:size-3.5 [&_svg]:shrink-0">{context}</div>}
+      <Button size="sm" variant="ghost" disabled={busy || blocking || resettingConversation} onClick={() => { setResetError(''); setConfirmNewConversation(true); }}>新会话</Button>
+    </div>
+    {confirmNewConversation && <div className="mx-5 mt-2 rounded-lg border border-border bg-card p-3 text-sm" role="group" aria-label="确认新建学习会话">
+      <p className="text-muted-foreground">仅重置此节点当前资料范围的 Codex 主学习会话。已保存聊天原文和输入内容会保留；不会向 AI 发送内容。</p>
+      {resetError && <p className="mt-2 text-destructive" role="alert">{resetError}</p>}
+      <div className="mt-2 flex justify-end gap-2">
+        <Button size="sm" variant="ghost" disabled={resettingConversation} onClick={() => setConfirmNewConversation(false)}>取消</Button>
+        <Button size="sm" disabled={resettingConversation || busy || blocking} onClick={() => void resetConversation()}>{resettingConversation ? '正在新建…' : '确认新会话'}</Button>
+      </div>
+    </div>}
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4" aria-live="polite">
       {node.chats.length ? node.chats.map((chat) => chat.role === "assistant"
         ? <div key={chat.id} className="flex max-w-[95%] flex-col gap-1">
           <span className="text-xs text-muted-foreground">AI 导师</span>
-          <p className="whitespace-pre-wrap text-sm leading-[1.75] text-foreground [overflow-wrap:anywhere]">{chat.content}</p>
+          <ChatMarkdown text={chat.content} />
           <button className="cursor-pointer self-start text-xs text-muted-foreground hover:text-foreground" onClick={() => onSaveToNote(chat.content)}>＋ 存入笔记</button>
         </div>
         : <p key={chat.id} className="max-w-[88%] self-end whitespace-pre-wrap rounded-xl rounded-br-sm bg-secondary px-3 py-2 text-sm leading-[1.7] [overflow-wrap:anywhere]">{chat.content}</p>,
-      ) : <div className="m-auto flex max-w-[30ch] flex-col items-center gap-2 text-center text-sm text-muted-foreground">
+      ) : !thinking && <div className="m-auto flex max-w-[30ch] flex-col items-center gap-2 text-center text-sm text-muted-foreground">
         <Sparkles size={18} aria-hidden />
         <p>从你已有的理解出发，和 AI 一起梳理「{node.title}」。</p>
       </div>}
+      {pending.map(task=><div key={task.id} className="flex flex-col gap-4">
+        <p className="max-w-[88%] self-end whitespace-pre-wrap rounded-xl rounded-br-sm bg-secondary px-3 py-2 text-sm leading-[1.7] opacity-70 [overflow-wrap:anywhere]">{String(task.inputs?.message||sent||'原始输入暂不可读')}</p>
+        {task.inputs?.message!==sent&&<span className="self-end text-[13px] text-muted-foreground">刷新前发出 · {taskTime(task.created_at)}</span>}
+        <div className="flex flex-col gap-1">
+          <span className="text-[13px] text-muted-foreground">AI 导师</span>
+          <TaskCards kind="chat" target={node.id} taskId={task.id} limit={1} />
+        </div>
+      </div>)}
       <div ref={end} />
     </div>
     {aiEnabled && <div className="flex flex-wrap gap-1.5 px-5 pb-2.5">
@@ -47,12 +95,14 @@ export function NodeChat({ node, busy, aiEnabled, message, fieldRef, context, on
         className="cursor-pointer rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-input hover:text-foreground">{text}</button>)}
     </div>}
     <form className={cn("mx-3 mb-3 flex items-end gap-2 rounded-xl border border-input bg-field p-2 focus-within:border-zinc-500", !aiEnabled && "opacity-60")}
-      onSubmit={(event) => { event.preventDefault(); onSend(); }}>
+      onSubmit={(event) => { event.preventDefault(); send(); }}>
       <textarea ref={fieldRef} className="min-h-[44px] min-w-0 flex-1 resize-none !border-0 !bg-transparent !p-1 text-sm !shadow-none outline-none" aria-label="学习对话" value={message} rows={2}
         placeholder={aiEnabled ? "说说你的想法或疑问…（Enter 发送）" : "AI 辅助已关闭，在设置中打开后可以对话"} disabled={!aiEnabled}
         onChange={(event) => onMessage(event.target.value)}
-        onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); onSend(); } }} />
-      <Button size="icon-sm" disabled={busy || !message.trim() || !aiEnabled} title="发送" aria-label="发送"><Send /></Button>
+        onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />
+      <Button size="icon-sm" disabled={busy || pending.length>0 || resettingConversation || !message.trim() || !aiEnabled} aria-label="发送" aria-describedby={pending.length ? "chat-send-why" : undefined}><Send /></Button>
     </form>
+    {/* A disabled button cannot show a tooltip, so the reason is written out. */}
+    {pending.length > 0 && <p id="chat-send-why" className="-mt-1.5 mx-4 mb-2 text-xs text-muted-foreground">{blocking ? '上一条还在等 AI 回复，回复后可以继续发送。' : '请先处理上方的上一条任务。'}</p>}
   </div>;
 }

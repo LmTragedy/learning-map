@@ -4,8 +4,9 @@ import json
 
 from pydantic import Field
 
+from .ai_tasks import current_task_id
 from .bridges import bridges_of, learner_kind
-from .conversation_labels import conversation_label
+from .conversation_labels import conversation_label, remember_conversation
 from .domain import project_course
 from .learning import LearningError, structured
 from .lines import StoryStep, anchored_line_ids, clean_line, find_line
@@ -101,8 +102,8 @@ def _generation_prompt(course):
     )
 
 
-def _save_generated_lines(store, course, lines_draft, summary, abilities):
-    with store.edit(course["id"], expected=course["revision"]) as (current, connection):
+def _save_generated_lines(store, course, lines_draft, summary, abilities, thread_id, label):
+    with store.edit(course["id"], expected=course["revision"], task_id=current_task_id()) as (current, connection):
         store.snapshot(current, "生成主线前自动备份", connection)
         lines = [line for line in current.get("lines", []) if line.get("origin") == "user"]
         protected_ids = anchored_line_ids(current)
@@ -117,18 +118,31 @@ def _save_generated_lines(store, course, lines_draft, summary, abilities):
                 sequences.add(sequence)
         current["lines"], current["overview"] = lines, dict(
             summary=summary, abilities=abilities, generated_at=timestamp())
+        remember_conversation(current, thread_id, label)
 
 
-def generate_lines(store, learning, cid):
+def generate_lines(store, learning, cid, request_id=None):
+    return learning.tasks.run(
+        cid,
+        "lines",
+        "course",
+        {},
+        lambda: _generate_lines(store, learning, cid),
+        request_id=request_id,
+    )
+
+
+def _generate_lines(store, learning, cid):
     course = store.course(cid)
     if strict_scope(course):
         raise LearningError("严格复习期间不能生成课程全局主线；请退出复习后再生成")
     if not course["nodes"]:
         raise LearningError("还没有知识点，先生成地图再分主线")
-    draft = structured(learning.ai(), _generation_prompt(course), LinesDraft,
-                       {"conversation": conversation_label(course, purpose="生成主线")}).payload
+    label = conversation_label(course, purpose="生成主线")
+    reply = structured(learning.ai(), _generation_prompt(course), LinesDraft, {"conversation": label})
+    draft = reply.payload
     lines_draft, summary, abilities = _validated_draft(course, draft)
-    _save_generated_lines(store, course, lines_draft, summary, abilities)
+    _save_generated_lines(store, course, lines_draft, summary, abilities, reply.thread_id, label)
     return project_course(store.course(cid))
 
 
@@ -158,24 +172,38 @@ def _validate_retell(review, on_line):
         raise LearningError("AI 串讲反馈为空；记录未保存")
 
 
-def _save_retell(store, course, lid, text, review):
-    with store.edit(course["id"], expected=course["revision"]) as (current, _):
+def _save_retell(store, course, lid, text, review, thread_id, label):
+    with store.edit(course["id"], expected=course["revision"], task_id=current_task_id()) as (current, _):
         saved = find_line(current, lid)
         retells = saved.setdefault("retells", [])
         retells.append(dict(id=identity(), at=timestamp(), text=text, review=review))
         del retells[:-5]
+        remember_conversation(current, thread_id, label)
 
 
-def retell(store, learning, cid, lid, text):
+def retell(store, learning, cid, lid, text, request_id=None):
+    return learning.tasks.run(
+        cid,
+        "retell",
+        lid,
+        {"text": text},
+        lambda: _retell(store, learning, cid, lid, text),
+        request_id=request_id,
+    )
+
+
+def _retell(store, learning, cid, lid, text):
     course = store.course(cid)
     if strict_scope(course):
         raise LearningError("严格复习期间不能使用课程全局主线串讲；请退出复习后再检查")
     line = find_line(course, lid)
     on_line = set(line["node_ids"])
-    review = structured(learning.ai(), _retell_prompt(course, line, text), RetellReview,
-                        {"conversation": conversation_label(course, purpose="主线串讲检查")}).payload
+    label = conversation_label(course, purpose="主线串讲检查")
+    reply = structured(learning.ai(), _retell_prompt(course, line, text), RetellReview,
+                       {"conversation": label})
+    review = reply.payload
     _validate_retell(review, on_line)
-    _save_retell(store, course, lid, text, review)
+    _save_retell(store, course, lid, text, review, reply.thread_id, label)
     return project_course(store.course(cid))
 
 

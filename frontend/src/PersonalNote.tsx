@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { formatTime } from "./formatTime";
 import { api } from "./api";
 import { Button } from "./components/ui/button";
 import { ChevronRight, Link2, NotebookPen, Plus, Trash2, X } from "lucide-react";
@@ -8,7 +9,7 @@ import type { NoteDraft } from "./noteDrafts";
 import { appendBlock, mainNoteTitle } from "./noteFormatting";
 import type { Course, CourseNote, LearningNode } from "./types";
 import { useNoteReview } from "./useNoteReview";
-import { NoteReviewPanel } from "./NoteReviewPanel";
+import { NoteReviewPanel, SuggestionCard } from "./NoteReviewPanel";
 import type { NoteEditorActions } from "./noteReviewTypes";
 
 const MarkdownNoteEditor = lazy(() => import("./MarkdownNoteEditor"));
@@ -62,13 +63,26 @@ export function PersonalNote({ course, node, noteId = "", busy, run, onRefresh, 
   function acceptSuggestion(id?: string) {
     const suggestion = controller.current(id);
     if (!suggestion) return false;
-    const changed = editor.current?.replace(suggestion, controller.snapshot().snapshot);
+    const changed = editor.current?.replace(suggestion);
     if (changed === undefined || changed === null) return false;
     setLastAccepted(changed);
     setReviewAction("已接受这一条，稍后自动保存。可撤销或继续编辑。");
-    controller.accepted();
+    controller.accepted(suggestion.id);
     return true;
   }
+
+  // New results replace the squiggles; pruned or ignored ones disappear from the editor too.
+  useEffect(() => { editor.current?.sync(review.suggestions, review.snapshot); }, [review.suggestions, review.snapshot]);
+  const reviewHooks = {
+    onPick: (id: string | null) => { if (id) controller.select(id); else if (controller.snapshot().activeId) controller.deselect(); },
+    onStale: (ids: string[]) => controller.prune(ids),
+    render: (id: string, close: () => void) => {
+      const suggestion = review.suggestions.find((entry) => entry.id === id);
+      return suggestion && <SuggestionCard suggestion={suggestion} courseId={course.id}
+        onAccept={() => { if (!acceptSuggestion(id)) setReviewAction("本次未应用，请核对原文或编辑器提示。"); }}
+        onReject={() => { controller.reject(id); close(); }} />;
+    },
+  };
 
   function undoSuggestion() {
     if (lastAccepted !== draftRef.current.content || !editor.current?.undo()) {
@@ -214,7 +228,7 @@ export function PersonalNote({ course, node, noteId = "", busy, run, onRefresh, 
     <div className="node-note-body">
     <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="这个知识点的笔记">
       {nodeNotes.map((entry) => <Button key={entry.id || "main"} size="sm" role="tab" aria-selected={entry.id === noteId}
-        variant={entry.id === noteId ? "secondary" : "ghost"} onClick={() => onOpenNote(entry.id)}>{entry.title}</Button>)}
+        variant="ghost" aria-pressed={entry.id === noteId} onClick={() => onOpenNote(entry.id)}>{entry.title}</Button>)}
       <Button size="sm" variant="ghost" disabled={busy} onClick={() => void createNote()}><Plus /> 新建笔记</Button>
       {embedded && <span role="status" className="t-meta ml-auto">{status}</span>}
     </div>
@@ -251,22 +265,26 @@ export function PersonalNote({ course, node, noteId = "", busy, run, onRefresh, 
       }}>确认使用下方内容</Button>}
     </div>}
     <Suspense fallback={<p className="text-sm text-muted-foreground">正在打开笔记编辑器…</p>}>
-    <MarkdownNoteEditor key={scope} content={draft.content} onReady={(actions) => { editor.current = actions; }} onTab={() => acceptSuggestion()} onChange={(content) => {
+    <MarkdownNoteEditor key={scope} content={draft.content} reviewHooks={reviewHooks} onReady={(actions) => {
+      editor.current = actions;
+      const current = controller.snapshot();
+      actions?.sync(current.suggestions, current.snapshot);
+    }} onTab={() => acceptSuggestion()} onChange={(content) => {
       setReviewedVersion(null);
       update({ ...draftRef.current, content, updatedAt: new Date().toISOString() });
     }} />
     </Suspense>
-    <NoteReviewPanel controller={controller} state={review} courseId={course.id} model={reviewModel}
-      aiEnabled={aiEnabled} automatic={automatic} onAutomatic={setAutomatic} onAccept={acceptSuggestion}
+    <NoteReviewPanel controller={controller} state={review} model={reviewModel}
+      aiEnabled={aiEnabled} automatic={automatic} onAutomatic={setAutomatic}
       onLocate={(id) => {
         const suggestion = controller.current(id);
-        if (suggestion) { controller.select(id); editor.current?.locate(suggestion, controller.snapshot().snapshot); }
+        if (suggestion && !editor.current?.locate(suggestion)) controller.prune([id]);
       }} onUndo={undoSuggestion} canUndo={lastAccepted !== null && lastAccepted === draft.content} />
     {reviewAction && <p role="status" className="text-xs text-muted-foreground">{reviewAction}</p>}
     {!!recoverable.length && <details className="text-xs">
       <summary className="cursor-pointer">找回本机草稿（{recoverable.length}）</summary>
       {recoverable.map((entry) => <div key={entry.id} className="mt-2 flex flex-col gap-1 rounded-lg border border-border p-2">
-        <span>{entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : "旧版草稿（需核对原版本）"}</span>
+        <span>{entry.updatedAt ? formatTime(entry.updatedAt) : "旧版草稿（需核对原版本）"}</span>
         <p className="max-h-32 overflow-auto whitespace-pre-wrap break-words">{entry.content || "（空笔记）"}</p>
         <Button size="sm" variant="outline" disabled={savingNote} onClick={() => {
           // The current draft and the source draft remain available for recovery.

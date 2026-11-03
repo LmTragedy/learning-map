@@ -44,7 +44,7 @@ test("active goals sort before finished ones and unrelated nodes have none", () 
 });
 
 test("progress diff reports verified count changes and newly ticked subtasks", () => {
-  const after = structuredClone(course);
+  const after = globalThis.structuredClone(course);
   after.goals[1].progress.verified = 1;
   after.goals[1].subtasks[0].auto_done = true;
   assert.deepEqual(goalProgressDiff(course, after), [

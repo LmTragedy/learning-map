@@ -1,12 +1,14 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { taskLessonId, type AiTask } from './aiTaskModel';
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { LucideIcon } from "lucide-react";
-import { ArrowRight, BookOpen, Check, ChevronRight, CircleHelp, Clock3, ExternalLink, FileText, Info, Layers, NotebookPen, PanelRightClose, RefreshCw, Shapes, Split, Target, Waypoints } from "lucide-react";
+import { ArrowRight, BookOpen, Check, ChevronDown, ChevronRight, CircleHelp, Clock3, ExternalLink, FileText, Info, Layers, NotebookPen, RefreshCw, Shapes, Split, Target, Waypoints } from "lucide-react";
 import { api, lessonHtmlUrl, materialFileUrl } from "./api";
 import { cn } from "./lib/utils";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 import { statusIcon } from "./status";
 import { PracticePanel } from "./PracticePanel";
 import { LessonStudy } from "./LessonPanel";
@@ -32,25 +34,33 @@ const labels: Record<string, string> = {
   passed: "验收通过",
 };
 
-/** Three-step mastery bar. The first two steps toggle the self-reported state; the last opens practice. */
-function Progress({ status, busy, onMark, onPractice }: {
-  status: string; busy: boolean; onMark: (status: "new" | "studied" | "mastered") => void; onPractice: () => void;
+/**
+ * Three-step mastery bar. It only shows where the node stands; changing the self-reported
+ * state is a separate, labelled menu so it can never happen by brushing the bar.
+ */
+function Progress({ status, busy, onMark }: {
+  status: string; busy: boolean; onMark: (status: "new" | "studied" | "mastered") => void;
 }) {
   const reached = { new: 0, studied: 1, mastered: 2, passed: 3 }[status] ?? 0;
   const passed = status === "passed";
-  const steps = [
-    { label: "学过", title: status === "studied" ? "撤销学过" : "标记学过", onClick: () => onMark(status === "studied" ? "new" : "studied") },
-    { label: "自我掌握", title: status === "mastered" ? "撤销自我掌握" : "标记自我掌握（跳过验收）", onClick: () => onMark(status === "mastered" ? "new" : "mastered") },
-    { label: passed ? "验收通过" : "验收", title: "去练习验收", onClick: onPractice },
-  ];
-  return <div className="mt-3.5 grid grid-cols-3 gap-1" role="group" aria-label="掌握进度">
-    {steps.map((step, index) => <button key={index} type="button" title={step.title} aria-label={step.title}
-      aria-pressed={index < 2 ? reached > index : undefined} disabled={busy || (passed && index < 2)} onClick={step.onClick}
-      className="group flex cursor-pointer flex-col gap-1.5 rounded-sm text-left text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-default">
-      <span className={cn("h-1 w-full rounded-full bg-control transition-colors group-enabled:group-hover:bg-control-active",
-        reached > index && "bg-st-passed group-enabled:group-hover:bg-st-passed/80")} />
-      <span className={cn("transition-colors group-enabled:group-hover:text-foreground", reached > index && "text-foreground")}>{step.label}</span>
-    </button>)}
+  const labels = ["学过", "自我掌握", passed ? "验收通过" : "验收"];
+  return <div className="mt-3.5 flex items-end gap-2">
+    <div className="grid flex-1 grid-cols-3 gap-1" role="img" aria-label={`掌握进度：${reached ? labels[reached - 1] : "未开始"}`}>
+      {labels.map((label, index) => <div key={label} className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+        <span className={cn("h-1 w-full rounded-full bg-control", reached > index && "bg-st-passed")} />
+        <span className={cn(reached > index && "text-foreground")}>{label}</span>
+      </div>)}
+    </div>
+    {!passed && <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" variant="ghost" className="-mb-1 h-7 px-2 text-xs" disabled={busy}>更改状态<ChevronDown /></Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem disabled={status === "studied"} onSelect={() => onMark("studied")}>标记为学过</DropdownMenuItem>
+        <DropdownMenuItem disabled={status === "mastered"} onSelect={() => onMark("mastered")}>标记为自我掌握（跳过验收）</DropdownMenuItem>
+        {status !== "new" && <><DropdownMenuSeparator /><DropdownMenuItem onSelect={() => onMark("new")}>撤销标记</DropdownMenuItem></>}
+      </DropdownMenuContent>
+    </DropdownMenu>}
   </div>;
 }
 
@@ -74,10 +84,10 @@ function NextStep({ node, onLesson, onPractice }: {
       <span className={cn("size-1.5 rounded-full", passed ? "bg-st-passed" : "bg-st-new")} aria-hidden />{passed ? "已通过" : "下一步"}
     </span>
     <div className="min-w-0">
-      <p className="text-[15px] font-semibold leading-snug">{step.title}</p>
+      <p className="text-[length:var(--fs-read)] font-semibold leading-snug">{step.title}</p>
       <p className="mt-0.5 text-xs text-muted-foreground">{step.meta}</p>
     </div>
-    <Button className="w-full" variant={passed ? "secondary" : "default"} onClick={step.run}>
+    <Button className="w-full" variant={passed ? "outline" : "default"} onClick={step.run}>
       {passed ? <><RefreshCw />{step.action}</> : <>{step.action}<ArrowRight /></>}
     </Button>
     {!passed && lessons.length > 0 && <button className="cursor-pointer self-center text-xs text-muted-foreground hover:text-foreground"
@@ -111,7 +121,6 @@ export function NodePanel({
   run,
   onRefresh,
   onRecall,
-  onHide,
   onRatingSubmitted,
   reviewActive,
   reviewStrict,
@@ -131,6 +140,7 @@ export function NodePanel({
   initialNoteId = "",
   initialChat = false,
   contentContainer,
+  taskNavigation,
 }: {
   course: Course;
   node: LearningNode;
@@ -142,7 +152,6 @@ export function NodePanel({
   onRefresh: (course: Course) => void;
   onRecall: () => void;
   /** Hides the right dock; it comes back from the layout toggles. */
-  onHide?: () => void;
   onRatingSubmitted: () => void;
   reviewActive: boolean;
   reviewStrict: boolean;
@@ -162,6 +171,7 @@ export function NodePanel({
   initialNoteId?: string;
   initialChat?: boolean;
   contentContainer: HTMLDivElement | null;
+  taskNavigation?: {task:AiTask;sequence:number};
 }) {
   const [reviewMastered, setReviewMastered] = useState(false);
   const [message, setMessage] = useState("");
@@ -182,6 +192,17 @@ export function NodePanel({
     setPick({ view: "chat", study: bench.study });
     requestAnimationFrame(() => chatField.current?.focus());
   };
+  useEffect(()=>{
+    const task=taskNavigation?.task;
+    if(!task||task.target!==node.id)return;
+    if(task.kind==='lesson')bench.openLesson(taskLessonId(task,course));
+    else if(task.kind==='question'||task.kind==='assessment')bench.openPractice();
+    // This explicit cross-panel navigation command synchronizes the selected task with the open view.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    else if(task.kind==='chat')setPick({view:'chat',study:bench.study});
+    // Navigation runs once for an explicit task selection, not on ledger polling.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[taskNavigation?.sequence,node.id]);
   const studyContext = bench.study && bench.active !== "material"
     ? bench.active === "practice"
       ? <><CircleHelp aria-hidden />正在做练习验收</>
@@ -236,6 +257,7 @@ export function NodePanel({
           study={bench.study ? {
             downloadUrl: studyLesson && lessonHtmlUrl(course.id, node.id, studyLesson.id),
             lesson: <LessonStudy course={course} node={node} lessonId={bench.lessonId} busy={busy} aiEnabled={aiEnabled} act={act}
+              onMaterial={openMaterial} onExcerpt={appendToNote}
               onSelect={bench.selectLesson} onAsk={askInChat} onPractice={bench.openPractice} />,
             practice: <PracticePanel course={course} node={node} busy={busy} aiEnabled={aiEnabled} run={run} onRefresh={onRefresh} onRatingSubmitted={onRatingSubmitted} onNavigate={onNavigateNode} />,
           } : null}
@@ -261,14 +283,11 @@ export function NodePanel({
           <Button variant="ghost" size="icon-sm" onClick={onRecall} title="找回思路：回看这个知识点的历史对话" aria-label="找回思路">
             <Clock3 />
           </Button>
-          <Button variant={noteOpen ? "secondary" : "ghost"} size="icon-sm" className="relative" aria-pressed={noteOpen} onClick={bench.openNote}
+          <Button variant="ghost" size="icon-sm" className="relative" aria-pressed={noteOpen} onClick={bench.openNote}
             title={`笔记 · ${noteCount} 份${node.personal_note?.trim() ? "" : "（主笔记为空）"}`} aria-label={`笔记，${noteCount} 份`}>
             <NotebookPen />
-            <span className="absolute right-0 top-0 min-w-3.5 rounded-full bg-control px-1 text-[10px] leading-3.5 tabular-nums text-foreground/80" aria-hidden>{noteCount}</span>
+            <span className="absolute right-0 top-0 min-w-3.5 rounded-full bg-control px-1 text-[11px] leading-3.5 tabular-nums text-foreground/80" aria-hidden>{noteCount}</span>
           </Button>
-          {onHide && <Button variant="ghost" size="icon-sm" className="max-[780px]:hidden" onClick={onHide} title="隐藏右栏（可在上方“详情”重新打开）" aria-label="隐藏右栏">
-            <PanelRightClose />
-          </Button>}
         </div>
       </div>
       {view === "chat" ? <NodeChat node={node} busy={busy} aiEnabled={aiEnabled} message={message} fieldRef={chatField}
@@ -280,8 +299,7 @@ export function NodePanel({
         <span className="block truncate text-xs text-muted-foreground">{node.kind === "synthesis" ? "综合节点" : stage ? `${stage.title} · 知识点` : "知识点"}</span>
         <h2 className="t-page mt-1">{node.title}</h2>
         <Progress status={node.status} busy={busy}
-          onMark={(status) => void act("mark", () => api.mark(course.id, node.id, status))}
-          onPractice={() => { setReviewMastered(true); bench.openPractice(); }} />
+          onMark={(status) => void act("mark", () => api.mark(course.id, node.id, status))} />
         {(node.status === "passed" || statusKey === "locked" || node.verification === "review" || (reviewStrict && node.review_verification && node.review_verification !== "none")) &&
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
             {(node.status === "passed" || statusKey === "locked") && <Badge variant={statusKey}><StatusIcon aria-hidden />{statusText}</Badge>}
@@ -349,11 +367,11 @@ export function NodePanel({
         )}
         <section className="flex flex-col" aria-label="相关">
           <h3 className="t-label mb-1">相关</h3>
-          {!!course.goals?.length && <Related icon={Target} label={goalEntries[0]?.goal.title || "目标"}
+          <Related icon={Target} label={goalEntries[0]?.goal.title || "目标"}
             value={goalEntries.length > 1 ? `${goalEntries.length} 个目标` : goalEntries.length ? "目标" : "未加入目标"}
             defaultOpen={goalEntries[0]?.goal.status === "doing" || !!goalActions?.changes.length} attention={!!goalActions?.changes.length}>
-            <NodeGoals course={course} node={node} busy={busy} act={act} onOpenGoal={onOpenGoal} />
-          </Related>}
+            <NodeGoals course={course} node={node} busy={busy} canCreate={!reviewStrict} act={act} onOpenGoal={onOpenGoal} />
+          </Related>
           {node.kind === "synthesis" && <Related icon={Shapes} label="综合关联知识点" value={`${(node.related_node_ids || []).length} 个`} defaultOpen>
             <div className="flex flex-wrap gap-2">
               {(node.related_node_ids || []).map((id) => {
@@ -383,7 +401,7 @@ export function NodePanel({
             value={`${node.pieces.filter((piece) => piece.state?.result === "known").length} / ${node.pieces.length} 已掌握`}>
             {node.pieces.map((piece) => <div key={piece.id} className="border-t border-border py-2.5 text-sm first:border-t-0 first:pt-0">
               <strong className="font-medium">{piece.kind} · {piece.title}</strong><p className="text-muted-foreground">{piece.detail}</p>
-              <div className="mt-1.5 flex gap-2"><Button size="sm" variant={piece.state?.result === "known" ? "secondary" : "outline"} disabled={busy} onClick={() => void act("piece-check", () => api.checkPiece(course.id, node.id, piece.id, "known"))}>我已掌握</Button>
+              <div className="mt-1.5 flex gap-2"><Button size="sm" variant="outline" aria-pressed={piece.state?.result === "known"} disabled={busy} onClick={() => void act("piece-check", () => api.checkPiece(course.id, node.id, piece.id, "known"))}>我已掌握</Button>
                 <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act("piece-check", () => api.checkPiece(course.id, node.id, piece.id, "unsure"))}>还不确定</Button></div>
             </div>)}
           </Related>}
