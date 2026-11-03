@@ -5,7 +5,10 @@ import type { Course } from './types';
 import { TaskCard } from './TaskCard';
 import { TaskNotice, TaskTray } from './TaskTray';
 import { AI_KEYS, useBusyActivity } from './busyActivity';
-import { aiReceiptHints, regenerationRequestId } from './aiReceipts';
+import { aiReceiptHints, dropAiReceipts, regenerationRequestId } from './aiReceipts';
+
+/** How long a receipt may go unrecorded by the backend, once no request carries it, before it is dropped. */
+const ORPHAN_RECEIPT_MS = 2 * 60_000;
 
 const HIDDEN_KEY='learning-map:hidden-task-cards';
 const cardKey=(task:AiTask)=>`${task.id}@${task.updated_at}`;
@@ -49,10 +52,15 @@ function useTaskLedger(course: Course | null, onCourse: (course: Course) => void
       }));
       if (epoch !== generation.current) return;
       const full=list.map((task,i) => {const detail=details[i];if(detail.status==='fulfilled'){detailCache.current.set(task.id,detail.value);return detail.value;}return {...detailCache.current.get(task.id),...task};});
-      const missing=aiReceiptHints(cid).filter(hint=>!list.some(t=>t.request_id===hint.id)).map(hint=>{
+      const unrecorded=aiReceiptHints(cid).filter(hint=>!list.some(t=>t.request_id===hint.id));
+      // A receipt no request is carrying and the backend never recorded (a recall chat, a request
+      // rejected before it became a task) cannot be recovered or replayed, so it is dropped, not shown.
+      void dropAiReceipts(unrecorded.filter(hint=>!hint.inFlight&&Date.now()-Date.parse(hint.createdAt)>ORPHAN_RECEIPT_MS).map(hint=>hint.id)).catch(()=>{/* retried on the next refresh */});
+      // Still being sent from this page: the backend simply has not recorded it yet.
+      const missing=unrecorded.filter(hint=>hint.inFlight).map(hint=>{
         const route=hint.scope.split(' ' ).slice(1).join(' '), target=route.match(/\/nodes\/([^/]+)/)?.[1]||'batch';
         const kind=route.endsWith('/lessons')?'lesson':route.endsWith('/chat')?'chat':route.endsWith('/question')?'question':route.endsWith('/attempts')?'assessment':'unknown';
-        return {id:`missing-${hint.id}`,course_id:cid,kind,target,state:'missing',request_id:hint.id,created_at:hint.createdAt,updated_at:hint.createdAt} satisfies AiTask;
+        return {id:`missing-${hint.id}`,course_id:cid,kind,target,state:'prepared',request_id:hint.id,created_at:hint.createdAt,updated_at:hint.createdAt} satisfies AiTask;
       });
       setTasks([...full,...missing]);
       if(details.some(d=>d.status==='rejected')){failures.current++;setError('部分任务详情无法读取。');setOffline(true);}

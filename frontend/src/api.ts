@@ -12,7 +12,7 @@ import type {
   Strength,
 } from "./types";
 import type { NoteReviewResponse } from "./noteReviewTypes";
-import { clearAiReceipt, prepareAiReceipt } from "./aiReceipts.ts";
+import { clearAiReceipt, endAiRequest, prepareAiReceipt } from "./aiReceipts.ts";
 import type { AiTask } from './aiTaskModel';
 
 /** FastAPI sends a string detail; a list (validation errors) is joined, never shown as [object Object]. */
@@ -27,6 +27,14 @@ function errorDetail(body: { detail?: unknown }): string {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const prepared = await prepareAiReceipt(path, init);
   if (prepared.receipt) window.dispatchEvent(new Event('lm:ai-tasks-changed'));
+  try {
+    return await send<T>(path, prepared);
+  } finally {
+    endAiRequest(prepared.receipt);
+  }
+}
+
+async function send<T>(path: string, prepared: Awaited<ReturnType<typeof prepareAiReceipt>>): Promise<T> {
   const requestInit = prepared.init;
   const headers = new Headers(requestInit.headers);
   const isMutation = !!requestInit.method && requestInit.method !== "GET";

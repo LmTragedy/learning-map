@@ -18,7 +18,7 @@ def course_fixture():
         "nodes": [
             {"id": "a", "sources": [{"material_id": "m1", "page": 2}]},
             {"id": "b", "sources": []},
-            {"id": "c", "sources": [{"material_id": "m1", "page": 3}]},
+            {"id": "c", "prerequisites": ["b"], "sources": [{"material_id": "m1", "page": 3}]},
         ],
         "edges": [{"id": "e", "source": "a", "target": "b", "sources": [{"material_id": "m2", "page": 1}]}],
         "materials": [

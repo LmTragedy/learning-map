@@ -20,7 +20,7 @@ Object.defineProperty(globalThis, "navigator", {
   value: { locks: testLocks },
 });
 
-const { aiReceiptHints, clearAiReceipt, prepareAiReceipt, regenerationRequestId } = await import("../src/aiReceipts.ts");
+const { aiReceiptHints, clearAiReceipt, dropAiReceipts, prepareAiReceipt, regenerationRequestId } = await import("../src/aiReceipts.ts");
 const { api } = await import("../src/api.ts");
 const receiptKey = "learning-map:ai-request-receipts:v1";
 
@@ -122,6 +122,35 @@ test("API sends and retains the receipt on failure, then clears it after parsed 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("a receipt is in flight only while this page is still sending its request", async () => {
+  reset();
+  const originalFetch = globalThis.fetch;
+  try {
+    let during;
+    globalThis.fetch = async () => {
+      during = aiReceiptHints("c1").map((hint) => hint.inFlight);
+      throw new Error("connection lost");
+    };
+    await assert.rejects(api.chat("c1", "n1", "in flight"), /无法连接/);
+    assert.deepEqual(during, [true]);
+    assert.deepEqual(aiReceiptHints("c1").map((hint) => hint.inFlight), [false]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("dropping orphan receipts keeps any request that is still in flight", async () => {
+  reset();
+  const orphan = await prepareAiReceipt("/courses/c1/nodes/n1/chat", request({ message: "orphan" }));
+  const { endAiRequest } = await import("../src/aiReceipts.ts");
+  endAiRequest(orphan.receipt);
+  const sending = await prepareAiReceipt("/courses/c1/nodes/n1/chat", request({ message: "sending" }));
+  await dropAiReceipts([orphan.receipt.id, sending.receipt.id]);
+  assert.deepEqual(aiReceiptHints("c1").map((hint) => hint.id), [sending.receipt.id]);
+  endAiRequest(sending.receipt);
+  await clearAiReceipt(sending.receipt);
 });
 
 test("lesson body request_id is replaced but retell gets identity only in its header", async () => {
