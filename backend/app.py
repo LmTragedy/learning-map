@@ -3,10 +3,11 @@ import importlib.util
 import os
 import re
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import obsidian
@@ -14,6 +15,7 @@ from .ai import AIError, AIUnavailable, CodexAI
 from .ai_task_routes import register_ai_task_routes
 from .ai_tasks import client_request_id, requested_action_id
 from .bridge_backfill import register_bridge_backfill
+from .course_transfer import MAX_IMPORT_BYTES, deleted_courses, export_course, import_course, restore_course
 from .deepseek_ai import deepseek_status, provider_for
 from .domain import (
     find_attempt,
@@ -69,6 +71,7 @@ from .schemas import (
 )
 from .security_headers import DEFAULT_CSP, MATERIAL_FILE_CSP
 from .store import Conflict, Store, identity
+from .teaching_plans.routes import register_teaching_plan_routes
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -102,6 +105,7 @@ def create_app(data_dir=None, ai_factory=None):
     # Registered before /relations/{rid} so "backfill" is not read as a relation id.
     register_bridge_backfill(app, store, learning)
     register_node_links(app, store, learning)
+    register_teaching_plan_routes(app, store, learning)
     register_material_index(app, store, learning)
     register_relation_routes(app, store)
     register_goals_notes(app, store)
@@ -455,17 +459,53 @@ def _protection_routes(app, store):
         store.archive(cid, request.token)
         return dict(deleted=True)
 
+    @app.get("/api/courses/{cid}/export")
+    def export(cid: str):
+        title, data = export_course(store, cid)
+        name = re.sub(r'[\\/:*?"<>|]+', "_", title).strip() or "course"
+        disposition = f"attachment; filename=\"learning-map-course.zip\"; filename*=UTF-8''{quote(name)}.zip"
+        return Response(data, media_type="application/zip", headers={"Content-Disposition": disposition})
+
+    @app.post("/api/courses/import")
+    async def import_backup(file: UploadFile = File(...)):
+        data = await file.read(MAX_IMPORT_BYTES + 1)
+        if len(data) > MAX_IMPORT_BYTES:
+            raise ValueError("备份文件过大，未导入")
+        return project_course(import_course(store, data))
+
+    @app.get("/api/trash")
+    def trash():
+        return deleted_courses(store)
+
+    @app.post("/api/trash/{cid}/restore")
+    def restore_deleted(cid: str):
+        return project_course(restore_course(store, cid))
+
 
 def _settings_routes(app, store, factory):
+    def ai_status(refresh: bool = False) -> dict:
+        ai = factory(store.settings())
+        status = ai.available()
+        # Test doubles and other adapters may not know how to check login; that reads as "unknown".
+        check = getattr(ai, "login_status", None)
+        if status.get("available"):
+            status["login"] = check(refresh=refresh) if callable(check) else "unknown"
+        return status
+
     @app.get("/api/health")
     def health():
         return dict(
-            ai=factory(store.settings()).available(),
+            ai=ai_status(),
             deepseek=deepseek_status(store.settings()),
             data_dir=str(store.root),
             parser=dict(basic=True, docling=importlib.util.find_spec("docling") is not None),
             runtime=app.state.runtime,
         )
+
+    @app.post("/api/health/ai-check")
+    def ai_check():
+        """The settings page's 测试连接: re-runs the Codex checks without sending anything to a model."""
+        return ai_status(refresh=True)
 
     @app.get("/api/settings")
     def settings():

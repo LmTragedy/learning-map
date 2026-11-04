@@ -121,7 +121,7 @@ def course_material_context(course):
     ]
     content = json.dumps(pages, ensure_ascii=False)
     if len(content) > 180000:
-        raise LearningError("材料超过本版一次分析 180,000 字符上限，请拆分课程或减少材料；未静默截断")
+        raise LearningError("材料全文超过一次分析 180,000 字符上限。请先在“⋯”菜单里“建立材料索引”，建好后按索引分析，不受这个上限限制；未静默截断")
     if not any(page["text"].strip() for page in pages):
         raise LearningError("材料没有可分析文字，请先完成 OCR 或核对原页；当前不能生成可信地图")
     return content
@@ -187,6 +187,8 @@ def cited_material_context(course, sources, fallback=None):
 
 # Older turns reach the model through the learning memory, not by resending the transcript.
 RECENT_TURNS = 6
+# Chat tasks record this in their inputs; version 2 adds the node's teaching plan to the prompt.
+CHAT_CONTEXT_VERSION = 2
 
 
 def node_memory(course, node):
@@ -249,8 +251,9 @@ def node_context(course, node, *, history=True):
     return encoded
 
 
-def context_digest(course, node):
-    return hashlib.sha256(node_context(course, node, history=False).encode()).hexdigest()
+def context_digest(course, node, extra=""):
+    """`extra` is the teaching-plan block; empty, the digest is the same as before plans existed."""
+    return hashlib.sha256((node_context(course, node, history=False) + extra).encode()).hexdigest()
 
 
 def _source_context(materials, sources):
@@ -337,14 +340,27 @@ def _has_cycle(nodes):
 
 
 def append_map(course, draft):
+    existing = _existing_map_references(course, draft)
     _validate_sources(course, draft["nodes"])
     _validate_relation_sources(course, draft.get("relations", []))
     _validate_bridge_sources(course, draft["nodes"])
     _validate_bridge_sources(course, draft.get("relations", []))
     key_to_node, fresh = _map_nodes(course, draft["nodes"])
+    key_to_node.update(existing)
     _append_prerequisites(course, draft["nodes"], key_to_node, fresh)
     _append_bridges(course, draft["nodes"], key_to_node)
     _append_generated_relations(course, draft.get("relations", []), key_to_node)
+
+
+def _existing_map_references(course, draft):
+    referenced = {parent for node in draft["nodes"] for parent in node["prerequisites"]}
+    for relation in draft.get("relations", []):
+        referenced.update([relation["source"], relation["target"], *relation.get("related_keys", [])])
+    by_key = {f"existing:{node['id']}": node for node in course["nodes"]}
+    external = {key for key in referenced if key.startswith("existing:")}
+    if external - by_key.keys():
+        raise LearningError("地图引用了不存在的旧知识点；原始结果已保留，课程未改变")
+    return {key: by_key[key] for key in external}
 
 
 def _validate_bridge_sources(course, specifications):
@@ -490,11 +506,21 @@ def require_same_node(before, current, node_id):
         raise Conflict("这个知识点在等待 AI 期间有变化，请刷新后重试；已有进度未覆盖。")
 
 
+def _map_catalog(course):
+    return [dict(
+        key=f"existing:{node['id']}", title=node["title"], summary=node.get("summary", "")[:600],
+        sources=[dict(material_id=source["material_id"], page=source["page"]) for source in node.get("sources", [])],
+        prerequisites=[f"existing:{parent}" for parent in node.get("prerequisites", [])],
+        pieces=[dict(kind=piece["kind"], title=piece["title"]) for piece in node.get("pieces", [])],
+        steps=[step["title"] for step in node.get("steps", [])],
+    ) for node in course["nodes"]]
+
+
 def require_same_materials(before, current):
     def outline(course):
         return (
             [material["id"] for material in course["materials"]],
-            [(node["id"], node["title"]) for node in course["nodes"]],
+            _map_catalog(course),
             [edge for edge in course.get("edges", []) if not edge.get("synthesis_link")],
         )
 
@@ -531,7 +557,8 @@ class Learning:
         )
 
     def _generate(self, course_id):
-        course = self.store.course(course_id)
+        replaying = has_saved_reply()
+        course = self.tasks.input_course(course_id)
         cited = {source["material_id"] for node in course["nodes"] for source in node["sources"]}
         fresh = [material["id"] for material in course["materials"] if material["id"] not in cited]
         if fully_indexed(course):
@@ -543,20 +570,27 @@ class Learning:
             course_material_context(dict(course, materials=[m for m in course["materials"] if m["id"] in fresh]))
         else:
             context = course_material_context(course)
-        with self.store.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            latest = self.store.course(course_id, connection)
-            if latest["revision"] != course["revision"]:
-                raise Conflict("生成前课程已变化，请刷新后重试；当前材料与进度未覆盖。")
-            self.store.snapshot(latest, "生成地图前自动备份", connection)
+        if not replaying:
+            with self.store.connect() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                latest = self.store.course(course_id, connection)
+                require_same_materials(course, latest)
+                self.store.snapshot(latest, "生成地图前自动备份", connection)
         prompt = (
             "合并分析这门学科的所有材料，生成有来源的教学知识地图。每个节点是一项可验收的知识，"
             "粒度是一节小课能讲清楚的一项内容：不要把整章合成一个节点，也不要把一句话拆成节点。"
             "覆盖材料中所有实质内容（定义、定理/结论、方法、重要例子），封面、目录、课程安排等无需成节点；"
+            "必须逐份核对全部PDF与已有节点目录：保留已覆盖内容，补齐遗漏，不要只生成最后一份材料的知识。"
+            "同一知识跨多份材料出现时可复用旧节点并补充各自来源；重复幻灯片不必重复造节点。"
+            "用每份材料从头到尾的索引逐项检查：除基本定义，还要覆盖后续的指标比较、算法或机制、"
+            "关键性质与适用条件、保证或不可能性结论；不能只补开篇概念而略过后半部分。"
+            "不同算法或有不同条件的结论应有可单独验收的节点，不要塞进一个空泛概览。"
             "summary写清这一项讲什么、关键条件和用途，不写空话。"
-            "按内容安排例子/整体与先修关系，不要把相似关系误作前置。最多60节点，保留重要差异，"
+            "按内容安排例子/整体与先修关系，不要把相似关系误作前置。本次最多返回60个新增或补充节点，"
+            "它们会合并到已有完整地图，并非把整门课程压缩到60个节点；保留重要差异，"
             "不确定识别或概念合并要uncertain=true。请同时返回relations数组（允许为空），"
-            "关系source/target/related_keys只使用本次节点key；related_keys只列两端以外还涉及的节点，没有就留空，不要重复source/target。relation只能是前置知识、帮助理解、工具关系、"
+            "关系source/target/related_keys可以使用本次节点key，或已有节点目录里的existing:ID引用；"
+            "旧节点无需重复返回也能直接连线。related_keys只列两端以外还涉及的节点，没有就留空，不要重复source/target。relation只能是前置知识、帮助理解、工具关系、"
             "相似或对比、归纳关系。关系仅作为理解线索；填写解释、何时使用、依据、evidence_kind、来源页、"
             "双向初始难度、uncertain。material_quote/material_inference必须给sources，ai_inference可不提供来源；"
             "presentation=synthesis时给出synthesis_title和synthesis_summary。难度仅是未验证的初始估计。"
@@ -568,16 +602,22 @@ class Learning:
             "check_question是10秒能答的小题，check_answer是参考答案；都写简短。"
             "relations里除对比以外每条联系也写bridges，结构同上但无需from_key，引用source的块与target的步骤。"
             "来源识别待用户确认。sources.quote只能摘录材料实际提取文字；"
-            "key用短唯一标识，prerequisites仅引用本次key。已有节点同标题会保留状态，"
+            "新节点key用短唯一标识，不能使用existing:前缀；prerequisites可引用本次key或已有目录的existing:ID。"
+            "新增概念要逐项核对已有目录：它用到了哪个旧概念、又能帮助理解哪个旧概念？"
+            "有材料依据或具体推理时在relations写清跨新旧节点的联系；关系可由新指向旧或由旧指向新。"
+            "不要为消除孤点而编造连线；确实独立的知识可以不连。不确定的推断要标uncertain=true。"
+            "已有节点同标题会保留状态，已有节点的先修和人工编辑不会被覆盖；需要回连旧节点时用relations表达。"
             "给出text的页面或key_quotes中的原文可作sources；只有digest的页面仅用于了解全课结构。"
             "page_digests为每个给出text的页面写一句不超过60字的内容摘要（material_id、page）。"
-            "不要重命名已有概念。已有标题："
-            + json.dumps([n["title"] for n in course["nodes"]], ensure_ascii=False)
+            "不要重命名已有概念。已有节点目录（key可直接引用）："
+            + json.dumps(_map_catalog(course), ensure_ascii=False)
             + "\n材料："
             + context
         )
         label = conversation_label(course, purpose="知识地图生成")
-        draft = structured(self.ai(), prompt, MapDraft, {"conversation": label}, system=BASE_SYSTEM)
+        draft = structured(self.ai(), prompt, MapDraft,
+                           {"conversation": label, "fresh_prompt": self.tasks.replay_prompt(prompt)},
+                           system=BASE_SYSTEM)
         with self.store.edit(course_id, task_id=current_task_id()) as (current, _):
             require_same_materials(course, current)
             append_map(current, draft.payload)
@@ -592,13 +632,13 @@ class Learning:
             course_id,
             "chat",
             node_id,
-            {"message": message},
+            {"message": message, "context_version": CHAT_CONTEXT_VERSION},
             lambda: self._chat(course_id, node_id, message),
             request_id=request_id,
         )
 
     def _chat(self, course_id, node_id, message):
-        course = self.store.course(course_id)
+        course = self.tasks.input_course(course_id)
         node = find_node(course, node_id)
         require_review_node(course, node)
         if wants_recall(message):
@@ -606,8 +646,10 @@ class Learning:
             thread_id, digest = thread_for(course, node), None
         else:
             reply, thread_id, digest = self._chat_reply(course, node, message)
-        with self.store.edit(course_id, task_id=current_task_id()) as (current, _):
-            require_same_node(course, current, node_id)
+        task_id = current_task_id()
+        with self.store.edit(course_id, task_id=task_id) as (current, _):
+            if task_id is None:
+                require_same_node(course, current, node_id)
             updated = find_node(current, node_id)
             append_chat(updated, "user", message)
             append_chat(updated, "assistant", reply)
@@ -625,8 +667,9 @@ class Learning:
 
     def _chat_reply(self, course, node, message):
         """A resumed thread already holds earlier turns; send only what changed since then."""
-        fresh = SYSTEM + "\n当前节点/来源：" + node_context(course, node) + "\n用户：" + message
-        thread_id, digest = thread_for(course, node), context_digest(course, node)
+        plan = self._chat_plan(course, node)
+        fresh = SYSTEM + "\n当前节点/来源：" + node_context(course, node) + plan + "\n用户：" + message
+        thread_id, digest = thread_for(course, node), context_digest(course, node, plan)
         options = dict(thread_id=thread_id, conversation=review_label(course, node))
         if not thread_id:
             reply = self.ai().ask(fresh, **options)
@@ -634,9 +677,18 @@ class Learning:
             if node.get("context_digests", {}).get(thread_id) == digest:
                 update = "\n（节点与来源同本对话上一轮，未变化。）"
             else:
-                update = "\n当前节点/来源（已更新）：" + node_context(course, node, history=False)
+                update = "\n当前节点/来源（已更新）：" + node_context(course, node, history=False) + plan
             reply = self.ai().ask(SYSTEM + update + "\n用户：" + message, fresh_prompt=fresh, **options)
         return reply["text"], reply["thread_id"], digest
+
+    def _chat_plan(self, course, node):
+        """The teaching-plan block, only for chat tasks started with context version 2 or later."""
+        from .lesson_plan_context import context_version
+        from .teaching_plans.projection import chat_plan_text
+
+        task_id = current_task_id()
+        version = context_version(self.tasks.get(task_id).get("inputs")) if task_id else CHAT_CONTEXT_VERSION
+        return chat_plan_text(course, node) if version >= 2 else ""
 
     def question(self, course_id, node_id, request_id=None):
         return self.tasks.run(
@@ -651,7 +703,7 @@ class Learning:
     def _question(self, course_id, node_id):
         from .problem_bank import benchmark_prompt, image_paths  # problem_bank builds on this module
 
-        course = self.store.course(course_id)
+        course = self.tasks.input_course(course_id)
         node = find_node(course, node_id)
         benchmark, benchmark_refs = benchmark_prompt(course, node)
         options = {"conversation": review_label(course, node, "出题")}
@@ -673,7 +725,6 @@ class Learning:
             options,
         )
         with self.store.edit(course_id, task_id=current_task_id()) as (current, _):
-            require_same_node(course, current, node_id)
             updated = find_node(current, node_id)
             if strict_scope(course):
                 updated.setdefault("review_questions", {})[scope_key(course)] = question.payload
@@ -752,6 +803,7 @@ class Learning:
         )
 
     def _submit(self, course, node_id, submission, image_paths):
+        course = self.tasks.input_course(course["id"])
         node = find_node(course, node_id)
         require_review_node(course, node)
         question = question_for(course, node)
@@ -783,7 +835,11 @@ class Learning:
             )
         submission["judgment"] = judgment
         with self.store.edit(course["id"], task_id=task_id) as (current, _):
-            require_same_node(course, current, node_id)
+            active_task_id = current_task_id()
+            if task_id is None and active_task_id is not None:
+                self.tasks.validate_result_context(self.tasks.get(active_task_id), current)
+            elif task_id is None:
+                require_same_node(course, current, node_id)
             updated = find_node(current, node_id)
             if question_for(current, updated) != question:
                 raise LearningError("验收期间题目已变化，结果保留但未应用")

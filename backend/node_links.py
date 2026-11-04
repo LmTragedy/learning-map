@@ -256,7 +256,7 @@ def find_links(store, learning, cid, nid, revision, request_id=None):
 
 
 def _find_links(store, learning, cid, nid, revision):
-    course = store.course(cid)
+    course = learning.tasks.input_course(cid)
     if strict_scope(course):
         raise LearningError("重新找前后联系需要完整课程上下文，请先退出所选资料复习")
     if course["revision"] != revision:

@@ -9,6 +9,7 @@ import { BridgeCheck } from "./BridgeCheck";
 import { TaskCards } from "./aiTasks";
 import type { Course, LearningNode, Source, Step } from "./types";
 import "./nodeLinks.css";
+import { AiMark } from "./components/ui/ai-mark";
 
 type Edge = Course["edges"][number];
 type Selected =
@@ -307,7 +308,7 @@ function Detail({ selected, busy, canOpen, onNavigate, onOpenBridge, onOpenSourc
     <Words plain={other.plain} formal={other.formal} />
     {selected.kind === "bridge" && incoming && <BridgeCheck item={item} busy={busy} onCheck={onCheck(item)} onOpenSource={onOpenSource} />}
     <div className="mt-2 flex flex-wrap items-center gap-2">
-      {item.bridge.origin !== "user" && <span className="t-meta">{item.bridge.sources?.length ? `AI 写的 · 有 ${item.bridge.sources.length} 处材料原文` : "AI 写的 · 材料里没找到原文依据"}</span>}
+      {item.bridge.origin !== "user" && <AiMark detail={item.bridge.sources?.length ? `有 ${item.bridge.sources.length} 处材料原文` : "材料里没找到原文依据"} />}
       <Button size="sm" variant="ghost" onClick={() => onOpenBridge(item.edge)}>看这条联系的详情</Button>
     </div>
     {back}

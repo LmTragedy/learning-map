@@ -9,7 +9,8 @@ from .store import Conflict, timestamp
 
 NODE_CHANNELS = {"chat": "learning", "lesson": "learning", "question": "assessment",
                  "assessment": "assessment", "note_review": "note_review", "recall": "recall"}
-COURSE_CHANNELS = {"bridge": "bridges", "bridge_history": "bridges", "links": "bridges"}
+COURSE_CHANNELS = {"bridge": "bridges", "bridge_history": "bridges", "links": "bridges",
+                   "teaching_plan": "teaching_plans"}
 # Only the tutor conversation relies on earlier turns; every other prompt carries its own context.
 PERSISTENT_CHANNELS = {"learning"}
 

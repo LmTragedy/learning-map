@@ -15,6 +15,7 @@ export type Modal =
   | "lines"
   | "course-notes"
   | "problems"
+  | "trash"
   | null;
 
 export function modalTitle(m: Modal) {
@@ -36,6 +37,7 @@ export function modalTitle(m: Modal) {
         "course-notes": "课程笔记",
         review: "选择复习资料",
         problems: "真题题库",
+        trash: "最近删除",
       } as Record<string, string>
     )[m || ""] || ""
   );

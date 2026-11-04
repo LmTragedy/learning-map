@@ -1,6 +1,7 @@
 """Durable AI receipts, safe recovery, and relationship-scoped bridge batches."""
 
 import json
+from copy import deepcopy
 from uuid import uuid4
 
 import pytest
@@ -52,7 +53,7 @@ def test_chat_receipt_survives_restart_and_explicit_request_replay_is_idempotent
     tasks = client.get(f"{path}/ai-tasks").json()
     assert len(tasks) == 1 and tasks[0]["state"] == "applied"
     task_id = tasks[0]["id"]
-    assert not {"raw_reply", "request", "inputs", "before"} & tasks[0].keys()
+    assert not {"raw_reply", "request", "inputs", "input_context", "before"} & tasks[0].keys()
 
     restarted = TestClient(create_app(store.root, lambda _: model), headers={"X-Learning-Map": "1"})
     detail = restarted.get(f"{path}/ai-tasks/{task_id}").json()
@@ -114,6 +115,218 @@ def _bridge_draft():
         "check_question": "由 x≿y、y≿z 可得什么？", "check_answer": "x≿z",
         "sources": [], "uncertain": True,
     }
+
+
+def _map_draft(course):
+    material = course["materials"][0]
+    return {
+        "nodes": [{
+            "key": "recovery-node",
+            "title": course["nodes"][0]["title"],
+            "summary": course["nodes"][0]["summary"],
+            "week": course["nodes"][0]["week"],
+            "sources": [{"material_id": material["id"], "page": 1,
+                         "quote": material["pages"][0]["text"].splitlines()[0]}],
+            "prerequisites": [], "uncertain": True,
+        }],
+        "relations": [],
+    }
+
+
+def _fail_next_course_save(monkeypatch, store):
+    save = store.save_course
+    failed = False
+
+    def fail_once(course, connection):
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise OSError("simulated course save failure")
+        return save(course, connection)
+
+    monkeypatch.setattr(store, "save_course", fail_once)
+    return save
+
+
+def test_map_receipt_replays_after_unrelated_note_and_progress_changes(session, monkeypatch):
+    client, store, model, course = session
+    cid = course["id"]
+    model.replies.append(_map_draft(course))
+    save = _fail_next_course_save(monkeypatch, store)
+    boundary = TestClient(client.app, raise_server_exceptions=False,
+                          headers={"X-Learning-Map": "1"})
+    assert boundary.post(f"/api/courses/{cid}/generate",
+                         headers={"X-AI-Request-ID": "map-receipt-noise-0001"}).status_code == 500
+    task = client.get(f"/api/courses/{cid}/ai-tasks").json()[0]
+
+    with store.edit(cid) as (current, _):
+        current["nodes"][0]["status"] = "studied"
+        current["nodes"][0]["personal_note"] = "并发保存的笔记"
+    monkeypatch.setattr(store, "save_course", save)
+
+    recovered = client.post(f"/api/courses/{cid}/ai-tasks/{task['id']}/recover")
+    assert recovered.status_code == 200, recovered.text
+    node = recovered.json()["course"]["nodes"][0]
+    assert node["status"] == "studied"
+    assert node["personal_note"] == "并发保存的笔记"
+    assert recovered.json()["task"]["state"] == "applied"
+
+
+@pytest.mark.parametrize("change", ["material_text", "edge_structure"])
+def test_map_receipt_still_rejects_changed_material_or_edge_structure(session, monkeypatch, change):
+    client, store, model, course = session
+    cid = course["id"]
+    model.replies.append(_map_draft(course))
+    save = _fail_next_course_save(monkeypatch, store)
+    boundary = TestClient(client.app, raise_server_exceptions=False,
+                          headers={"X-Learning-Map": "1"})
+    request_id = f"map-receipt-change-{change.replace('_', '-')}-01"
+    assert boundary.post(f"/api/courses/{cid}/generate",
+                         headers={"X-AI-Request-ID": request_id}).status_code == 500
+    task = client.get(f"/api/courses/{cid}/ai-tasks").json()[0]
+    with store.edit(cid) as (current, _):
+        if change == "material_text":
+            current["materials"][0]["pages"][0]["text"] += "\nChanged source content."
+        else:
+            current["edges"][0]["relation"] = "用户编辑后的关系"
+    monkeypatch.setattr(store, "save_course", save)
+
+    refused = client.post(f"/api/courses/{cid}/ai-tasks/{task['id']}/recover")
+    assert refused.status_code == 409
+    detail = client.get(f"/api/courses/{cid}/ai-tasks/{task['id']}").json()
+    assert detail["raw_reply"]["text"]
+
+
+def test_map_update_supersedes_stale_receipt_but_same_context_remains_idempotent(session, monkeypatch):
+    client, store, model, course = session
+    cid = course["id"]
+    original_id = "map-update-original-0001"
+    model.replies.append(_map_draft(course))
+    save = _fail_next_course_save(monkeypatch, store)
+    boundary = TestClient(client.app, raise_server_exceptions=False,
+                          headers={"X-Learning-Map": "1"})
+    assert boundary.post(f"/api/courses/{cid}/generate",
+                         headers={"X-AI-Request-ID": original_id}).status_code == 500
+    old_task = client.get(f"/api/courses/{cid}/ai-tasks").json()[0]
+    with store.edit(cid) as (current, _):
+        extra = deepcopy(current["materials"][0])
+        extra["id"] = uuid4().hex
+        extra["name"] = "new-material.pdf"
+        extra["sha256"] = uuid4().hex
+        extra["pages"][0]["text"] = "New material content for map generation."
+        current["materials"].append(extra)
+    monkeypatch.setattr(store, "save_course", save)
+    updated_course = store.course(cid)
+    expected_material_ids = {material["id"] for material in updated_course["materials"]}
+    model.replies.append(_map_draft(updated_course))
+
+    updated = client.post(f"/api/courses/{cid}/generate",
+                          headers={"X-AI-Request-ID": "map-update-after-source-change-01"})
+    assert updated.status_code == 200, updated.text
+    tasks = client.get(f"/api/courses/{cid}/ai-tasks").json()
+    old = next(item for item in tasks if item["id"] == old_task["id"])
+    new = next(item for item in tasks if item["request_id"] == "map-update-after-source-change-01")
+    old_detail = client.get(f"/api/courses/{cid}/ai-tasks/{old['id']}").json()
+    assert old["state"] == "superseded"
+    assert old_detail["raw_reply"]["text"]
+    assert old["superseded_by"] == new["id"]
+    assert {material["id"] for material in updated.json()["materials"]} == expected_material_ids
+    repeated = client.post(f"/api/courses/{cid}/generate",
+                           headers={"X-AI-Request-ID": "map-update-after-source-change-01"})
+    assert repeated.status_code == 200, repeated.text
+
+
+def test_same_context_map_receipt_blocks_new_task_and_replays_with_same_identity(session, monkeypatch):
+    client, store, model, course = session
+    cid = course["id"]
+    original_id = "map-same-context-receipt-01"
+    model.replies.append(_map_draft(course))
+    save = _fail_next_course_save(monkeypatch, store)
+    boundary = TestClient(client.app, raise_server_exceptions=False,
+                          headers={"X-Learning-Map": "1"})
+    assert boundary.post(f"/api/courses/{cid}/generate",
+                         headers={"X-AI-Request-ID": original_id}).status_code == 500
+    task = client.get(f"/api/courses/{cid}/ai-tasks").json()[0]
+    monkeypatch.setattr(store, "save_course", save)
+
+    blocked = client.post(f"/api/courses/{cid}/generate",
+                          headers={"X-AI-Request-ID": "map-same-context-new-task-01"})
+    assert blocked.status_code == 409
+    recovered = client.post(f"/api/courses/{cid}/ai-tasks/{task['id']}/recover")
+    assert recovered.status_code == 200, recovered.text
+    repeated = client.post(f"/api/courses/{cid}/generate",
+                           headers={"X-AI-Request-ID": original_id})
+    assert repeated.status_code == 200, repeated.text
+
+
+def test_stale_map_receipt_does_not_hide_another_active_map_task(session, monkeypatch):
+    from backend.ai_tasks import _Invocation
+
+    client, store, model, course = session
+    cid = course["id"]
+    model.replies.append(_map_draft(course))
+    save = _fail_next_course_save(monkeypatch, store)
+    boundary = TestClient(client.app, raise_server_exceptions=False,
+                          headers={"X-Learning-Map": "1"})
+    assert boundary.post(f"/api/courses/{cid}/generate",
+                         headers={"X-AI-Request-ID": "map-stale-with-active-001"}).status_code == 500
+    stale = client.get(f"/api/courses/{cid}/ai-tasks").json()[0]
+    with store.edit(cid) as (current, _):
+        current["materials"][0]["pages"][0]["text"] += "\nNew source revision."
+    manager = client.app.state.learning.tasks
+    current = store.course(cid)
+    with store.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        active = manager._create(_Invocation("map", "course", {}, current, "active-map-task-0001"),
+                                 connection)
+        manager.update(active["id"], state="processing", connection=connection)
+    monkeypatch.setattr(store, "save_course", save)
+
+    blocked = client.post(f"/api/courses/{cid}/generate",
+                          headers={"X-AI-Request-ID": "map-new-task-while-active-01"})
+    assert blocked.status_code == 409
+    tasks = client.get(f"/api/courses/{cid}/ai-tasks").json()
+    assert next(item for item in tasks if item["id"] == stale["id"])["state"] == "invalid"
+    assert next(item for item in tasks if item["id"] == active["id"])["state"] == "processing"
+
+
+def test_bridge_receipt_replays_original_batch_and_keeps_new_progress_and_bridge(session, monkeypatch):
+    client, store, model, course = session
+    cid = course["id"]
+    with store.edit(cid) as (current, _):
+        template = current["edges"][0]
+        for _ in range(12):
+            edge = deepcopy(template)
+            edge["id"] = uuid4().hex
+            edge.pop("bridges", None)
+            current["edges"].append(edge)
+    before = store.course(cid)
+    expected_batch = [edge["id"] for edge in before["edges"] if "bridges" not in edge][:12]
+
+    model.replies.append({"nodes": [], "relations": [
+        {"id": relation_id, "bridges": [_bridge_draft()]} for relation_id in expected_batch
+    ]})
+    save = _fail_next_course_save(monkeypatch, store)
+    boundary = TestClient(client.app, raise_server_exceptions=False,
+                          headers={"X-Learning-Map": "1"})
+    failed = boundary.post(f"/api/courses/{cid}/relations/backfill",
+                           json={"revision": before["revision"], "request_id": "bridge-receipt-oldrev-001"})
+    assert failed.status_code == 500
+    task = client.get(f"/api/courses/{cid}/ai-tasks").json()[0]
+    first_edge_id = expected_batch[0]
+    with store.edit(cid) as (current, _):
+        current["nodes"][0]["status"] = "studied"
+        current["nodes"][0]["personal_note"] = "新增笔记"
+        next(edge for edge in current["edges"] if edge["id"] == first_edge_id)["bridges"] = []
+    monkeypatch.setattr(store, "save_course", save)
+
+    recovered = client.post(f"/api/courses/{cid}/ai-tasks/{task['id']}/recover")
+    assert recovered.status_code == 200, recovered.text
+    saved = store.course(cid)
+    assert saved["nodes"][0]["status"] == "studied"
+    assert saved["nodes"][0]["personal_note"] == "新增笔记"
+    assert next(edge for edge in saved["edges"] if edge["id"] == first_edge_id)["bridges"] == []
+    assert sum(bool(edge.get("bridges")) for edge in saved["edges"]) == 11
 
 
 def test_bridge_backfill_processes_exactly_one_batch_then_the_remainder(session):

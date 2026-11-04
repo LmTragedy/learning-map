@@ -82,7 +82,7 @@ export function NoteReviewDot({ controller, state, model, aiEnabled, automatic, 
             </button>
           </li>)}
         </ul>}
-        {state.phase === "ready" && !count && <p className="text-xs text-muted-foreground">本次未提出更多建议；不代表已验证笔记完全正确。</p>}
+        {state.phase === "ready" && !count && <p className="text-xs text-muted-foreground">本次没有更多建议。</p>}
         {action && <p role="status" className="text-xs text-muted-foreground">{action}</p>}
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="ghost" disabled={!aiEnabled || !automatic || state.phase === "unavailable" || state.phase === "checking"}

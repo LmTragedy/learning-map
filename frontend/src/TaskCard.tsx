@@ -4,6 +4,7 @@ import {
   ChevronDown, GitCompare, History, Inbox, RefreshCw, RotateCcw, WifiOff, X,
 } from "lucide-react";
 import { Button } from "./components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 import { cn } from "./lib/utils";
 import type { AiTask, TaskView } from "./aiTaskModel";
 import { taskTime } from "./aiTaskModel";
@@ -142,6 +143,9 @@ export function TaskCard({
   const checkedAt = organization?.checked_at ? taskTime(organization.checked_at) || organization.checked_at : "未知";
 
   const busy = busyAction !== null;
+  const failedLike = view.semantic === "failed" || view.semantic === "conflict" || view.semantic === "unknown";
+  const moreActions = (view.canRecover && showRegenerate) || (view.canCollect && onCollect) || (view.canOrganize && onOrganize)
+    || (displayedTask.result_ref?.available && !hasStoredObject && onReadResult) || showDetails;
   // Some descriptions already carry the time ("回复于 20:12"); never print it twice.
   const meta = [view.description, view.time && !view.description?.includes(view.time) ? view.time : ""].filter(Boolean).join(" · ");
   return (
@@ -154,7 +158,25 @@ export function TaskCard({
           {meta && <p className="line-clamp-2 text-[13px] leading-relaxed text-muted-foreground" title={meta}>{meta}</p>}
           {task.children && task.children.length > 0 && <p className="text-[13px] text-muted-foreground">Luna 子任务：{task.children.filter(child => child.state === 'applied').length} / {task.children.length} 已完成 · 中等推理</p>}
         </div>
-        {!confirming && (
+        {!confirming && (failedLike ? (
+          // After a failure: one clear next step; the rarer recovery tools wait under 更多.
+          <div className="flex shrink-0 flex-wrap items-center gap-2 empty:hidden">
+            {view.canRecover
+              ? <Button size="sm" disabled={busy || view.semantic === "recovering"} onClick={() => void runAction("recover", onRecover)}><Download />恢复并应用</Button>
+              : showRegenerate && <Button size="sm" disabled={busy || view.semantic === "recovering"} onClick={() => setConfirming(true)}><RotateCcw />重试…</Button>}
+            {view.newRequestId && <Button size="sm" variant="outline" onClick={() => onNewTask ? onNewTask(view.newRequestId!) : onOpen()}>查看新任务<ArrowRight /></Button>}
+            {moreActions && <DropdownMenu>
+              <DropdownMenuTrigger asChild><Button size="sm" variant="outline" disabled={busy}>更多<ChevronDown /></Button></DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {view.canRecover && showRegenerate && <DropdownMenuItem onSelect={() => setConfirming(true)}><RotateCcw />重新生成…</DropdownMenuItem>}
+                {view.canCollect && onCollect && <DropdownMenuItem onSelect={() => void runAction("collect", onCollect)}><Download />只读取回</DropdownMenuItem>}
+                {view.canOrganize && onOrganize && <DropdownMenuItem onSelect={() => void runAction("organize", onOrganize)}><RefreshCw />重试原生归类</DropdownMenuItem>}
+                {displayedTask.result_ref?.available && !hasStoredObject && onReadResult && <DropdownMenuItem onSelect={() => void runAction("result", onReadResult)}><FileQuestion />读取已保存对象</DropdownMenuItem>}
+                {showDetails && <DropdownMenuItem onSelect={() => { setRawExpanded(!detailsOpen); if (detailsOpen) setResultExpanded(false); }}>{detailsOpen ? "收起原文" : "查看原文"}</DropdownMenuItem>}
+              </DropdownMenuContent>
+            </DropdownMenu>}
+          </div>
+        ) : (
           <div className="flex shrink-0 flex-wrap items-center gap-2 empty:hidden">
             {view.canRecover && <Button size="sm" variant="outline" disabled={busy || view.semantic === "recovering"} onClick={() => void runAction("recover", onRecover)}><Download />恢复并应用</Button>}
             {view.canCollect && onCollect && <Button size="sm" variant="outline" disabled={busy} onClick={() => void runAction("collect", onCollect)}><Download />只读取回</Button>}
@@ -167,7 +189,7 @@ export function TaskCard({
               {detailsOpen ? "收起原文" : "原文"}<ChevronDown className={cn("transition-transform", detailsOpen && "rotate-180")} />
             </Button>}
           </div>
-        )}
+        ))}
         {refreshButton && <Button size="icon-sm" variant="ghost" className="-my-1 shrink-0 text-muted-foreground" aria-label="刷新状态" title="刷新状态" disabled={busy} onClick={() => void runAction("refresh", onRefresh)}><RefreshCw className={busyAction === "refresh" ? "task-refreshing" : undefined} /></Button>}
         {onDismiss && <Button size="icon-sm" variant="ghost" className="-my-1 -mr-1 shrink-0 text-muted-foreground" aria-label="关闭这张卡片（仍可在 AI 任务中查看）" title="关闭（仍可在 AI 任务中查看）" onClick={onDismiss}><X /></Button>}
       </div>

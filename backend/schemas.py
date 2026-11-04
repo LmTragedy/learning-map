@@ -1,3 +1,4 @@
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
@@ -191,14 +192,17 @@ class MapDraft(Input):
         keys = [node.key for node in self.nodes]
         if len(set(keys)) != len(keys):
             raise ValueError("AI 返回了重复节点标识")
+        if any(key.startswith("existing:") for key in keys):
+            raise ValueError("已有节点引用不能用作新节点 key")
+        def valid_reference(key):
+            return key in keys or re.fullmatch(r"existing:[a-f0-9]{32}", key) is not None
         for node in self.nodes:
-            if any(parent not in keys or parent == node.key for parent in node.prerequisites):
+            if any(not valid_reference(parent) or parent == node.key for parent in node.prerequisites):
                 raise ValueError("AI 返回了无效的先修关系")
-        relation_keys = set(keys)
         for relation in self.relations:
             endpoints = [relation.source, relation.target, *relation.related_keys]
             if (
-                any(endpoint not in relation_keys for endpoint in endpoints)
+                any(not valid_reference(endpoint) for endpoint in endpoints)
                 or len(set(endpoints)) != len(endpoints)
             ):
                 raise ValueError("AI 返回了无效的关联节点")

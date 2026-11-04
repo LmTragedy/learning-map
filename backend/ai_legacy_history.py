@@ -98,6 +98,7 @@ def _request_parsers():
         ("学习上下文：\n", _parse_lesson, None),
         ("先独立分析题目与所需知识/解法", _parse_assessment, None),
         ("按该节点内容设计一个合适的解释", _parse_question, None),
+        ("已有节点目录（key可直接引用）：", _parse_map, "\n材料："),
         ("已有标题：", _parse_map, "\n材料："),
         ("已有知识点：", _parse_goals, "\n材料："),
         ("当前节点/来源：", _parse_chat, "\n用户："),
@@ -144,7 +145,11 @@ def _parse_assessment(prompt):
 
 
 def _parse_map(prompt):
-    titles = _decode_after(prompt, "已有标题：")
+    if "已有节点目录（key可直接引用）：" in prompt:
+        catalog = _decode_after(prompt, "已有节点目录（key可直接引用）：")
+        titles = [node["title"] for node in catalog]
+    else:
+        titles = _decode_after(prompt, "已有标题：")
     materials = _decode_after(prompt, "\n材料：")
     return _request("map", {"existing_titles": titles, "materials": materials})
 

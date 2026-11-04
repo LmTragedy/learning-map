@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { formatTime } from "./formatTime";
 import { AI_KEYS, setBusyActivity } from "./busyActivity";
 import {
@@ -21,11 +21,9 @@ import {
   Bot,
   BotOff,
   CalendarDays,
-  ChevronDown,
   Ellipsis,
   GraduationCap,
   History,
-  Layers,
   Library,
   LogOut,
   Map as MapIcon,
@@ -36,22 +34,28 @@ import {
   Save,
   Search,
   Sparkles,
-  FileText,
   Waypoints,
   Target,
   CircleCheck,
   FolderSync,
   ListTree,
   ClipboardList,
+  ChevronRight,
+  ChevronsLeft,
+  Download,
+  FileUp,
+  ChevronsRight,
+  SlidersHorizontal,
 } from "lucide-react";
 import { api } from "./api";
 import { MaterialsPanel } from "./MaterialsPanel";
 import { cn } from "./lib/utils";
-import { generateWithReading, indexAllMaterials, indexProgress } from "./materialIndex";
+import { cancelReading, generateWithReading, indexAllMaterials, indexProgress, useReadingRun } from "./materialIndex";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
 import { CourseMap } from "./CourseMap";
 import { recommendedNode } from "./learningNavigation";
 import { isRelationVisible } from "./relationVisibility";
@@ -63,7 +67,6 @@ import { goalProgressDiff, goalsForNode, type GoalChange } from "./goalContext";
 import * as Dialog from "@radix-ui/react-dialog";
 import { needsBridges } from "./bridges";
 import { Callout } from "./components/ui/callout";
-import { useDismissals } from "./dismissals";
 import { LinesPanel } from "./LinesPanel";
 import { usePanelLayout } from "./panelLayout";
 import { useResizableWidth } from "./useResizableWidth";
@@ -75,6 +78,7 @@ import { busyLabel, modalTitle, shortPath, type Modal } from "./appLabels";
 import { BusyIndicator, ConfirmPreview, ModalIcon } from "./AppChrome";
 import { AiTaskProvider, TaskBanners, TaskCards, TaskEntry, TaskSlot } from './aiTasks';
 import type { AiTask } from './aiTaskModel';
+import { backfillBridgeBatches } from './bridgeBackfill';
 import type {
   Course,
   CourseSummary,
@@ -86,8 +90,31 @@ import type {
 } from "./types";
 
 const DEEPSEEK_OPTIONS: [string, string][] = [["deepseek-chat", "DeepSeek（deepseek-chat）"]];
+const BRIDGE_BACKFILL_BATCH_SIZE = 12;
 
 /** Fixed choices, plus a previously saved custom model so opening settings never changes it. */
+/** While materials are read batch by batch: how far, how long, and a way to stop before the next batch. */
+function ReadingNotice({ courseId }: { courseId: string }) {
+  const run = useReadingRun();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!run) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [run]);
+  if (!run || run.courseId !== courseId) return null;
+  const seconds = Math.max(0, Math.round((now - run.startedAt) / 1000));
+  const elapsed = seconds >= 60 ? `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒` : `${seconds} 秒`;
+  return <Callout tone="neutral" icon={<LoaderCircle className="animate-spin" />}
+    title={run.cancelled ? "正在停止：这一批读完就停" : `正在阅读材料 · 第 ${run.batch} 批 · 已用 ${elapsed}`}
+    actions={<Button size="sm" variant="outline" disabled={run.cancelled} onClick={cancelReading}>取消</Button>}>
+    已读 {run.indexed} / {run.total} 页，读完后生成地图。可以继续学习，完成后会提示；取消会保留已读的页。
+  </Callout>;
+}
+
+/** Chat models offered in settings; any other id can still be typed under 自定义. */
+const CHAT_MODELS: [string, string][] = [["", "使用本地 Codex 配置"], ["gpt-6.1-terra", "gpt-6.1-terra"], ["gpt-6-luna", "gpt-6-luna"]];
+
 function modelOptions(current: string | undefined, choices: [string, string][]) {
   const saved = (current ?? "").trim();
   const extra: [string, string][] = saved && !choices.some(([value]) => value === saved) ? [[saved, `${saved}（已保存）`]] : [];
@@ -97,6 +124,24 @@ function modelOptions(current: string | undefined, choices: [string, string][]) 
 export function App() {
   const [courses, setCourses] = useState<CourseSummary[]>([]);
   const [course, setCourse] = useState<Course | null>(null);
+  const currentCourseId = useRef<string | undefined>(undefined);
+  const courseSessionGeneration = useRef(0);
+  useLayoutEffect(() => {
+    currentCourseId.current = course?.id;
+    courseSessionGeneration.current += 1;
+  }, [course?.id]);
+  const appMounted = useRef(true);
+  const appMountGeneration = useRef(0);
+  useEffect(() => {
+    appMountGeneration.current += 1;
+    appMounted.current = true;
+    return () => {
+      appMounted.current = false;
+      appMountGeneration.current += 1;
+    };
+  }, []);
+  const bridgeBackfillRunning = useRef(false);
+  const [bridgeBackfillProgress, setBridgeBackfillProgress] = useState<{ courseId: string; batch: number; total: number; remaining: number }>();
   const [selected, setSelected] = useState<LearningNode>();
   const [taskNavigation, setTaskNavigation] = useState<{task:AiTask; sequence:number}>();
   const [noteTarget, setNoteTarget] = useState("");
@@ -104,7 +149,6 @@ export function App() {
   const [noteTargetId, setNoteTargetId] = useState("");
   const [goalChatTarget, setGoalChatTarget] = useState("");
   const [goalFocus, setGoalFocus] = useState("");
-  const hints = useDismissals("learning-map:dismissed-hints");
   const [lineFocus, setLineFocus] = useState("");
   const [mapGoal, setMapGoal] = useState("");
   const [goalChanges, setGoalChanges] = useState<{ courseId: string; changes: GoalChange[] }>();
@@ -119,7 +163,7 @@ export function App() {
   const [relationContextNodeId, setRelationContextNodeId] = useState("");
   const [relationBackStack, setRelationBackStack] = useState<{ nodeId: string; scopeKey: string }[]>([]);
   const [health, setHealth] = useState<{
-    ai: { available: boolean; reason?: string };
+    ai: { available: boolean; reason?: string; login?: "ok" | "missing" | "unknown" };
     deepseek?: { available: boolean; reason?: string } | null;
     parser: Record<string, unknown>;
     data_dir: string;
@@ -164,6 +208,23 @@ export function App() {
   const [reviewMaterialIds, setReviewMaterialIds] = useState<string[]>([]);
   const [reviewAiScope, setReviewAiScope] = useState<"selected" | "course">("selected");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [customModel, setCustomModel] = useState(false);
+  const [trash, setTrash] = useState<Awaited<ReturnType<typeof api.deletedCourses>>>([]);
+  const courseFileInput = useRef<HTMLInputElement>(null);
+  const [aiChecking, setAiChecking] = useState(false);
+  // The bridge reminder is a chip in the header; it opens the full callout only on request.
+  const [bridgeHintOpen, setBridgeHintOpen] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(() => { try { return localStorage.getItem("learning-map:rail") === "collapsed"; } catch { return false; } });
+  useEffect(() => {
+    // Tooltips render in a portal, so the collapsed state is mirrored on <html> for their CSS.
+    if (railCollapsed) document.documentElement.dataset.rail = "collapsed";
+    else delete document.documentElement.dataset.rail;
+  }, [railCollapsed]);
+  const toggleRail = () => setRailCollapsed((value) => {
+    const next = !value;
+    try { localStorage.setItem("learning-map:rail", next ? "collapsed" : "open"); } catch { /* storage may be blocked; the toggle still works for this visit */ }
+    return next;
+  });
   const [navOpen, setNavOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const layout = usePanelLayout();
@@ -346,7 +407,31 @@ export function App() {
     if (value) {
       setSettings(value);
       setDeepseekKey(null);
+      setCustomModel(false);
       setModal("settings");
+    }
+  };
+  const openTrash = async () => {
+    const list = await run("trash", api.deletedCourses);
+    if (list) { setTrash(list); setModal("trash"); }
+  };
+  const restoreDeleted = async (id: string) => {
+    const restored = await run("restore-course", () => api.restoreCourse(id));
+    if (restored) { setModal(null); await loadCourses(restored.id); setNotice(`已恢复「${restored.title}」`); }
+  };
+  const importCourseFile = async (file: File) => {
+    const imported = await run("import-course", () => api.importCourse(file));
+    if (imported) { await loadCourses(imported.id); setNotice(`已从备份导入「${imported.title}」，原课程不受影响`); }
+  };
+  const checkAi = async () => {
+    setAiChecking(true);
+    try {
+      const ai = await api.checkAi();
+      setHealth((current) => current && { ...current, ai });
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "无法检查 Codex。");
+    } finally {
+      setAiChecking(false);
     }
   };
   const openProfile = async () => {
@@ -518,6 +603,7 @@ export function App() {
     || (modal === "obsidian" && Boolean(noteContent.trim()) && noteContent !== writtenNote);
   const requestCloseModal = () => { if (modalDirty()) setDiscardFor(modal); else setModal(null); };
   const bridgeGapCount = course ? course.edges.filter(needsBridges).length : 0;
+  const nextNode = course ? recommendedNode(course, activeNodes) : undefined;
   const openCourseNotes = useCallback(async () => {
     if (!course) return;
     setModal("course-notes");
@@ -539,6 +625,7 @@ export function App() {
     { label: "目标看板", ...goalsTool },
     { label: "课程笔记", ...notesTool },
     { label: "真题题库", Icon: ClipboardList, onClick: () => setModal("problems"), disabled: !course },
+    { label: "最近删除", Icon: Trash2, onClick: () => void openTrash() },
     { label: "学习档案", Icon: Archive, onClick: () => void openProfile() },
     { label: "Obsidian 导入导出", Icon: FolderSync, onClick: () => void showObsidian() },
     { label: "设置", Icon: Settings2, onClick: () => void openSettings() },
@@ -560,6 +647,7 @@ export function App() {
       <aside
         className={cn(
           "shell-side z-50 flex w-[232px] shrink-0 flex-col border-r border-border bg-sidebar px-3 py-4",
+          railCollapsed && "rail-collapsed",
           "max-[781px]:fixed max-[781px]:inset-y-0 max-[781px]:left-0 max-[781px]:w-72 max-[781px]:shadow-2xl max-[781px]:transition-transform",
           !navOpen && "max-[781px]:-translate-x-full",
         )}
@@ -642,8 +730,10 @@ export function App() {
                   <div className="truncate text-[13px] font-medium">
                     {health?.ai.available ? (aiEnabled ? "AI 学习辅助已启用" : "Codex 已找到 · 待启用") : "本地学习模式"}
                   </div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    {health?.ai.available ? "登录状态未检测" : health ? "未找到 Codex，AI 功能不可用" : "正在检测 Codex…"}
+                  <div className={cn("truncate text-xs text-muted-foreground", health?.ai.login === "missing" && "text-st-new")}>
+                    {health?.ai.available
+                      ? health.ai.login === "ok" ? `已连接${settings?.model ? ` · ${settings.model}` : ""}` : health.ai.login === "missing" ? "Codex 未登录，AI 暂不可用" : "登录状态未知"
+                      : health ? "未找到 Codex，AI 功能不可用" : "正在检测 Codex…"}
                   </div>
                 </div>
               </div>
@@ -653,25 +743,45 @@ export function App() {
               {health?.data_dir && <div className="opacity-70">数据保存在本机：{shortPath(health.data_dir)}</div>}
             </TooltipContent>
           </Tooltip>
+          <Button variant="ghost" size="sm" className="rail-center mt-1 justify-start px-2.5 text-muted-foreground max-[781px]:hidden"
+            onClick={toggleRail} aria-label={railCollapsed ? "展开侧栏" : "收起侧栏"} title={railCollapsed ? "展开侧栏" : "收起侧栏"}>
+            {railCollapsed ? <ChevronsRight /> : <ChevronsLeft />} <span className="rail-hide">收起侧栏</span>
+          </Button>
         </div>
       </aside>
       <main className="flex min-w-0 flex-1 flex-col max-[781px]:pb-14">
+        <input ref={courseFileInput} type="file" accept=".zip,application/zip" hidden aria-hidden
+          onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void importCourseFile(file); }} />
         {error && <Callout tone="danger" icon={<AlertCircle />} className="mx-4 mt-3" dismissLabel="关闭错误" onDismiss={() => setError("")}>{error}</Callout>}
         {course ? (
           <>
-            <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 max-[781px]:h-auto max-[781px]:flex-wrap max-[781px]:py-2.5">
+            <header className="flex min-h-16 shrink-0 items-center gap-3 border-b border-border px-4 py-2 max-[781px]:h-auto max-[781px]:flex-wrap max-[781px]:py-2.5">
               <Button variant="ghost" size="icon-sm" className="min-[781px]:hidden" onClick={() => setNavOpen(true)} aria-label="打开课程列表">
                 <Menu />
               </Button>
               <div className="min-w-0 flex-1">
-                <h1 className="t-page truncate">{course.title}</h1>
-                <div className="mt-0.5 flex items-center gap-3 overflow-hidden whitespace-nowrap text-xs text-muted-foreground [&_svg]:size-3">
-                  <span className="flex items-center gap-1 max-[781px]:hidden"><FileText aria-hidden /> {course.materials.length} 份材料</span>
-                  <span className="flex items-center gap-1 max-[1100px]:hidden"><Layers aria-hidden /> {course.nodes.length} 个知识点</span>
-                  {course.route && <span className="flex items-center gap-1.5 text-foreground">
-                    <span className="h-1 w-14 overflow-hidden rounded-full bg-track"><span className="block h-full bg-st-passed" style={{ width: `${(course.progress?.ratio ?? (course.route.total ? course.route.completed_count / course.route.total : 0)) * 100}%` }} /></span>
-                    {course.progress?.pieces.total ? `${course.progress.pieces.known}/${course.progress.pieces.total} 知识块已掌握` : `${course.route.completed_count}/${course.route.total} 站已掌握`}
-                  </span>}
+                <h1 className="course-title truncate">{course.title}</h1>
+                {/* One line: where I am and what to do next. Counts live in the progress tooltip. */}
+                <div className="mt-0.5 flex items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
+                  {course.route && <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="flex cursor-default items-center gap-1.5 text-foreground">
+                        <span className="h-1 w-14 overflow-hidden rounded-full bg-track"><span className="block h-full bg-st-passed" style={{ width: `${(course.progress?.nodes.total ? course.progress.nodes.done / course.progress.nodes.total : course.route.total ? course.route.completed_count / course.route.total : 0) * 100}%` }} /></span>
+                        学完 {course.progress?.nodes ? course.progress.nodes.done : course.route.completed_count} / {course.progress?.nodes ? course.progress.nodes.total : course.route.total} 个知识点
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-72">
+                      {course.materials.length} 份材料 · {course.nodes.length} 个知识点
+                      {course.progress?.pieces.total ? <div className="opacity-80">要点自检通过 {course.progress.pieces.known} / {course.progress.pieces.total}</div> : null}
+                    </TooltipContent>
+                  </Tooltip>}
+                  {nextNode && <button type="button" className="min-w-0 cursor-pointer truncate hover:text-foreground" onClick={() => openNode(nextNode)}>
+                    · 下一步：{nextNode.title}
+                  </button>}
+                  {bridgeGapCount > 0 && <button type="button" className="ml-1 shrink-0 cursor-pointer rounded-full border border-border px-2 py-px text-xs hover:text-foreground max-[781px]:hidden"
+                    title="让 AI 写清前后知识点具体怎么衔接" onClick={() => setBridgeHintOpen((open) => !open)} aria-expanded={bridgeHintOpen}>
+                    {bridgeGapCount} 条衔接待补 ›
+                  </button>}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -682,14 +792,7 @@ export function App() {
                     <Button variant="ghost" size="sm" className="h-7 px-2 text-st-new hover:text-st-new" onClick={openReview}><Pencil /> 编辑</Button>
                     <Button variant="ghost" size="sm" className="h-7 px-2 text-st-new hover:text-st-new" onClick={() => void saveReviewScope(false)} disabled={busy}><LogOut /> 退出</Button>
                   </div>
-                ) : (
-                  <Button variant="outline" size="sm" className="max-[781px]:hidden" onClick={openReview}>
-                    <FileSearch /> 复习所选 PDF
-                  </Button>
-                )}
-                <Button size="sm" variant="outline" onClick={() => setModal("problems")} title="导入真题，按真题标准出题和练习">
-                  <ClipboardList /> <span className="max-[480px]:hidden">真题题库{course.problem_sets?.length ? ` · ${course.problem_sets.length}` : ""}</span>
-                </Button>
+                ) : null}
                 <Button size="sm" variant="outline" onClick={() => void openImport()}>
                   <Upload /> <span className="max-[480px]:hidden">导入材料</span>
                 </Button>
@@ -725,12 +828,21 @@ export function App() {
                     <DropdownMenuItem onSelect={() => setModal("materials")}>
                       <FolderOpen /> 已导入材料 <DropdownMenuShortcut>{course.materials.length} 份</DropdownMenuShortcut>
                     </DropdownMenuItem>
+                    {!course.review_scope?.enabled && <DropdownMenuItem onSelect={openReview}>
+                      <FileSearch /> 复习所选 PDF
+                    </DropdownMenuItem>}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem disabled={busy} onSelect={() => void run("snapshot", () => api.snapshot(course.id)).then((v) => v && refreshCourse(v))}>
                       <Save /> 保存版本
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => void openVersions()}>
                       <History /> 版本历史
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <a href={api.courseExportUrl(course.id)} download><Download /> 导出课程（.zip）</a>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => courseFileInput.current?.click()}>
+                      <FileUp /> 从文件导入课程…
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem variant="destructive" disabled={busy} onSelect={() => void beginDelete()}>
@@ -743,6 +855,7 @@ export function App() {
             {/* Every page-level message stacks here in one style, most urgent first. */}
             <div className="page-notices flex shrink-0 flex-col gap-2 px-4 pt-3 empty:hidden">
               {notice && <Callout tone="success" icon={<CircleCheck />} onDismiss={() => setNotice("")}>{notice}</Callout>}
+              <ReadingNotice courseId={course.id} />
               <TaskBanners />
               {course.materials.length > 0 && !course.nodes.length && (
                 <Callout tone="neutral" icon={<Sparkles />} title="材料已就绪"
@@ -753,11 +866,38 @@ export function App() {
               )}
               {/* The batch bridge run reports here, where it was started: running, needing attention, or done. */}
               <TaskSlot kind="bridge" target="batch">{(task, view, dismissTask) => {
-                const backfill = () => void run("backfill-relations", () => api.backfillRelations(course.id, course.revision)).then((v) => v && refreshCourse(v));
+                const backfill = () => {
+                  if (bridgeBackfillRunning.current) return;
+                  bridgeBackfillRunning.current = true;
+                  const selectedCourse = course;
+                  if (!selectedCourse) {
+                    bridgeBackfillRunning.current = false;
+                    return;
+                  }
+                  const sessionGeneration = courseSessionGeneration.current;
+                  const mountGeneration = appMountGeneration.current;
+                  void run("backfill-relations", async () => {
+                    await backfillBridgeBatches({
+                      course: selectedCourse,
+                      batchSize: BRIDGE_BACKFILL_BATCH_SIZE,
+                      countGaps: (value) => value.edges.filter(needsBridges).length,
+                      backfill: api.backfillRelations,
+                      isCurrent: () => appMounted.current && currentCourseId.current === selectedCourse.id
+                        && courseSessionGeneration.current === sessionGeneration
+                        && appMountGeneration.current === mountGeneration,
+                      onProgress: (progress) => setBridgeBackfillProgress({ courseId: selectedCourse.id, ...progress }),
+                      onBatch: refreshCourse,
+                    });
+                  }).finally(() => {
+                    bridgeBackfillRunning.current = false;
+                    if (appMounted.current) setBridgeBackfillProgress(undefined);
+                  });
+                };
+                const progress = bridgeBackfillProgress?.courseId === course.id ? bridgeBackfillProgress : undefined;
                 if (task && view?.group === "active") return (
                   <Callout tone="neutral" icon={<LoaderCircle className="animate-spin" />} title={view.title}
                     actions={<Button size="sm" variant="outline" disabled>补充中</Button>}>
-                    {bridgeGapCount} 条联系待补充，每次处理 12 条，结果标为待核对。
+                    {progress ? `本次第 ${progress.batch}/${progress.total} 批，当前还有 ${progress.remaining} 条待补充。` : `${bridgeGapCount} 条联系待补充，每次处理 ${BRIDGE_BACKFILL_BATCH_SIZE} 条，结果标为待核对。`}
                   </Callout>);
                 // Checked before "attention": a finished batch has no single result object, so the model files it as unverified.
                 if (task?.state === "applied") {
@@ -767,18 +907,19 @@ export function App() {
                     <Callout tone="success" icon={<CircleCheck />} title="已补充知识桥，结果待核对" dismissLabel="关闭" onDismiss={dismissTask}
                       actions={<>
                         {reviewTarget && <Button size="sm" variant="outline" onClick={() => openNode(reviewTarget, review!.id)}>去核对</Button>}
-                        {bridgeGapCount > 0 && aiOn && <Button size="sm" variant="ghost" disabled={busy} onClick={backfill}>继续补充</Button>}
+                        {bridgeGapCount > 0 && aiOn && <Button size="sm" variant="ghost" disabled={busy} onClick={backfill}>继续补充剩余 {bridgeGapCount} 条</Button>}
                       </>}>
                       {bridgeGapCount > 0 ? `还有 ${bridgeGapCount} 条联系没有知识桥。` : "所有联系都有知识桥了。"}
                     </Callout>);
                 }
                 if (task && view?.group === "attention") return <TaskCards kind="bridge" target="batch" limit={1} />;
-                return bridgeGapCount > 0 && !hints.hidden(`bridges:${course.id}`, bridgeGapCount) && (
+                // Idle reminder stays a header chip; the callout opens only when the chip is clicked.
+                return bridgeGapCount > 0 && bridgeHintOpen && (
                   <Callout tone="neutral" compact icon={<Waypoints />}
-                    title={<span title="让 AI 根据材料写清“后一个知识点的哪一步用到了前一个的哪一块”，并配一道检验题。每次处理 12 条，结果标为待核对，不改变进度和解锁。">{bridgeGapCount} 条联系还没有知识桥<span className="ml-2 font-normal text-muted-foreground max-[1100px]:hidden">补上后能看清前后知识点具体怎么衔接</span></span>}
-                    dismissLabel="不再提示（新增缺口时再提醒）" onDismiss={() => hints.dismiss(`bridges:${course.id}`, bridgeGapCount)}
+                    title={<span>{bridgeGapCount} 条联系还没有衔接说明<span className="ml-2 font-normal text-muted-foreground max-[1100px]:hidden">让 AI 写清后一个知识点的哪一步用到了前一个的哪一块；每批 {BRIDGE_BACKFILL_BATCH_SIZE} 条，结果待核对，不改变进度和解锁</span></span>}
+                    dismissLabel="收起" onDismiss={() => setBridgeHintOpen(false)}
                     actions={aiOn ? <Button size="sm" variant="outline" disabled={busy} onClick={backfill}>
-                      <Sparkles /> 用 AI 补充知识桥
+                      <Sparkles /> 用 AI 补充 {bridgeGapCount} 条
                     </Button> : <Button size="sm" variant="outline" onClick={() => void openSettings()}>先在设置中开启 AI</Button>}>
                   </Callout>);
               }}</TaskSlot>
@@ -805,37 +946,43 @@ export function App() {
                   onOpenLine={(id) => { setLineFocus(id); setModal("lines"); }}
                   toolbar={
                     <div className="flex min-w-0 items-center gap-2 max-[781px]:w-full">
-                      <Button size="sm" variant="outline" onClick={() => { setLineFocus(""); setModal("lines"); }}>课程全貌</Button>
-                      {/* Making a node a goal's endpoint lives in the node's 目标 section, next to adding it to existing goals. */}
-
-                      {!!course.goals?.length && <label className="relative flex items-center max-[781px]:hidden">
-                        <Target size={14} className="pointer-events-none absolute left-2.5 text-muted-foreground" aria-hidden />
-                        <select className="h-8 max-w-48 cursor-pointer appearance-none !py-0 !pl-8 !pr-7" aria-label="按目标聚焦"
-                          value={mapGoal} onChange={(event) => setMapGoal(event.target.value)}>
-                          <option value="">全部目标</option>
-                          {course.goals.map((goal) => <option key={goal.id} value={goal.id}>{goal.title}</option>)}
-                        </select>
-                        <ChevronDown size={14} className="pointer-events-none absolute right-2 text-muted-foreground" aria-hidden />
-                      </label>}
-                      {course.nodes.some((n) => n.week) && <label className="relative flex items-center max-[781px]:hidden">
-                        <CalendarDays size={14} className="pointer-events-none absolute left-2.5 text-muted-foreground" aria-hidden />
-                        <select
-                          className="h-8 cursor-pointer appearance-none !py-0 !pl-8 !pr-7"
-                          aria-label="按周次直达"
-                          value={directWeek}
-                          onChange={(e) => {
-                            setDirectNodeId("");
-                            setDirectWeek(e.target.value);
-                            setSelected(undefined);
-                          }}
-                        >
-                          <option value="">全部周次</option>
-                          {Array.from(new Set(eligibleNodes.map((n) => n.week).filter(Boolean))).map((w) => (
-                            <option key={w} value={w}>{w}</option>
-                          ))}
-                        </select>
-                        <ChevronDown size={14} className="pointer-events-none absolute right-2 text-muted-foreground" aria-hidden />
-                      </label>}
+                      {/* 课程全貌, goal focus and week jump are used rarely, so they share one 筛选 popover. */}
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button size="sm" variant="outline" aria-pressed={Boolean(mapGoal || directWeek)}>
+                            <SlidersHorizontal /> 筛选{mapGoal || directWeek ? " · 1" : ""}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="flex w-64 flex-col gap-3">
+                          <Button size="sm" variant="outline" className="justify-start" onClick={() => { setLineFocus(""); setModal("lines"); }}><MapIcon /> 课程全貌</Button>
+                          {!!course.goals?.length && <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1.5"><Target size={13} aria-hidden /> 按目标聚焦</span>
+                            <select className="h-8 cursor-pointer" aria-label="按目标聚焦"
+                              value={mapGoal} onChange={(event) => setMapGoal(event.target.value)}>
+                              <option value="">全部目标</option>
+                              {course.goals.map((goal) => <option key={goal.id} value={goal.id}>{goal.title}</option>)}
+                            </select>
+                          </label>}
+                          {course.nodes.some((n) => n.week) && <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1.5"><CalendarDays size={13} aria-hidden /> 按周次直达</span>
+                            <select
+                              className="h-8 cursor-pointer"
+                              aria-label="按周次直达"
+                              value={directWeek}
+                              onChange={(e) => {
+                                setDirectNodeId("");
+                                setDirectWeek(e.target.value);
+                                setSelected(undefined);
+                              }}
+                            >
+                              <option value="">全部周次</option>
+                              {Array.from(new Set(eligibleNodes.map((n) => n.week).filter(Boolean))).map((w) => (
+                                <option key={w} value={w}>{w}</option>
+                              ))}
+                            </select>
+                          </label>}
+                        </PopoverContent>
+                      </Popover>
                       <label className="flex h-8 w-56 min-w-0 items-center max-[1599px]:w-48 gap-2 rounded-md border border-input bg-field px-2.5 text-muted-foreground shadow-[inset_0_1px_2px_rgba(0,0,0,.45)] hover:border-zinc-600 focus-within:border-zinc-500 focus-within:ring-[3px] focus-within:ring-ring/20 max-[1100px]:w-44 max-[781px]:flex-1">
                         <Search size={14} className="shrink-0" aria-hidden />
                         <input
@@ -1169,15 +1316,30 @@ export function App() {
             )}
             {modal === "settings" && settings && (
               <div className="modal-body">
-                <div className="privacy-callout">
-                  <ShieldCheck size={18} />
-                  <p>
-                    AI 默认关闭。开启后，课程材料节选、对话和作答会发送到 Codex
+                {/* Connection first: whether AI can work right now, checked without sending anything to a model. */}
+                <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-sm">
+                  <span aria-hidden className={cn("size-2 shrink-0 rounded-full", !health?.ai.available ? "bg-muted-foreground" : health.ai.login === "ok" ? "bg-st-passed" : health.ai.login === "missing" ? "bg-st-new" : "bg-muted-foreground")} />
+                  <span className="min-w-0 flex-1">
+                    {!health?.ai.available ? (health?.ai.reason || "未找到 Codex，AI 功能不可用")
+                      : health.ai.login === "ok" ? `已连接 Codex${settings.model ? ` · ${settings.model}` : ""}`
+                      : health.ai.login === "missing" ? "Codex 未登录：请打开 Codex 登录后再点“测试连接”" : "已找到 Codex，登录状态未知"}
+                  </span>
+                  <Button size="sm" variant="outline" disabled={aiChecking} onClick={() => void checkAi()}>
+                    {aiChecking ? <LoaderCircle className="animate-spin" /> : null}测试连接
+                  </Button>
+                </div>
+                {/* Shown in full while AI is off (before turning it on); one line afterwards. */}
+                <details key={String(settings.ai_enabled)} open={!settings.ai_enabled} className="privacy-callout group">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 text-[13px]">
+                    <ShieldCheck size={16} /> 数据会发到哪里 <ChevronRight size={14} className="transition-transform group-open:rotate-90" aria-hidden />
+                  </summary>
+                  <p className="mt-2">
+                    开启后，课程材料节选、对话和作答会发送到 Codex
                     提供方处理；检查或目标提取模型选 DeepSeek 时，笔记和材料节选会发送到 DeepSeek。Codex
                     也可能在其用户目录保存会话记录；删除课程不会清除这些记录，它们由
                     Codex 与提供方的设置管理。
                   </p>
-                </div>
+                </details>
                 <label className="toggle-row">
                   <span>
                     <strong>启用 AI 学习辅助</strong>
@@ -1193,13 +1355,24 @@ export function App() {
                 </label>
                 <label className="field-label">
                   学习对话模型 / 提供方
-                  <input
-                    value={settings.model}
-                    onChange={(e) =>
-                      setSettings({ ...settings, model: e.target.value })
-                    }
-                    placeholder="使用本地服务配置"
-                  />
+                  {/* A list catches typos; 自定义 keeps any other model id possible. */}
+                  {customModel || (settings.model && !CHAT_MODELS.some(([id]) => id === settings.model)) ? <span className="flex gap-2">
+                    <input className="flex-1"
+                      value={settings.model}
+                      onChange={(e) =>
+                        setSettings({ ...settings, model: e.target.value })
+                      }
+                      placeholder="填写模型标识，例如 gpt-6.1-terra"
+                      autoFocus={customModel}
+                    />
+                    <Button type="button" size="sm" variant="ghost" onClick={() => { setCustomModel(false); setSettings({ ...settings, model: "" }); }}>从列表选</Button>
+                  </span> : <select value={settings.model} onChange={(e) => {
+                    if (e.target.value === "__custom__") { setCustomModel(true); return; }
+                    setSettings({ ...settings, model: e.target.value });
+                  }}>
+                    {CHAT_MODELS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                    <option value="__custom__">自定义…</option>
+                  </select>}
                 </label>
                 <label className="field-label">
                   推理力度
@@ -1228,7 +1401,7 @@ export function App() {
                     onChange={(event) => setSettings({ ...settings, goal_model: event.target.value })}>
                     {modelOptions(settings.goal_model, [["", "沿用学习对话模型"], ...DEEPSEEK_OPTIONS])}
                   </select>
-                  <span className="text-xs text-muted-foreground">候选目标仍需核对引用并勾选确认。</span>
+                  <span className="text-xs text-muted-foreground">候选目标要你勾选确认后才会加入看板。</span>
                 </label>
                 <label className="field-label">
                   DeepSeek API key
@@ -1397,6 +1570,23 @@ export function App() {
                     )}
                   </article>
                 ))}
+              </div>
+            )}
+            {modal === "trash" && (
+              <div className="modal-body">
+                <p className="muted">删除的课程留在本机回收区。恢复后地图、对话、验收和材料都回到原样。</p>
+                {trash.length ? <div className="version-list">
+                  {trash.map((entry) => <article key={entry.id} className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <strong className="block truncate text-sm">{entry.title}</strong>
+                      <small className="text-xs text-muted-foreground">{entry.deleted_at ? `删除于 ${formatTime(entry.deleted_at)} · ` : ""}{entry.node_count} 个知识点 · {entry.material_count} 份材料</small>
+                    </div>
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => void restoreDeleted(entry.id)}><RotateCcw /> 恢复</Button>
+                  </article>)}
+                </div> : <p className="muted">回收区是空的。</p>}
+                <div className="version-actions">
+                  <Button variant="outline" onClick={() => courseFileInput.current?.click()} disabled={busy}><FileUp size={15} /> 从备份文件导入课程…</Button>
+                </div>
               </div>
             )}
             {modal === "versions" && (

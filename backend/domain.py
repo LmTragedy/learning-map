@@ -12,6 +12,7 @@ from .relations import project_edges
 from .review_scope import project_review
 from .route import learning_route
 from .store import identity, timestamp
+from .teaching_plans.projection import project_plans
 
 
 def find_node(course, node_id):
@@ -57,6 +58,8 @@ def project_course(course):
     course["route"] = learning_route(course["nodes"], doing)
     project_edges(course)
     project_bridges(course)
+    # Plans are read in the raw scope before the review projection trims pieces and records.
+    project_plans(course)
     project_review(course)
     course["material_index"] = index_progress(course)
     project_handoffs(course)

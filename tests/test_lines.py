@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app import create_app
+from backend.lines import project_lines
 
 
 @pytest.fixture
@@ -53,3 +54,23 @@ def test_lines_project_transfers_and_progress_and_keep_user_edits(session):
     removed = client.post(f"{base}/lines/{lines[1]['id']}/delete", json={"revision": unbound["revision"]}).json()
     assert [line["name"] for line in removed["lines"]] == ["改过的名字"]
     assert first["lines"][0]["name"] == "数据怎么存"
+
+
+def test_passed_node_with_unchecked_pieces_counts_as_complete_without_marking_pieces_known(session):
+    _, course = session
+    node = course["nodes"][0]
+    node["status"] = "passed"
+    node["pieces"] = [
+        {"id": "p1", "state": {"result": "unsure"}},
+        {"id": "p2", "state": {"result": "unknown"}},
+    ]
+
+    projected = project_lines(course)
+
+    assert projected["nodes"][0]["progress"] == {
+        "known": 0, "total": 2, "ratio": 0, "done": True,
+    }
+    assert projected["progress"]["pieces"] == {"known": 0, "total": 2, "ratio": 0}
+    assert projected["progress"]["nodes"] == {
+        "known": 1, "done": 1, "total": 4, "ratio": 0.25,
+    }

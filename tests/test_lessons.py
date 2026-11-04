@@ -166,7 +166,7 @@ def test_failed_generation_leaves_course_and_snapshots_unchanged(session, reply)
     assert store.versions(course["id"]) == versions
 
 
-def test_concurrent_progress_change_rejects_stale_lesson(session):
+def test_concurrent_progress_change_is_preserved_when_lesson_inputs_are_unchanged(session):
     client, store, model, course = session
 
     def mark_during_generation():
@@ -175,9 +175,25 @@ def test_concurrent_progress_change_rejects_stale_lesson(session):
 
     model.before_reply = mark_during_generation
     model.replies.append(lesson_draft())
-    assert generate(client, course).status_code == 409
+    response = generate(client, course)
+    assert response.status_code == 200, response.text
     current = store.course(course["id"])
     assert current["nodes"][0]["status"] == "mastered"
+    assert current["nodes"][0]["lessons"][-1]["title"] == lesson_draft()["title"]
+
+
+def test_concurrent_lesson_summary_change_rejects_stale_generation(session):
+    client, store, model, course = session
+
+    def update_lesson_input():
+        with store.edit(course["id"]) as (current, _):
+            current["nodes"][0]["summary"] = "用户更新后的知识总结"
+
+    model.before_reply = update_lesson_input
+    model.replies.append(lesson_draft())
+    assert generate(client, course).status_code == 409
+    current = store.course(course["id"])
+    assert current["nodes"][0]["summary"] == "用户更新后的知识总结"
     assert "lessons" not in current["nodes"][0]
 
 

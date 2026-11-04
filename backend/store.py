@@ -122,6 +122,28 @@ class Store:
             original_course = copy.deepcopy(course) if task_id else None
             if expected is not None and course["revision"] != expected:
                 raise Conflict("课程已在其他操作中改变，请刷新后重试；已有进度未覆盖")
+            if task_id is not None:
+                task_row = connection.execute("SELECT * FROM ai_tasks WHERE id=?", (task_id,)).fetchone()
+                if task_row is None:
+                    raise Conflict("AI 任务不存在，课程未应用")
+                if task_row["course_id"] != course_id:
+                    raise Conflict("AI 任务与课程不匹配，课程未应用")
+                if task_row["state"] == "applied":
+                    raise Conflict("AI 任务已应用，不能重复应用")
+                if task_row["state"] == "superseded":
+                    raise Conflict("AI 任务已停用，不能应用原始结果")
+                if task_row["state"] not in {"received", "processing"}:
+                    raise Conflict("AI 任务当前状态不能应用，课程未改变")
+                task_body = json.loads(task_row["body"])
+                task_context = task_body | dict(
+                    id=task_row["id"], course_id=task_row["course_id"],
+                    kind=task_row["kind"], target=task_row["target"],
+                )
+                from .conversation_sessions import require_current_conversation
+                from .task_context import validate_task_context
+
+                require_current_conversation(task_context, course)
+                validate_task_context(task_context, course)
             yield course, connection
             task = None
             task_body = None
@@ -136,14 +158,9 @@ class Store:
                 if task["state"] not in {"received", "processing"}:
                     raise Conflict("AI 任务当前状态不能应用，课程未改变")
                 task_body = json.loads(task["body"])
-                from .conversation_sessions import require_current_conversation
-
-                require_current_conversation(task_body | dict(kind=task["kind"], target=task["target"]), course)
-                before = task_body["before"]
-                if (before.get("ai_epoch") != course.get("ai_epoch")
-                        or before["materials"] != course["materials"]
-                        or before.get("review_scope") != course.get("review_scope")):
-                    raise Conflict("AI 请求后课程材料、范围或恢复状态已改变，结果已保留但未应用")
+                if any(original_course.get(field) != course.get(field) for field in
+                       ("ai_epoch", "materials", "review_scope")):
+                    raise Conflict("AI 操作尝试更改课程材料、范围或恢复状态，结果未应用")
             self.save_course(course, connection)
             if task is not None:
                 from .ai_result_refs import result_record
@@ -287,6 +304,45 @@ class Store:
             for node in course["nodes"]:
                 node["thread_id"] = None
                 node["review_threads"] = {}
+        return self.course(course_id)
+
+    def insert_course(self, course, reason):
+        """Adds a complete course (an imported backup) and keeps its first state as a protected version."""
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "INSERT INTO courses(id,revision,body) VALUES(?,?,?)",
+                (course["id"], course["revision"], json.dumps(course, ensure_ascii=False)),
+            )
+            self.snapshot(course, reason, connection)
+
+    def deleted_courses(self):
+        """Courses in the local recycle area, newest deletion first."""
+        with self.connect() as connection:
+            rows = connection.execute("""
+                SELECT c.body, (SELECT MAX(v.created_at) FROM versions v
+                                WHERE v.course_id=c.id AND v.reason='删除前完整备份（本地回收区）') AS deleted_at
+                FROM courses c WHERE c.deleted=1 ORDER BY deleted_at DESC""").fetchall()
+        result = []
+        for row in rows:
+            body = json.loads(row["body"])
+            result.append(dict(id=body["id"], title=body["title"], deleted_at=row["deleted_at"],
+                               node_count=len(body.get("nodes", [])), material_count=len(body.get("materials", []))))
+        return result
+
+    def restore_deleted(self, course_id, free_title):
+        """Moves a course back from the recycle area; a name taken meanwhile gets a suffix instead of a clash."""
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT body FROM courses WHERE id=? AND deleted=1", (course_id,)).fetchone()
+            if row is None:
+                raise KeyError("回收区里没有这门课程")
+            course = json.loads(row["body"])
+            title = free_title(course["title"])
+            if title != course["title"]:
+                course["title"] = title
+                connection.execute("UPDATE courses SET body=? WHERE id=?", (json.dumps(course, ensure_ascii=False), course_id))
+            connection.execute("UPDATE courses SET deleted=0 WHERE id=?", (course_id,))
         return self.course(course_id)
 
     def archive(self, course_id, token):

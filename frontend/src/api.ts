@@ -100,6 +100,17 @@ export const api = {
       parser: Record<string, unknown>;
       data_dir: string;
     }>("/health"),
+  /** One .zip with the course record and its files; a plain link, so the browser saves it. */
+  courseExportUrl: (cid: string) => `/api/courses/${cid}/export`,
+  importCourse: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return request<Course>("/courses/import", { method: "POST", body });
+  },
+  deletedCourses: () => request<{ id: string; title: string; deleted_at: string | null; node_count: number; material_count: number }[]>("/trash"),
+  restoreCourse: (cid: string) => request<Course>(`/trash/${cid}/restore`, json("POST", {})),
+  /** Re-runs the Codex install and login checks; nothing is sent to a model. */
+  checkAi: () => request<{ available: boolean; reason?: string; login?: "ok" | "missing" | "unknown" }>("/health/ai-check", json("POST", {})),
   courses: () => request<CourseSummary[]>("/courses"),
   course: (id: string) => request<Course>(`/courses/${id}`),
   addGoal: (cid: string, goal: GoalFields) => request<Course>(`/courses/${cid}/goals`, json("POST", goal)),
@@ -149,6 +160,10 @@ export const api = {
     request<Course>(`/courses/${cid}/relations/backfill`, json("POST", { revision })),
   findLinks: (cid: string, nid: string, revision: number) =>
     request<Course>(`/courses/${cid}/nodes/${encodeURIComponent(nid)}/links`, json("POST", { revision })),
+  prepareTeachingPlan: (cid: string, nid: string, request_id: string) =>
+    request<Course>(`/courses/${cid}/nodes/${encodeURIComponent(nid)}/teaching-plan`, json("POST", { request_id })),
+  deleteTeachingPlan: (cid: string, nid: string, revision: number) =>
+    request<Course>(`/courses/${cid}/nodes/${encodeURIComponent(nid)}/teaching-plan/delete`, json("POST", { revision })),
   backfillRelation: (cid: string, rid: string, revision: number) =>
     request<Course>(`/courses/${cid}/relations/${rid}/backfill`, json("POST", { revision })),
   editBridges: (cid: string, rid: string, revision: number, bridges: { id: string; from_piece: string; to_step: string; how: string; if_missing: string; strength: Strength; check: { question: string; answer: string } }[]) =>
@@ -183,8 +198,8 @@ export const api = {
     request<Course>(`/courses/${id}/materials/${mid}/reparse`, json("POST", { parser })),
   updateMaterial: (id: string, mid: string, value: { name?: string; week?: string }) =>
     request<Course>(`/courses/${id}/materials/${mid}`, json("PATCH", value)),
-  generate: (id: string) =>
-    request<Course>(`/courses/${id}/generate`, json("POST", {})),
+  generate: (id: string, revision: number) =>
+    request<Course>(`/courses/${id}/generate`, json("POST", { revision })),
   indexMaterials: (id: string, indexed: number) =>
     request<{ course: Course; indexed: number; total: number }>(`/courses/${id}/material-index`, json("POST", { indexed })),
   lesson: (cid: string, nid: string, lesson: { kind: "initial" | "supplement"; focus: string; request_id: string }) =>

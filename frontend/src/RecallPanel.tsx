@@ -3,6 +3,7 @@ import { formatTime } from "./formatTime";
 import { AlertCircle, LoaderCircle, Sparkles } from "lucide-react";
 import type { Chat, RecallSummary } from "./types";
 import { Button } from "./components/ui/button";
+import { AiMark } from "./components/ui/ai-mark";
 
 type RecallPanelProps = {
   messages: Chat[];
@@ -112,7 +113,7 @@ function RecallSummaryView({ summary, label }: { summary: RecallSummary; label?:
         </div>
       )}
       <p className="recall-mastery-note">
-        这份整理只用于接续学习思路，不代表你已经掌握这些内容。
+        <AiMark /> 用来接上你的学习思路，不改变掌握状态。
         它已保存为本节点的学习记忆：之后新开的学习对话、出题和小课会带上它和最近几条对话，再次整理会替换它。
       </p>
     </section>

@@ -189,8 +189,9 @@ type InlineQuery={kind:string|string[];target?:string;taskId?:string};
 /** Tasks a TaskCards slot shows, oldest ancestor first; shared with the banner so it never repeats them. */
 function inlineTasks(l:Ledger,{kind,target,taskId}:InlineQuery){
   const kinds=Array.isArray(kind)?kind:[kind];
-  // Archived history is read-only reference material; it lives in the tray, not inline.
-  const relevant=l.tasks.filter(t=>kinds.includes(t.kind)&&(taskId===t.id||l.viewFor(t).group!=='history'&&!l.hiddenCards.includes(cardKey(t)))&&(target===undefined||t.target===target)&&(!taskId||t.id===taskId)&&(t.state!=='applied'||Date.parse(t.updated_at)>=l.openedAt&&l.clock-Date.parse(t.updated_at)<4000));
+  // Archived history and superseded runs need nothing from the learner; they live in the tray, not inline,
+  // so a late-loading record never pushes the page down.
+  const relevant=l.tasks.filter(t=>kinds.includes(t.kind)&&(taskId===t.id||!['history','superseded'].includes(l.viewFor(t).group)&&!l.hiddenCards.includes(cardKey(t)))&&(target===undefined||t.target===target)&&(!taskId||t.id===taskId)&&(t.state!=='applied'||Date.parse(t.updated_at)>=l.openedAt&&l.clock-Date.parse(t.updated_at)<4000));
   const tasks:AiTask[]=[], inserted=new Set<string>();
   const append=(task:AiTask)=>{if(inserted.has(task.id))return;inserted.add(task.id);const parent=relevant.find(t=>t.superseded_by===task.request_id);if(parent)append(parent);tasks.push(task);};
   relevant.forEach(append);

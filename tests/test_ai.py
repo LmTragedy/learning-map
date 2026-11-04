@@ -1,5 +1,6 @@
 import io
 import json
+import queue
 from pathlib import Path
 from unittest.mock import patch
 
@@ -30,6 +31,26 @@ class FakeAppServer:
     def wait(self, timeout: float | None = None) -> int:
         self.returncode = self.returncode or 0
         return self.returncode
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+
+class TimedIncoming:
+    def __init__(self, events: list[tuple[dict[str, object], float]], clock: FakeClock) -> None:
+        self.events = list(events)
+        self.clock = clock
+
+    def get(self, timeout: float | None = None) -> bytes:
+        message, delay = self.events[0]
+        if timeout is not None and delay > timeout:
+            self.clock.now += timeout
+            raise queue.Empty
+        self.events.pop(0)
+        self.clock.now += delay
+        return json.dumps(message).encode("utf-8")
 
 
 class _CapturedInput(io.BytesIO):
@@ -294,6 +315,69 @@ def test_resume_reuses_section_from_later_page_and_organizes_existing_thread(tmp
     assert [message["params"] for message in page_calls] == [{}, {"cursor": "page-2"}]
     moved = next(message for message in sent if message.get("method") == "thread/section/move")
     assert moved["params"] == {"threadId": "thread-existing", "sectionId": "section-course"}
+
+
+def _timed_conversation_events(move_delay: float, generation_delays: tuple[float, float]):
+    return [
+        (_rpc_reply(1, {}), 1),
+        (_rpc_reply(2, {"thread": {"id": "thread-123"}}), 1),
+        (_rpc_reply(4, {}), 1),
+        (_rpc_reply(5, {"data": [], "nextCursor": None}), 1),
+        (_rpc_reply(6, {"section": {"id": "section-course"}}), 1),
+        (_rpc_reply(7, {}), move_delay),
+        (_rpc_reply(3, {}), 0),
+        ({"method": "item/agentMessage/delta", "params": {"delta": "Long answer."}},
+         generation_delays[0]),
+        ({"method": "turn/completed", "params": {"turn": {"id": "turn-long", "status": "completed"}}},
+         generation_delays[1]),
+    ]
+
+
+def _ask_with_timed_events(tmp_path: Path, events):
+    clock = FakeClock()
+    incoming = TimedIncoming(events, clock)
+    server = FakeAppServer([])
+    with (
+        patch("backend.codex_installation.shutil.which", return_value="codex.exe"),
+        patch("backend.ai._start_process", return_value=(server, incoming)),
+        patch("backend.ai.time.monotonic", side_effect=lambda: clock.now),
+    ):
+        result = CodexAI(tmp_path).ask(
+            "Explain this material.",
+            conversation=ConversationIdentity("Course｜Long answer", "Course"),
+        )
+    sent = [json.loads(line) for line in server.stdin.getvalue().splitlines()]
+    return result, sent
+
+
+def test_generation_budget_restarts_after_metadata_and_allows_more_than_180_seconds(tmp_path: Path) -> None:
+    result, sent = _ask_with_timed_events(
+        tmp_path, _timed_conversation_events(move_delay=174, generation_delays=(91, 91))
+    )
+
+    assert result == {"text": "Long answer.", "thread_id": "thread-123"}
+    assert [message["method"] for message in sent if message.get("id") == 3] == ["turn/start"]
+
+
+def test_metadata_still_uses_the_original_180_second_budget(tmp_path: Path) -> None:
+    events = _timed_conversation_events(move_delay=176, generation_delays=(0, 0))
+    # Move is the last metadata request; its response arrives after the initial 180-second deadline.
+    with pytest.raises(AIError, match="超过 180 秒"):
+        _ask_with_timed_events(tmp_path, events)
+
+
+def test_saved_turn_query_keeps_the_original_180_second_budget(tmp_path: Path) -> None:
+    clock = FakeClock()
+    thread = {"thread": {"id": "thread-123", "turns": []}}
+    incoming = TimedIncoming([(_rpc_reply(1, {}), 1), (_rpc_reply(2, thread), 180)], clock)
+    server = FakeAppServer([])
+    with (
+        patch("backend.codex_installation.shutil.which", return_value="codex.exe"),
+        patch("backend.ai._start_process", return_value=(server, incoming)),
+        patch("backend.ai.time.monotonic", side_effect=lambda: clock.now),
+        pytest.raises(AIError, match="超过 180 秒"),
+    ):
+        CodexAI(tmp_path).read_turn("thread-123", "turn-long")
 
 
 def test_organize_thread_only_updates_metadata_without_opening_or_generating(tmp_path: Path) -> None:

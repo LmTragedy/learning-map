@@ -30,7 +30,7 @@ test("maps each persisted backend state to its user-visible task meaning", () =>
     ["prepared", "prepared", "active"], ["sending", "running", "active"], ["running", "running", "active"],
     ["processing", "processing", "active"], ["received", "received", "attention"], ["invalid", "received", "attention"],
     ["conflict", "conflict", "attention"], ["rejected", "failed", "attention"], ["failed", "failed", "attention"],
-    ["superseded", "superseded", "superseded"], ["applied", "unverified", "attention"], ["unknown", "unknown", "attention"], ["future-state", "unknown", "attention"],
+    ["superseded", "superseded", "superseded"], ["applied", "unverified", "applied"], ["unknown", "unknown", "attention"], ["future-state", "unknown", "attention"],
   ];
   for (const [state, semantic, group] of cases) {
     const view = taskView(baseTask({ state }), baseCourse(), { now: Date.parse("2026-11-03T00:01:00Z") });

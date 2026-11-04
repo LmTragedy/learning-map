@@ -103,7 +103,7 @@ def _generation_prompt(course):
 
 
 def _save_generated_lines(store, course, lines_draft, summary, abilities, thread_id, label):
-    with store.edit(course["id"], expected=course["revision"], task_id=current_task_id()) as (current, connection):
+    with store.edit(course["id"], task_id=current_task_id()) as (current, connection):
         store.snapshot(current, "生成主线前自动备份", connection)
         lines = [line for line in current.get("lines", []) if line.get("origin") == "user"]
         protected_ids = anchored_line_ids(current)
@@ -133,13 +133,15 @@ def generate_lines(store, learning, cid, request_id=None):
 
 
 def _generate_lines(store, learning, cid):
-    course = store.course(cid)
+    course = learning.tasks.input_course(cid)
     if strict_scope(course):
         raise LearningError("严格复习期间不能生成课程全局主线；请退出复习后再生成")
     if not course["nodes"]:
         raise LearningError("还没有知识点，先生成地图再分主线")
     label = conversation_label(course, purpose="生成主线")
-    reply = structured(learning.ai(), _generation_prompt(course), LinesDraft, {"conversation": label},
+    prompt = _generation_prompt(course)
+    reply = structured(learning.ai(), prompt, LinesDraft,
+                       {"conversation": label, "fresh_prompt": learning.tasks.replay_prompt(prompt)},
                        system=BASE_SYSTEM)
     draft = reply.payload
     lines_draft, summary, abilities = _validated_draft(course, draft)
@@ -174,7 +176,7 @@ def _validate_retell(review, on_line):
 
 
 def _save_retell(store, course, lid, text, review, thread_id, label):
-    with store.edit(course["id"], expected=course["revision"], task_id=current_task_id()) as (current, _):
+    with store.edit(course["id"], task_id=current_task_id()) as (current, _):
         saved = find_line(current, lid)
         retells = saved.setdefault("retells", [])
         retells.append(dict(id=identity(), at=timestamp(), text=text, review=review))
@@ -194,14 +196,15 @@ def retell(store, learning, cid, lid, text, request_id=None):
 
 
 def _retell(store, learning, cid, lid, text):
-    course = store.course(cid)
+    course = learning.tasks.input_course(cid)
     if strict_scope(course):
         raise LearningError("严格复习期间不能使用课程全局主线串讲；请退出复习后再检查")
     line = find_line(course, lid)
     on_line = set(line["node_ids"])
     label = conversation_label(course, purpose="主线串讲检查")
-    reply = structured(learning.ai(), _retell_prompt(course, line, text), RetellReview,
-                       {"conversation": label})
+    prompt = _retell_prompt(course, line, text)
+    reply = structured(learning.ai(), prompt, RetellReview,
+                       {"conversation": label, "fresh_prompt": learning.tasks.replay_prompt(prompt)})
     review = reply.payload
     _validate_retell(review, on_line)
     _save_retell(store, course, lid, text, review, reply.thread_id, label)

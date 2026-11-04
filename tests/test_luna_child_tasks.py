@@ -24,9 +24,18 @@ class UncertainModel(Model):
         raise RuntimeError("turn outcome is uncertain")
 
 
+def _add_material_page(store, course_id):
+    with store.edit(course_id) as (current, _):
+        current["materials"] = [{
+            "id": "m1", "name": "source.pdf", "kind": "pdf",
+            "pages": [{"text": "source"}],
+        }]
+
+
 def test_child_task_has_own_receipt_and_parent_applies_without_parent_model_call(tmp_path):
     store = Store(tmp_path / "data")
     course = store.create("Luna child test")
+    _add_material_page(store, course["id"])
     store.save_settings(store.settings() | {"ai_enabled": True})
     model = Model()
     settings_seen = []
@@ -44,7 +53,8 @@ def test_child_task_has_own_receipt_and_parent_applies_without_parent_model_call
         parent_attempts += 1
         child_result = learning.tasks.run_child(
             course["id"], "material_page_index",
-            {"prompt": "summarize page", "pages": [{"material_id": "m1", "page": 1, "text": "source"}]},
+            {"prompt": "summarize page", "pages": [{"material_id": "m1", "name": "source.pdf",
+                                                          "page": 1, "text": "source"}]},
             lambda: {"text": learning.ai(model="gpt-6-luna", effort="medium").ask("summarize page")["text"]},
         )
         if parent_attempts == 1:
@@ -90,13 +100,17 @@ def test_child_task_has_own_receipt_and_parent_applies_without_parent_model_call
 def test_changed_parent_scope_rejects_reuse_of_saved_child(tmp_path):
     store = Store(tmp_path / "data")
     course = store.create("Luna changed scope test")
+    _add_material_page(store, course["id"])
     store.save_settings(store.settings() | {"ai_enabled": True})
+
     model = Model()
     learning = Learning(store, lambda _: model)
 
     def parent_action():
         learning.tasks.run_child(
-            course["id"], "material_page_index", {"prompt": "summarize page", "page": "source"},
+            course["id"], "material_page_index",
+            {"prompt": "summarize page", "pages": [{"material_id": "m1", "name": "source.pdf",
+                                                       "page": 1, "text": "source"}]},
             lambda: {"text": learning.ai(model="gpt-6-luna", effort="medium").ask("summarize page")["text"]},
         )
         raise RuntimeError("stop before parent application")
@@ -117,6 +131,71 @@ def test_changed_parent_scope_rejects_reuse_of_saved_child(tmp_path):
     else:
         raise AssertionError("changed parent context must block saved-child reuse")
     assert len(model.calls) == 1
+
+
+def test_legacy_recall_child_reuses_saved_reply_when_json_prompt_key_order_changes(tmp_path):
+    store = Store(tmp_path / "data")
+    course = store.create("Legacy Recall child test")
+    history = [{"id": "chat-1", "role": "user", "content": "我的问题",
+                "created_at": "2026-11-04T00:00:00+00:00"}]
+    with store.edit(course["id"]) as (current, _):
+        current["nodes"].append({
+            "id": "node-1", "title": "概念", "summary": "", "sources": [],
+            "prerequisites": [], "pieces": [], "steps": [], "status": "new",
+            "personal_note": "", "chats": history,
+        })
+    store.save_settings(store.settings() | {"ai_enabled": True})
+
+    class NoResendModel(Model):
+        def ask(self, prompt, **options):
+            if self.calls:
+                raise AssertionError("a saved child reply must not start another provider turn")
+            return super().ask(prompt, **options)
+
+    model = NoResendModel()
+    learning = Learning(store, lambda _: model)
+    frozen_course = store.course(course["id"])
+    from backend.review_scope import scope_key
+
+    scope = scope_key(frozen_course)
+    attempts = 0
+
+    def parent_action():
+        nonlocal attempts
+        attempts += 1
+        encoded = json.dumps(history, ensure_ascii=False, sort_keys=attempts > 1)
+        prompt = "summarize saved history: " + encoded
+
+        def child_action():
+            answer = learning.ai(model="gpt-6-luna", effort="medium").ask(prompt)
+            if attempts == 1:
+                raise RuntimeError("parent failed after child reply was saved")
+            return answer
+
+        return learning.tasks.run_child(
+            course["id"], "recall_summary",
+            {"prompt": prompt, "history": history, "node_title": "概念", "scope": scope},
+            child_action,
+        )
+
+    try:
+        learning.tasks.run(course["id"], "recall", "node-1", {}, parent_action,
+                           request_id="legacy-recall-child-parent-01")
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("the first parent attempt must leave a recoverable child receipt")
+    original_child_row = next(task for task in learning.tasks.list(course["id"]) if task["kind"] == "child")
+    original_child = learning.tasks.get(original_child_row["id"])
+    assert original_child["raw_reply"]["text"] == "child answer"
+
+    result = learning.tasks.run(course["id"], "recall", "node-1", {}, parent_action,
+                                request_id="legacy-recall-child-parent-01")
+    replayed_child = learning.tasks.get(original_child["id"])
+    assert result["text"] == "child answer"
+    assert replayed_child["id"] == original_child["id"]
+    assert replayed_child["request_id"] == original_child["request_id"]
+    assert replayed_child["state"] == "applied"
 
 
 class IndexModel:
@@ -213,21 +292,33 @@ def test_restore_supersedes_child_parent_and_blocks_recovery(tmp_path, monkeypat
 
 
 def test_unknown_child_is_not_resent_when_parent_is_replayed(tmp_path):
-    store = Store(tmp_path / "data")
-    course = store.create("Luna uncertain child test")
-    store.save_settings(store.settings() | {"ai_enabled": True})
+    from backend.review_scope import scope_key
+
     model = UncertainModel()
-    learning = Learning(store, lambda _: model)
+    app = create_app(tmp_path / "data", lambda _: model)
+    client = TestClient(app, headers={"X-Learning-Map": "1"})
+    course = client.post("/api/sample").json()
+    client.post("/api/settings", json={"ai_enabled": True})
+    store = app.state.store
+    learning = app.state.learning
+    node_id = course["nodes"][0]["id"]
+    history = [{"id": "chat-1", "role": "user", "content": "已保存的问题",
+                "created_at": "2026-11-04T00:00:00+00:00"}]
+    with store.edit(course["id"]) as (current, _):
+        current["nodes"][0]["chats"] = history
+    prompt = "summarize saved history"
 
     def parent_action():
         return learning.tasks.run_child(
-            course["id"], "recall_summary", {"prompt": "summarize saved history"},
-            lambda: {"text": learning.ai(model="gpt-6-luna", effort="medium").ask("summarize saved history")["text"]},
+            course["id"], "recall_summary",
+            {"prompt": prompt, "node_title": course["nodes"][0]["title"],
+             "history": history, "scope": scope_key(store.course(course["id"]))},
+            lambda: {"text": learning.ai(model="gpt-6-luna", effort="medium").ask(prompt)["text"]},
         )
 
     for _ in range(2):
         try:
-            learning.tasks.run(course["id"], "recall", "node", {"history": ["saved"]},
+            learning.tasks.run(course["id"], "recall", node_id, {},
                                parent_action, request_id="parent-uncertain-request-0001")
         except (RuntimeError, Conflict):
             pass
@@ -241,22 +332,37 @@ def test_unknown_child_is_not_resent_when_parent_is_replayed(tmp_path):
 
 def test_child_reply_that_fails_validation_is_not_offered_for_recovery(tmp_path):
     from backend.learning import LearningError
+    from backend.review_scope import scope_key
 
-    store = Store(tmp_path / "data")
-    course = store.create("Luna invalid child")
-    store.save_settings(store.settings() | {"ai_enabled": True})
     model = Model()
-    learning = Learning(store, lambda settings: model)
+    app = create_app(tmp_path / "data", lambda settings: model)
+    client = TestClient(app, headers={"X-Learning-Map": "1"})
+    course = client.post("/api/sample").json()
+    client.post("/api/settings", json={"ai_enabled": True})
+    store = app.state.store
+    learning = app.state.learning
+    node_id = course["nodes"][0]["id"]
+    history = [{"id": "chat-1", "role": "user", "content": "已保存的问题",
+                "created_at": "2026-11-04T00:00:00+00:00"}]
+    with store.edit(course["id"]) as (current, _):
+        current["nodes"][0]["chats"] = history
+    prompt = "summarize saved history"
 
     def child_action():
-        learning.ai(model="gpt-6-luna", effort="medium").ask("summarize")
+        learning.ai(model="gpt-6-luna", effort="medium").ask(prompt)
         raise LearningError("evidence check failed")
 
     def parent_action():
-        return learning.tasks.run_child(course["id"], "recall_summary", {"prompt": "summarize"}, child_action)
+        return learning.tasks.run_child(
+            course["id"], "recall_summary",
+            {"prompt": prompt, "node_title": course["nodes"][0]["title"],
+             "history": history, "scope": scope_key(store.course(course["id"]))},
+            child_action,
+        )
 
     try:
-        learning.tasks.run(course["id"], "recall", "n1", {}, parent_action, request_id="invalid-child-request-01")
+        learning.tasks.run(course["id"], "recall", node_id, {}, parent_action,
+                           request_id="invalid-child-request-01")
     except LearningError:
         pass
     else:

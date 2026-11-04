@@ -9,6 +9,19 @@ test("splits explanation, acceptance and the extraction note", () => {
   assert.match(parts.note, /^本地图仅依据/);
 });
 
+test("moves author-facing caveats out of the learner text", () => {
+  const parts = splitSummary("彩票是结果集合上的概率分布；[0.05:pass,0.95:fail]描述可能结果及概率，是课件假设例子。验收：识别结果、检查概率非负且总和为1，并解释彩票与确定结果的差别。提取文本中的集合公式排版有损失。");
+  assert.equal(parts.explain, "彩票是结果集合上的概率分布；[0.05:pass,0.95:fail]描述可能结果及概率。");
+  assert.equal(parts.check, "识别结果、检查概率非负且总和为1，并解释彩票与确定结果的差别。");
+  assert.deepEqual(parts.caveats, ["是课件假设例子", "提取文本中的集合公式排版有损失"]);
+});
+
+test("ordinary sentences that mention extraction words are kept", () => {
+  const parts = splitSummary("从三个人的偏好中提取共同结构。");
+  assert.equal(parts.explain, "从三个人的偏好中提取共同结构。");
+  assert.deepEqual(parts.caveats, []);
+});
+
 test("plain summaries stay whole", () => {
   const parts = splitSummary("按材料概述初始策略与更新循环。");
   assert.equal(parts.explain, "按材料概述初始策略与更新循环。");

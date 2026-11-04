@@ -64,6 +64,7 @@ export function ModalIcon({ modal: m }: { modal: Modal }) {
     lines: Waypoints,
     "course-notes": NotebookPen,
     problems: ClipboardList,
+    trash: Trash2,
   };
   const Icon = icons[m || ""] || CircleHelp;
   return <Icon size={18} />;

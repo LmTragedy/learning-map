@@ -50,6 +50,26 @@ test("successful request clears its receipt so the same input starts a new actio
   assert.notEqual(next.receipt.id, first.receipt.id);
 });
 
+test("updating a changed map starts a new request while the original failed receipt stays recoverable", async () => {
+  reset();
+  const originalFetch = globalThis.fetch;
+  const ids = [];
+  try {
+    globalThis.fetch = async (_url, init) => {
+      ids.push(new globalThis.Headers(init.headers).get("X-AI-Request-ID"));
+      return new globalThis.Response(JSON.stringify({ detail: "course changed" }), { status: 409 });
+    };
+    await assert.rejects(api.generate("c1", 10), /course changed/);
+    await assert.rejects(api.generate("c1", 10), /course changed/);
+    await assert.rejects(api.generate("c1", 11), /course changed/);
+    assert.equal(ids[0], ids[1]);
+    assert.notEqual(ids[0], ids[2]);
+    assert.deepEqual(aiReceiptHints("c1").map(({ id }) => id), [ids[0], ids[2]]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("attempt identity includes text and file content while never storing either", async () => {
   reset();
   const form = new globalThis.FormData();
@@ -300,7 +320,7 @@ test("storage failure blocks a generation request before fetch", async () => {
   try {
     globalThis.localStorage.setItem = () => { throw new Error("quota"); };
     globalThis.fetch = async () => { sent = true; return new globalThis.Response("{}", { status: 200 }); };
-    await assert.rejects(api.generate("c1"), /请求尚未发送/);
+    await assert.rejects(api.generate("c1", 1), /请求尚未发送/);
     assert.equal(sent, false);
   } finally {
     globalThis.localStorage.setItem = originalSetItem;
@@ -316,7 +336,7 @@ test("missing cross-tab locks blocks a generation request before fetch", async (
   try {
     Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
     globalThis.fetch = async () => { sent = true; return new globalThis.Response("{}", { status: 200 }); };
-    await assert.rejects(api.generate("c1"), /跨标签页请求锁.*请求尚未发送/);
+    await assert.rejects(api.generate("c1", 1), /跨标签页请求锁.*请求尚未发送/);
     assert.equal(sent, false);
     assert.equal(values.has(receiptKey), false);
   } finally {

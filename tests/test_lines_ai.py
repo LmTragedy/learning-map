@@ -98,7 +98,7 @@ def test_invalid_ai_line_results_are_rejected_atomically(session, mutate):
     assert store.course(course["id"]) == before
 
 
-def test_generation_revision_conflict_keeps_newer_user_state_and_lines(session):
+def test_generation_keeps_unrelated_newer_user_state_and_lines(session):
     client, store, model, course = session
     base = f"/api/courses/{course['id']}"
     ids = [node["id"] for node in course["nodes"]]
@@ -111,10 +111,30 @@ def test_generation_revision_conflict_keeps_newer_user_state_and_lines(session):
 
     model.before_reply = concurrent_edit
     response = client.post(base + "/lines/generate")
-    assert response.status_code == 409
+    assert response.status_code == 200, response.text
     saved = store.course(course["id"])
     assert saved["nodes"][0]["personal_note"] == "并发保存的新笔记"
-    assert [line["id"] for line in saved["lines"]] == [user_line["id"]]
+    assert user_line["id"] in [line["id"] for line in saved["lines"]]
+    assert saved["overview"]["summary"] == "课程概述"
+
+
+def test_generation_rejects_changed_protected_user_line(session):
+    client, store, model, course = session
+    base = f"/api/courses/{course['id']}"
+    ids = [node["id"] for node in course["nodes"]]
+    line = client.post(base + "/lines", json={"name": "保留此线", "node_ids": ids[:2]}).json()["lines"][0]
+    model.replies.append(valid_draft(ids))
+
+    def concurrent_edit():
+        with store.edit(course["id"]) as (current, _):
+            next(item for item in current["lines"] if item["id"] == line["id"])["name"] = "用户改过的线"
+
+    model.before_reply = concurrent_edit
+    response = client.post(base + "/lines/generate")
+    assert response.status_code == 409
+    saved = store.course(course["id"])
+    assert next(item for item in saved["lines"] if item["id"] == line["id"])["name"] == "用户改过的线"
+    assert not any(item["origin"] == "ai" for item in saved["lines"])
     assert "overview" not in saved
 
 
@@ -141,7 +161,8 @@ def test_strict_review_hides_course_lines_and_rejects_line_ai_without_calling_mo
     assert projected["progress"]["done"] == 1
     assert projected["progress"]["total"] == 1
     assert projected["progress"]["pieces"] == {"known": 1, "total": 1, "ratio": 1}
-    assert projected["nodes"][0]["progress"] == {"known": 1, "total": 1, "ratio": 1, "done": True}
+    assert projected["nodes"][0]["status"] == "new"
+    assert projected["nodes"][0]["progress"] == {"known": 1, "total": 1, "ratio": 1, "done": False}
     assert "overview" not in projected
     before_prompts = list(model.prompts)
     assert client.post(base + "/lines/generate").status_code == 400

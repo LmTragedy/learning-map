@@ -1,6 +1,6 @@
 import json
 
-from .ai_tasks import complete_task_value
+from .ai_tasks import complete_task_value, current_task_id
 from .conversation_labels import conversation_label
 from .domain import find_node, project_course
 from .goals import GoalAccept, GoalDraft, GoalInput, GoalUpdate, goal_fields, new_goal
@@ -12,7 +12,6 @@ from .learning import (
     material_index,
     structured,
 )
-from .store import Conflict
 
 
 def validate_links(course, node_ids, subtasks=()):
@@ -39,8 +38,7 @@ def extract_goals(store, learning, cid):
     return learning.tasks.run(cid, "goals", "course", {}, lambda: _extract_goals(store, learning, cid))
 
 
-def _extract_goals(store, learning, cid):
-    course = store.course(cid)
+def _goal_candidate_prompt(course):
     # With the full index, its verbatim key lines are enough to cite; otherwise digests for the
     # whole course plus full text for the first cited page of each node.
     first_pages = [node["sources"][0] for node in course["nodes"] if node["sources"]]
@@ -62,19 +60,27 @@ def _extract_goals(store, learning, cid):
         "不输出奖励或完成状态。材料没有可提取目标时返回空数组。用户会核对并确认后加入看板。"
         "提取属于AI建议，不能保证语义正确。\n已有知识点：" + encoded_nodes + "\n材料：" + context
     )
-    draft = structured(learning.ai(model=store.settings()["goal_model"].strip() or None), prompt, GoalDraft,
-                       {"conversation": conversation_label(course, purpose="课程目标提取")},
-                       system=BASE_SYSTEM)
-    for candidate in draft.payload["goals"]:
-        validate_candidate(course, candidate)
-    with store.connect() as connection:
-        latest = store.course(cid, connection)
-        if latest["revision"] != course["revision"]:
-            raise Conflict("提取期间课程已变化，请重新提取；看板未改变")
+    return prompt
+
+
+def _extract_goals(store, learning, cid):
+    course = learning.tasks.input_course(cid)
+    prompt = _goal_candidate_prompt(course)
+    draft = structured(
+        learning.ai(model=store.settings()["goal_model"].strip() or None), prompt, GoalDraft,
+        {"conversation": conversation_label(course, purpose="课程目标提取"),
+         "fresh_prompt": learning.tasks.replay_prompt(prompt)},
+        system=BASE_SYSTEM,
+    )
     with store.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
-        token = store.preview("goals", draft.payload, course, connection=connection)
-        return complete_task_value(dict(token=token, revision=course["revision"], **draft.payload), connection)
+        latest = store.course(cid, connection)
+        task = learning.tasks.get(current_task_id(), connection)
+        learning.tasks.validate_result_context(task, latest, connection)
+        for candidate in draft.payload["goals"]:
+            validate_candidate(latest, candidate)
+        token = store.preview("goals", draft.payload, latest, connection=connection)
+        return complete_task_value(dict(token=token, revision=latest["revision"], **draft.payload), connection)
 
 
 def register_goal_routes(app, store, learning):

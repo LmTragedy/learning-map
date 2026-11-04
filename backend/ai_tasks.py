@@ -5,6 +5,7 @@ import json
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
+from copy import deepcopy
 from dataclasses import dataclass, replace
 
 from .conversation_send_gate import SendGateBusy
@@ -114,12 +115,16 @@ class ReceiptAI:
         fresh_prompt = options.pop("fresh_prompt", None) or prompt
         task = self.manager.get(self.task_id)
         if task.get("raw_reply"):
-            if (task.get("request", {}).get("prompt") not in (prompt, fresh_prompt)
-                    or task.get("request", {}).get("schema") != options.get("schema")):
-                raise Conflict("恢复输入与原请求不一致；原始结果已保留")
+            request = task.get("request")
+            if not request or "prompt" not in request or "schema" not in request:
+                raise Conflict("原始收据缺少冻结的请求契约，不能应用")
+            # Context validation uses the frozen task input; replay consumes its saved request, not a rebuilt prompt.
+            if request["schema"] != options.get("schema"):
+                raise Conflict("恢复结果结构与原请求不一致；原始结果已保留")
             return task["raw_reply"]
         if task["state"] != "prepared":
             raise Conflict(f"任务 {self.task_id} 状态待确认；请查询原任务，未重新生成")
+        self.manager.validate_result_context(task, self.manager.store.course(task["course_id"]))
         session = self.manager.conversations.claim(task, self.provider, options.get("thread_id"))
         if session["thread_id"]:
             options["thread_id"] = session["thread_id"]
@@ -295,6 +300,7 @@ class TaskManager:
             raise Conflict("Luna 子任务必须由活动中的父任务显式调度")
         parent_task_id = parent[1]
         invocation = self._child_invocation(course_id, role, inputs, parent_task_id)
+        invocation = self._reuse_legacy_child(invocation)
         task, fresh = self._reserve(invocation)
         if task.get("parent_task_id") != parent_task_id or task.get("role") != role:
             raise Conflict("子任务身份与冻结输入不一致")
@@ -313,6 +319,34 @@ class TaskManager:
         return _Invocation("child", digest[:32], frozen_inputs, self.store.course(course_id),
                            f"child-{digest}", parent_task_id=parent_task_id, role=role,
                            model=CHILD_MODEL, effort=CHILD_EFFORT)
+
+    def _reuse_legacy_child(self, invocation):
+        if invocation.role not in {"material_page_index", "recall_summary"}:
+            return invocation
+        if self.find_request(invocation.course["id"], invocation.request_key):
+            return invocation
+
+        def without_prompt(inputs):
+            if not isinstance(inputs, dict) or not isinstance(inputs.get("prompt"), str):
+                return None
+            return {key: value for key, value in inputs.items() if key != "prompt"}
+
+        expected = without_prompt(invocation.inputs)
+        if expected is None:
+            return invocation
+        matches = [child for child in self._child_rows(invocation.parent_task_id)
+                   if child["kind"] == "child" and child.get("role") == invocation.role
+                   and child.get("model") == invocation.model and child.get("effort") == invocation.effort
+                   and child.get("parent_task_id") == invocation.parent_task_id
+                   and without_prompt(child.get("inputs")) == expected
+                   and isinstance(child.get("request_id"), str)]
+        if len(matches) > 1:
+            raise Conflict("存在多个可能对应的旧子任务收据，已保留原始记录供核对")
+        if not matches:
+            return invocation
+        previous = matches[0]
+        return replace(invocation, target=previous["target"], inputs=previous["inputs"],
+                       request_key=previous["request_id"])
 
     def _execute_child(self, task, parent_task_id, action):
         child_context = (self, task["id"])
@@ -356,8 +390,9 @@ class TaskManager:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute("SELECT id FROM ai_tasks WHERE course_id=? AND request_key=?",
                                      (course_id, invocation.request_key)).fetchone()
+            superseded_ids = []
             if not row and not _new_action.get():
-                row = self._pending(invocation, connection)
+                superseded_ids = self._pending(invocation, connection)
             if row:
                 task = self.get(row["id"], connection)
                 if ((task["kind"], task["target"]) != (invocation.kind, invocation.target)
@@ -366,34 +401,80 @@ class TaskManager:
                 fresh = task["state"] == "rejected" and not task.get("request")
                 if fresh:
                     self.update(task["id"], state="prepared", connection=connection,
-                                before=invocation.course, context_hash=_hash(invocation.course), error=None)
+                                before=invocation.course, input_context=self._input_context(invocation),
+                                contract_version=1, context_hash=_hash(invocation.course), error=None)
                     task = self.get(task["id"], connection)
             else:
                 task = self._create(invocation, connection)
                 fresh = True
+                if superseded_ids:
+                    for superseded_id in superseded_ids:
+                        self.update(superseded_id, state="superseded", connection=connection,
+                                    superseded_by=task["id"], error="任务输入已变化；原始收据保留，已开始新的操作")
+                    self.update(task["id"], connection=connection, regenerated_from=superseded_ids[0])
+                    task = self.get(task["id"], connection)
         return task, fresh
 
     def _pending(self, invocation, connection):
+        """Block matching live work; return stale receipts to supersede atomically."""
         pending_rows = connection.execute(
             "SELECT id FROM ai_tasks WHERE course_id=? AND kind=? AND target=? "
             "AND state NOT IN ('applied','superseded','rejected') ORDER BY rowid DESC",
             (invocation.course["id"], invocation.kind, invocation.target),
         ).fetchall()
+        superseded_ids = []
         for pending in pending_rows:
             previous = self.get(pending[0], connection)
-            if (invocation.kind == "note_review"
-                    and previous["inputs"].get("note_id", "") != invocation.inputs.get("note_id", "")):
+            if not self._matches_pending_identity(previous, invocation):
                 continue
-            current = dict(before=invocation.course, kind=invocation.kind,
-                           target=invocation.target, inputs=invocation.inputs)
-            if logical_identity(previous) != logical_identity(current):
+            if previous.get("contract_version", 1) != 1:
+                raise Conflict(f"任务 {pending[0]} 的上下文契约版本不受支持，原始结果已保留")
+            if self._receipt_context_is_stale(previous, invocation, connection):
+                superseded_ids.append(previous["id"])
                 continue
             settings = self.store.settings(connection)
             model = task_model(settings, invocation.kind)
             if previous.get("model") is not None and previous["model"] != model:
                 continue
             raise Conflict(f"任务 {pending[0]} 尚待处理，请先恢复原请求或明确选择重新生成；新动作未冒用旧身份")
-        return None
+        return superseded_ids
+
+    @staticmethod
+    def _matches_pending_identity(previous, invocation):
+        if (invocation.kind == "note_review"
+                and previous["inputs"].get("note_id", "") != invocation.inputs.get("note_id", "")):
+            return False
+        current = dict(before=invocation.course, kind=invocation.kind,
+                       target=invocation.target, inputs=invocation.inputs)
+        return logical_identity(previous) == logical_identity(current)
+
+    def _receipt_context_is_stale(self, previous, invocation, connection):
+        if (not previous.get("raw_reply")
+                or previous["state"] not in {"conflict", "invalid", "received"}):
+            return False
+        if previous.get("contract_version", 1) != 1:
+            return False
+        try:
+            self.validate_result_context(previous, invocation.course, connection)
+        except Conflict:
+            return True
+        return False
+
+    def input_course(self, course_id):
+        active = _active.get()
+        if active and active[0] is self:
+            task = self.get(active[1])
+            if task["course_id"] == course_id:
+                return deepcopy(task["before"])
+        return self.store.course(course_id)
+
+    def replay_prompt(self, fallback):
+        active = _active.get()
+        if active and active[0] is self:
+            task = self.get(active[1])
+            if task.get("raw_reply"):
+                return task.get("request", {}).get("prompt") or fallback
+        return fallback
 
     @staticmethod
     def _same_inputs(kind, before, current):
@@ -405,7 +486,8 @@ class TaskManager:
 
     def _create(self, invocation, connection):
         task_id = identity()
-        body = dict(inputs=invocation.inputs, before=invocation.course, context_hash=_hash(invocation.course),
+        body = dict(inputs=invocation.inputs, input_context=self._input_context(invocation),
+                    contract_version=1, before=invocation.course, context_hash=_hash(invocation.course),
                     created_at=timestamp(), request_id=invocation.request_key,
                     regenerated_from=_regeneration_parent.get(), parent_task_id=invocation.parent_task_id,
                     role=invocation.role, model=invocation.model, effort=invocation.effort)
@@ -413,6 +495,23 @@ class TaskManager:
                            (task_id, invocation.course["id"], invocation.request_key, invocation.kind,
                             invocation.target, "prepared", _encoded(body), timestamp()))
         return self.get(task_id, connection)
+
+    @staticmethod
+    def _input_context(invocation):
+        if invocation.kind == "material_index":
+            from .material_indexing import _next_batch
+
+            return {"pages": _next_batch(invocation.course)}
+        if invocation.kind == "bridge":
+            from .bridge_backfill import BATCH, pending_relations
+
+            batch = pending_relations(invocation.course)
+            if invocation.target != "batch":
+                batch = [edge for edge in batch if edge["id"] == invocation.target]
+            return {"relation_ids": [edge["id"] for edge in batch[:BATCH]]}
+        if invocation.kind == "bridge_history":
+            return {"relation_ids": invocation.inputs.get("relation_ids", [])}
+        return {}
 
     def _prepare_replay(self, task, course):
         if task["state"] == "superseded":
@@ -428,6 +527,9 @@ class TaskManager:
 
     def validate_result_context(self, task, course, connection=None):
         require_current_conversation(task, course)
+        from .task_context import validate_task_context
+
+        validate_task_context(task, course)
         if task["kind"] == "note_review":
             from .note_review import review_identity
 
@@ -437,8 +539,6 @@ class TaskManager:
             model = self.store.settings(connection)["note_review_model"].strip()
             if original != current or (task.get("model") and task["model"] != model):
                 raise Conflict("笔记检查的来源、范围、模型或学习上下文已变化，原始结果已保留")
-        elif _hash(course) != task["context_hash"]:
-            raise Conflict("课程上下文已改变，原始结果已保留；未重新生成或应用")
 
     def saved_result(self, task):
         if task["kind"] == "note_review":
@@ -553,7 +653,8 @@ class TaskManager:
         from .ai_result_refs import presented_result
 
         published = {key: value for key, value in task.items() if key not in
-                     {"before", "request", "unsent_request", "raw_reply", "historical_raw", "inputs", "context_hash", "result", "result_object"}}
+                     {"before", "request", "unsent_request", "raw_reply", "historical_raw", "inputs",
+                      "input_context", "context_hash", "result", "result_object"}}
         projection = presented_result(task, self.store.course(task["course_id"]))
         if task["kind"] == "note_review" and projection.get("result_ref"):
             try:
