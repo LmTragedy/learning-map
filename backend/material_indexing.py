@@ -89,15 +89,18 @@ def build_index(store, learning, cid, indexed, request_id=None):
 
 def _read_index(learning, prompt, label):
     reply = structured(learning.ai(model="gpt-6-luna", effort="medium"),
-                       prompt, IndexDraft, {"conversation": label}, system=BASE_SYSTEM)
+                       prompt, IndexDraft,
+                       {"conversation": label, "fresh_prompt": learning.tasks.replay_prompt(prompt)},
+                       system=BASE_SYSTEM)
     return dict(payload=reply.payload, thread_id=reply.thread_id)
 
 
 def _build_index(store, learning, cid, indexed):
-    course = store.course(cid)
+    course = learning.tasks.input_course(cid)
     if index_progress(course)["indexed"] != indexed:
         raise Conflict("索引进度已变化，请刷新后继续")
-    batch = _next_batch(course)
+    task = learning.tasks.get(current_task_id())
+    batch = task.get("input_context", {}).get("pages") or _next_batch(course)
     if not batch:
         raise LearningError("所有材料页都已建立索引")
     label = conversation_label(course, purpose="材料索引")

@@ -8,7 +8,6 @@ import { MaterialViewer } from "./MaterialViewer";
 import { SourceTabs } from "./SourceTabs";
 import type { SourceTab } from "./SourceTabs";
 import { useSplitRatio } from "./useSplitRatio";
-import { TaskEntry } from '../aiTasks';
 import { SelectionToNote } from "../SelectionToNote";
 import type { MaterialView, SourceKind } from "./useWorkbenchState";
 import "./workbench.css";
@@ -109,7 +108,6 @@ export function Workbench({ course, node, material, study, active, noteOpen, ren
         {studyShown === "lesson" && study?.downloadUrl && <Button asChild size="icon-sm" variant="ghost">
           <a href={`${study.downloadUrl}?download=true`} download title="下载 HTML 小课" aria-label="下载 HTML 小课"><Download /></a>
         </Button>}
-        <TaskEntry location="workbench" />
         <Button size="sm" variant="ghost" aria-pressed={noteOpen} onClick={onToggleNote}><NotebookPen /> 笔记</Button>
       </div>
     </header>

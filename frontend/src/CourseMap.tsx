@@ -185,7 +185,7 @@ function RouteList({ course, selected, directEntryId, directWeek, onSelect, revi
     {groups.map((group) => {
       const nodes = group.node_ids.map((id) => byId.get(id)).filter((node): node is LearningNode => Boolean(node) && (!directWeek || node!.week === directWeek));
       if (!nodes.length) return null;
-      const done = nodes.filter((node) => node.progress ? node.progress.done : node.status === "passed" || node.status === "mastered").length;
+      const done = nodes.filter((node) => node.status === "passed" || node.status === "mastered").length;
       const open = !(collapsed[group.id] ?? false);
       const hidden = nodes.filter((node) => !available(node)).length;
       return <section key={group.id}>
@@ -218,17 +218,19 @@ function RouteRow({ node, selected, transfer, hasNote, problems, dimmed, onSelec
   node: LearningNode; selected: boolean; transfer: boolean; hasNote: boolean; problems?: { total: number; passed: number }; dimmed: boolean; onSelect: (node: LearningNode) => void;
 }) {
   const StatusIcon = statusIcon[node.status];
+  const finished = node.status === "passed" || node.status === "mastered";
   return <li data-node-id={node.id}>
+    {/* Note/lesson marks show on hover or for the selected row; finished rows step back so open work stands out. */}
     <button onClick={() => onSelect(node)} aria-current={selected ? "step" : undefined}
-      className={cn("flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-accent/40",
-        selected && "bg-accent text-foreground", dimmed && "opacity-35")}>
+      className={cn("route-row group/row flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-accent/40",
+        selected && "is-selected bg-accent text-foreground", dimmed && "opacity-35", finished && !selected && !dimmed && "text-muted-foreground")}>
       <StatusIcon size={14} className={cn("shrink-0", stateText[node.status])} aria-hidden />
       <span className="min-w-0 flex-1 truncate">{node.title}</span>
       {transfer && <Badge variant="outline" className="px-1.5">换乘</Badge>}
       {problems && <span className={cn("shrink-0 rounded px-1 text-[11px] tabular-nums", problems.passed === problems.total ? "text-st-passed" : "text-muted-foreground")}
         title={`关联真题 ${problems.total} 道，通过 ${problems.passed} 道`}>真题 {problems.passed}/{problems.total}</span>}
-      {hasNote && <NotebookPen size={12} className="shrink-0 text-muted-foreground" aria-label="有笔记" />}
-      {!!node.lessons?.length && <BookOpen size={12} className="shrink-0 text-muted-foreground" aria-label="有小课" />}
+      {hasNote && <NotebookPen size={12} className="row-mark shrink-0 text-muted-foreground" aria-label="有笔记" />}
+      {!!node.lessons?.length && <BookOpen size={12} className="row-mark shrink-0 text-muted-foreground" aria-label="有小课" />}
       <span className="sr-only">{statusLabel[node.status]}</span>
     </button>
   </li>;

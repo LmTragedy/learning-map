@@ -121,6 +121,16 @@
     .shell-side .course-item { align-items: center; }
   }
   @media not all and (min-width: 781px) and (max-width: 1279px) { .rail-tip { display: none; } }
+  /* The same icon rail on demand at any desktop width (sidebar's 收起 button). */
+  @media (min-width: 781px) {
+    .shell-side.rail-collapsed { width: 64px !important; padding-left: 8px !important; padding-right: 8px !important; }
+    .shell-side.rail-collapsed .rail-hide { display: none !important; }
+    .shell-side.rail-collapsed .rail-center { justify-content: center !important; padding-left: 0 !important; padding-right: 0 !important; }
+    .shell-side.rail-collapsed .course-item { align-items: center; }
+    html[data-rail="collapsed"] .rail-tip { display: block; }
+  }
+  /* Course name in the header: larger than other page titles so the page has one clear anchor. */
+  .course-title { font-size: 26px; font-weight: 700; line-height: 1.25; letter-spacing: -0.01em; }
 
   /* Shared token names (--border) are declared in :root above too, unlayered; keep them equal. */
   .shell-side .course-item { border: 0; box-shadow: none; }

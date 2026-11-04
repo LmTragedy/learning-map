@@ -101,3 +101,31 @@ def test_automatic_backups_are_pruned_but_manual_saves_stay(app_session):
     reasons = [v["reason"] for v in store.versions(course["id"])]
     assert reasons.count("生成地图前自动备份") == AUTOMATIC_VERSIONS_KEPT
     assert "手动保存" in reasons and "示例课程初始状态" in reasons
+
+
+def _long_pdf(pages):
+    from reportlab.pdfgen import canvas as pdf_canvas
+    buffer = io.BytesIO()
+    output = pdf_canvas.Canvas(buffer)
+    for number in range(1, pages + 1):
+        output.drawString(20, 20, f"page {number}")
+        output.showPage()
+    output.save()
+    return buffer.getvalue()
+
+
+def test_pdf_over_page_limit_is_split_into_parts_and_reimport_is_a_duplicate(app_session):
+    client, store, _, course = app_session
+    url = f"/api/courses/{course['id']}/materials"
+    data = _long_pdf(450)
+    assert client.post(url, files={"files": ("book.pdf", io.BytesIO(data), "application/pdf")}).status_code == 200
+    saved = [m for m in store.course(course["id"])["materials"] if m["name"].startswith("book.pdf")]
+    assert [m["name"] for m in saved] == ["book.pdf（第 1–200 页）", "book.pdf（第 201–400 页）", "book.pdf（第 401–450 页）"]
+    assert [len(m["pages"]) for m in saved] == [200, 200, 50]
+    assert "page 201" in saved[1]["pages"][0]["text"]
+    on_disk = {p.name for p in (store.root / "courses" / course["id"] / "materials").iterdir()}
+    assert on_disk == {m["id"] for m in store.course(course["id"])["materials"]}
+    # The same book again adds nothing and leaves no copies behind.
+    assert client.post(url, files={"files": ("book.pdf", io.BytesIO(data), "application/pdf")}).status_code == 200
+    assert len([m for m in store.course(course["id"])["materials"] if m["name"].startswith("book.pdf")]) == 3
+    assert {p.name for p in (store.root / "courses" / course["id"] / "materials").iterdir()} == on_disk

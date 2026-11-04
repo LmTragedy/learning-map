@@ -19,9 +19,12 @@ from .codex_installation import codex_executable
 from .conversation_identity import ConversationIdentity
 
 _TIMEOUT_SECONDS = 180
+_GENERATION_TIMEOUT_SECONDS = 1_200
 _MAX_STDOUT_LINE = 2 * 1024 * 1024
 _MAX_OUTPUT_CHARS = 1_000_000
 _MAX_STDERR_BYTES = 8_192
+# Login state is per machine, not per settings object; one cached answer serves every CodexAI.
+_LOGIN_CACHE: dict[str, Any] = {}
 _SAFE_ITEM_TYPES = {"agentMessage", "reasoning", "plan", "userMessage"}
 _NO_TOOLS_INSTRUCTIONS = (
     "Answer using conversation context only. Do not use tools, execute commands, "
@@ -72,11 +75,15 @@ class _AppServerSession:
         self,
         process: subprocess.Popen[bytes],
         incoming: queue.Queue[bytes | BaseException],
-        deadline: float,
+        timeout_seconds: int,
     ) -> None:
         self.process = process
         self.incoming = incoming
-        self.deadline = deadline
+        self.set_timeout(timeout_seconds)
+
+    def set_timeout(self, timeout_seconds: int) -> None:
+        self.timeout_seconds = timeout_seconds
+        self.deadline = time.monotonic() + timeout_seconds
 
     def send(self, message: dict[str, Any]) -> None:
         if self.process.stdin is None:
@@ -159,11 +166,11 @@ class _AppServerSession:
     def next_message(self) -> dict[str, Any]:
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
-            raise AIError(f"Codex app-server 超过 {_TIMEOUT_SECONDS} 秒未完成。")
+            raise AIError(f"Codex app-server 超过 {self.timeout_seconds} 秒未完成。")
         try:
             line = self.incoming.get(timeout=remaining)
         except queue.Empty as exc:
-            raise AIError(f"Codex app-server 超过 {_TIMEOUT_SECONDS} 秒未完成。") from exc
+            raise AIError(f"Codex app-server 超过 {self.timeout_seconds} 秒未完成。") from exc
         if isinstance(line, BaseException):
             raise line
         message = json.loads(line.decode("utf-8"))
@@ -224,6 +231,37 @@ class CodexAI:
         if completed.returncode != 0:
             return {"available": False, "reason": "Codex 的 app-server 检查未通过，请更新或修复本机 Codex。"}
         return {"available": True}
+
+    def login_status(self, *, refresh: bool = False) -> str:
+        """`codex login status`: "ok", "missing" or "unknown". Uses no model quota; cached for 10 minutes."""
+        now = time.monotonic()
+        cached = _LOGIN_CACHE.get("value")
+        if cached and not refresh and now - _LOGIN_CACHE.get("at", 0.0) < 600:
+            return str(cached)
+        executable = codex_executable()
+        if executable is None:
+            return "unknown"
+        try:
+            completed = subprocess.run(
+                [executable, "login", "status"],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+                shell=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return "unknown"
+        output = f"{completed.stdout}\n{completed.stderr}".lower()
+        if completed.returncode == 0 and "logged in" in output and "not logged in" not in output:
+            value = "ok"
+        elif "not logged in" in output or completed.returncode != 0:
+            value = "missing"
+        else:
+            value = "unknown"
+        _LOGIN_CACHE.update(value=value, at=now)
+        return value
 
     # Override the Clean Code argument limit to preserve keywords and add identity; revisit if options grow.
     def ask(
@@ -290,7 +328,7 @@ class CodexAI:
         process: subprocess.Popen[bytes] | None = None
         try:
             process, incoming = _start_process(executable, self.working_dir, stderr_buffer)
-            session = _AppServerSession(process, incoming, time.monotonic() + _TIMEOUT_SECONDS)
+            session = _AppServerSession(process, incoming, _TIMEOUT_SECONDS)
             self._initialize_session(session)
             return self._organize_thread(session, thread_id, conversation, 4)
         finally:
@@ -336,7 +374,7 @@ class CodexAI:
         incoming: queue.Queue[bytes | BaseException],
         request: _AIRequest,
     ) -> dict[str, str]:
-        session = _AppServerSession(process, incoming, time.monotonic() + _TIMEOUT_SECONDS)
+        session = _AppServerSession(process, incoming, _TIMEOUT_SECONDS)
         self._initialize_session(session)
         thread_id = self._open_thread(session, request.thread_id)
         _observe(request.observer, "thread/opened", {"thread_id": thread_id})
@@ -350,6 +388,7 @@ class CodexAI:
                 _observe(request.observer, "metadata/failed", {
                     "thread_id": thread_id, "error": str(exc),
                 })
+        session.set_timeout(_GENERATION_TIMEOUT_SECONDS)
         text, turn_id = self._start_turn(session, thread_id, request)
         if request.observer is not None and turn_id is None:
             raise AIError("Codex 已完成，但没有返回恢复所需的轮次 ID。")
@@ -695,7 +734,7 @@ def _read_turn_request(
     process: subprocess.Popen[bytes] | None = None
     try:
         process, incoming = _start_process(executable, working_dir, stderr_buffer)
-        session = _AppServerSession(process, incoming, time.monotonic() + _TIMEOUT_SECONDS)
+        session = _AppServerSession(process, incoming, _TIMEOUT_SECONDS)
         CodexAI._initialize_session(session)
         response = session.request(2, "thread/read", {
             "threadId": thread_id, "includeTurns": True,

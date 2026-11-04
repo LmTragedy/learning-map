@@ -3,7 +3,7 @@ import { taskLessonId, type AiTask } from './aiTaskModel';
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { LucideIcon } from "lucide-react";
-import { ArrowRight, BookOpen, Check, ClipboardList, ChevronDown, ChevronRight, CircleHelp, Clock3, ExternalLink, FileText, Info, Layers, NotebookPen, RefreshCw, Shapes, Split, Target } from "lucide-react";
+import { ArrowRight, BookOpen, Check, ClipboardList, ChevronDown, ChevronRight, CircleHelp, Clock3, ExternalLink, FileText, Info, Layers, NotebookPen, RefreshCw, Shapes, Split, Target, Waypoints } from "lucide-react";
 import { api, lessonHtmlUrl, materialFileUrl } from "./api";
 import { cn } from "./lib/utils";
 import { Badge } from "./components/ui/badge";
@@ -18,6 +18,7 @@ import { BridgeDetail } from "./BridgeDetail";
 import { PersonalNote } from "./PersonalNote";
 import { Workbench } from "./workbench/Workbench";
 import { NodeLinks } from "./NodeLinks";
+import { TeachingPlanPanel } from "./TeachingPlanPanel";
 import { useWorkbenchState } from "./workbench/useWorkbenchState";
 import { quoteBlock } from "./noteFormatting";
 import { NodeGoals } from "./NodeGoals";
@@ -200,6 +201,7 @@ export function NodePanel({
   const [message, setMessage] = useState("");
   const [linkNotice, setLinkNotice] = useState<{ nodeId: string; text: string } | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [linksFor, setLinksFor] = useState("");
   const bench = useWorkbenchState(initialNote, initialNoteId);
   const { noteOpen, noteId, material, pendingAppend, appendToNote, openMaterial } = bench;
   const noteCount = 1 + (course.notes || []).filter((entry) => entry.node_ids.includes(node.id)).length;
@@ -245,8 +247,12 @@ export function NodePanel({
   };
   const sendChat = async () => {
     if (!message.trim()) return;
+    // While a lesson is open the chat is the lesson's question box, so the question says which lesson it is about.
+    const text = message.trim();
+    const lessonOpen = bench.study && bench.active === "lesson" && studyLesson;
+    const sent = lessonOpen && !text.startsWith("关于") ? `关于小课「${studyLesson.title}」：${text}` : text;
     const saved = await act("chat", () =>
-      api.chat(course.id, node.id, message.trim()),
+      api.chat(course.id, node.id, sent),
     );
     if (saved) setMessage("");
   };
@@ -271,6 +277,9 @@ export function NodePanel({
       : "";
   const goalEntries = goalsForNode(course, node.id);
   const goalActions = useGoalActions();
+  const unlocks = course.nodes.filter((entry) => entry.prerequisites.includes(node.id));
+  // Opens by itself when something inside asks for attention: a goal change or a link notice for this node.
+  const linksOpen = linksFor === node.id || !!goalActions?.changes.length || linkNotice?.nodeId === node.id;
   return (
     <aside className="node-panel flex min-h-0 flex-1 flex-col">
       {(noteOpen || bench.study || material) && contentContainer && createPortal(
@@ -279,7 +288,7 @@ export function NodePanel({
             downloadUrl: studyLesson && lessonHtmlUrl(course.id, node.id, studyLesson.id),
             lessonTitle: studyLesson?.title,
             lesson: <LessonStudy course={course} node={node} lessonId={bench.lessonId} busy={busy} aiEnabled={aiEnabled} act={act}
-              onSelect={bench.selectLesson} onAsk={askInChat} onPractice={bench.openPractice} />,
+              onSelect={bench.selectLesson} onPractice={bench.openPractice} />,
             practice: <PracticePanel course={course} node={node} busy={busy} aiEnabled={aiEnabled} run={run} onRefresh={onRefresh} onRatingSubmitted={onRatingSubmitted} onNavigate={onNavigateNode} />,
           } : null}
           renderNote={() => <PersonalNote key={`${course.id}:${node.id}:${noteId}`} course={course} node={node} noteId={noteId}
@@ -312,7 +321,11 @@ export function NodePanel({
         </div>
       </div>
       {view === "chat" ? <SelectionToNote className="min-h-0 flex-1" label="AI 导师 · 学习对话" onExcerpt={appendToNote} onAsk={askInChat}><NodeChat node={node} busy={busy} aiEnabled={aiEnabled} message={message} fieldRef={chatField}
-        context={<><b className="truncate">{node.title}</b>{studyContext && <><span aria-hidden>·</span>{studyContext}</>}</>}
+        context={studyContext || <b className="truncate">{node.title}</b>}
+        placeholder={bench.study && bench.active === "lesson" && studyLesson ? "问这节小课：哪里不清楚？（Enter 发送）" : undefined}
+        onSupplement={bench.study && bench.active === "lesson" && studyLesson ? (question) => void act("lesson", () => api.lesson(course.id, node.id, {
+          kind: "supplement", focus: `学习对话里还没弄懂的地方：${question.replace(/^关于小课「[^」]*」：/, "")}`, request_id: crypto.randomUUID(),
+        })).then((saved) => { const added = saved?.nodes.find((entry) => entry.id === node.id)?.lessons?.at(-1); if (added) bench.selectLesson(added.id); }) : undefined}
         onMessage={setMessage} onSend={() => void sendChat()}
         onSaveToNote={(text) => appendToNote(quoteBlock(text, "AI 导师 · 学习对话"))} /></SelectionToNote>
       : <div className="min-h-0 flex-1 overflow-y-auto">
@@ -342,35 +355,7 @@ export function NodePanel({
         {relation ? <BridgeDetail key={`${relation.id}:${course.revision}`} course={course} relation={relation} busy={busy} reviewStrict={reviewStrict} run={run}
           onRefresh={onRefresh} onNavigateNode={onNavigateNode} onClose={onCloseRelation} onOpenReview={onOpenReview} onExitReview={onExitReview} onNote={onOpenNote} />
         : <>
-        <div className="flex flex-col gap-1.5">
-          {reviewStrict && node.summary
-            ? <p className={body}><span className="text-muted-foreground">课程总览（跨材料）：</span>{node.summary}</p>
-            : <>
-              <p className={cn(body, !summaryOpen && longSummary && "line-clamp-3")}>{parts.explain || "还没有补充说明。"}</p>
-              {parts.check && (summaryOpen || !longSummary) && <div className="mt-2">
-                <h3 className="t-label mb-1 flex items-center gap-1.5"><Target size={13} className="text-st-passed" aria-hidden /> 验收标准</h3>
-                <p className={body}>{parts.check}</p>
-              </div>}
-              {longSummary && (
-                <button className="cursor-pointer self-start text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" onClick={() => setSummaryOpen((open) => !open)} aria-expanded={summaryOpen}>
-                  {summaryOpen ? "收起" : parts.check ? "展开全文与验收标准" : "展开全文"}
-                </button>
-              )}
-              {parts.note && <p className="t-meta flex items-center gap-1" title={parts.note}><Info size={12} aria-hidden /> 依据提取文本生成，公式和表格未核对原图</p>}
-            </>}
-        </div>
-        {course.suggestions.filter((suggestion) => suggestion.node_id === node.id && !suggestion.accepted).map((suggestion) => (
-          <div className="flex items-center gap-3 rounded-xl border border-st-new/30 bg-st-new/5 p-3" key={suggestion.id}>
-            <div className="min-w-0 flex-1">
-              <div className="text-xs font-medium text-st-new">难度调整建议</div>
-              <p className="text-sm text-foreground">{suggestionText(suggestion)}</p>
-            </div>
-            <Button variant="outline" size="sm" disabled={busy}
-              onClick={() => void run("suggestion", () => api.acceptSuggestion(course.id, suggestion.id)).then((updated) => updated && onRefresh(updated))}>
-              同意
-            </Button>
-          </div>
-        ))}
+        {/* What to do next comes first; the description and its fine print follow. */}
         {node.status === "mastered" && !reviewMastered && !reviewActive && !initialChat ? (
           <div className="flex gap-3 rounded-xl border border-st-mastered/30 bg-st-mastered/5 p-4">
             <Check size={17} className="shrink-0 text-st-mastered" />
@@ -387,6 +372,52 @@ export function NodePanel({
             <NodeProblems course={course} node={node} onPractice={bench.openPractice} />
           </>
         )}
+        <div className="flex flex-col gap-1.5">
+          {reviewStrict && node.summary
+            ? <p className={body}><span className="text-muted-foreground">课程总览（跨材料）：</span>{node.summary}</p>
+            : <>
+              <p className={cn(body, !summaryOpen && (longSummary || parts.check) && "line-clamp-2")}>{parts.explain || "还没有补充说明。"}</p>
+              {parts.check && summaryOpen && <div className="mt-2">
+                <h3 className="t-label mb-1 flex items-center gap-1.5"><Target size={13} className="text-st-passed" aria-hidden /> 验收标准</h3>
+                <p className={body}>{parts.check}</p>
+              </div>}
+              {summaryOpen && (parts.caveats.length > 0 || parts.note) && <div className="mt-1 flex flex-col gap-1 rounded-lg bg-muted/50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                <span className="flex items-center gap-1 font-medium"><Info size={12} aria-hidden /> 材料提示</span>
+                {parts.caveats.map((caveat) => <span key={caveat}>· {caveat}</span>)}
+                {parts.note && <span title={parts.note}>· 依据提取文本生成，公式和表格未核对原图</span>}
+              </div>}
+              {(longSummary || parts.check || parts.caveats.length > 0) && (
+                <button className="cursor-pointer self-start text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" onClick={() => setSummaryOpen((open) => !open)} aria-expanded={summaryOpen}>
+                  {summaryOpen ? "收起" : parts.check ? "展开全文与验收标准" : "展开全文"}
+                  {!summaryOpen && parts.caveats.length > 0 && <span className="ml-2 no-underline">· ⓘ 材料提示 {parts.caveats.length + (parts.note ? 1 : 0)}</span>}
+                </button>
+              )}
+              {!summaryOpen && !parts.caveats.length && parts.note && <p className="t-meta flex items-center gap-1" title={parts.note}><Info size={12} aria-hidden /> 依据提取文本生成，公式和表格未核对原图</p>}
+            </>}
+        </div>
+        {course.suggestions.filter((suggestion) => suggestion.node_id === node.id && !suggestion.accepted).map((suggestion) => (
+          <div className="flex items-center gap-3 rounded-xl border border-st-new/30 bg-st-new/5 p-3" key={suggestion.id}>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-medium text-st-new">难度调整建议</div>
+              <p className="text-sm text-foreground">{suggestionText(suggestion)}</p>
+            </div>
+            <Button variant="outline" size="sm" disabled={busy}
+              onClick={() => void run("suggestion", () => api.acceptSuggestion(course.id, suggestion.id)).then((updated) => updated && onRefresh(updated))}>
+              同意
+            </Button>
+          </div>
+        ))}
+        <TeachingPlanPanel course={course} node={node} busy={busy} aiEnabled={aiEnabled} act={act} />
+        {/* Links, goals, pieces and sources are reference material: one summary line, opened on request. */}
+        <button type="button" className="flex cursor-pointer items-center gap-2 text-left text-sm text-muted-foreground hover:text-foreground"
+          aria-expanded={linksOpen} onClick={() => setLinksFor(linksOpen ? "" : node.id)}>
+          <Waypoints size={14} className="shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1 truncate">
+            前后联系{unlocks.length ? ` · 学完能解锁 ${unlocks.length} 个：${unlocks.slice(0, 2).map((entry) => entry.title).join("、")}${unlocks.length > 2 ? "…" : ""}` : " · 目标、要点与材料来源"}
+          </span>
+          <ChevronDown size={14} className={cn("shrink-0 transition-transform", linksOpen && "rotate-180")} aria-hidden />
+        </button>
+        {linksOpen && <>
         <NodeLinks key={node.id} course={course} node={node} busy={busy} aiEnabled={aiEnabled} reviewStrict={reviewStrict} act={act}
           canOpen={(entry) => reviewStrict ? course.review_scope.node_ids.includes(entry.id) : isNodeVisible(entry, { reviewActive, directEntryId, directWeek })}
           onNavigate={onNavigateNode} onOpenBridge={onOpenRelation}
@@ -464,6 +495,7 @@ export function NodePanel({
             </div>
           </Related>}
         </section>
+        </>}
         </>}
       </div>
       </div>}

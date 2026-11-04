@@ -142,7 +142,26 @@ export type LearningNode = {
   lessons?: Lesson[];
   /** Knowledge-piece titles that none of the saved lessons mentions (computed by the server). */
   lesson_gaps?: string[];
+  /** This node's teaching plan in the current review scope (null when none was prepared). */
+  teaching_plan?: TeachingPlan | null;
   review_archived?: { chats: number; attempts: number; lessons: number };
+};
+export type PlanEntry = { node_id: string; title: string };
+export type TeachingPlan = {
+  version: number;
+  status: "current" | "stale";
+  goal: string;
+  owns: { piece: string; point: string; depth: "讲透" | "简述" }[];
+  borrows: (PlanEntry & { what: string; use: string })[];
+  defers: (PlanEntry & { what: string })[];
+  distinctions: (PlanEntry & { shared: string; axis: "深度" | "场景" | "应用" | "其他"; difference: string })[];
+  sources: Source[];
+  conflicts: { node_ids: string[]; issue: string }[];
+  uncertain: boolean;
+  /** Why the plan needs a look; older plans saved before this field may lack it. */
+  uncertain_reasons?: string[];
+  candidate: boolean;
+  note: string;
 };
 export type Lesson = {
   request_id?: string;

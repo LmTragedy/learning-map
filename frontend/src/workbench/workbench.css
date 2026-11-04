@@ -75,6 +75,7 @@
 .lesson-dock { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--sidebar); flex-shrink: 0; }
 .lesson-dock textarea { flex: 1 1 240px; min-width: 0; height: 34px; min-height: 34px; max-height: 120px; resize: none; padding: 7px 11px; font-size: var(--fs-md); line-height: 1.4; }
 .lesson-dock-sep { width: 1px; height: 20px; margin: 0 4px; background: var(--border); }
+.lesson-dock-end { justify-content: flex-end; }
 .lesson-read { display: flex; align-items: center; gap: 5px; padding: 0 8px; font-size: var(--fs-sm); color: var(--state-passed); }
 .lesson-empty { align-items: center; justify-content: center; gap: 12px; padding: 32px; text-align: center; }
 .lesson-empty > p { max-width: 42ch; font-size: var(--fs-md); line-height: 1.75; color: var(--muted-foreground); }

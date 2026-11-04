@@ -3,7 +3,10 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from .documents import MAX_FILE_BYTES, parse_document, render_page
+from pypdf import PdfReader, PdfWriter
+from pypdf.errors import PyPdfError
+
+from .documents import MAX_FILE_BYTES, MAX_PDF_PAGES, parse_document, render_page
 from .store import identity
 
 MAX_UPLOAD = MAX_FILE_BYTES  # one limit: a copy that passes here must also pass the parser
@@ -31,6 +34,36 @@ def copy_upload(upload, directory):
     return target, digest.hexdigest()
 
 
+MAX_SPLIT_PARTS = 10
+
+
+def _pdf_parts(original):
+    """Page ranges for a PDF longer than the parser's page limit; None when it fits (or cannot be read here)."""
+    if original.suffix.lower() != ".pdf":
+        return None
+    try:
+        reader = PdfReader(original, strict=True)
+        if reader.is_encrypted:
+            return None
+        count = len(reader.pages)
+    except (PyPdfError, OSError, ValueError):
+        return None  # the parser reports the real problem
+    if count <= MAX_PDF_PAGES:
+        return None
+    if count > MAX_PDF_PAGES * MAX_SPLIT_PARTS:
+        raise ValueError(f"PDF 有 {count} 页，超过自动拆分上限 {MAX_PDF_PAGES * MAX_SPLIT_PARTS} 页；请先拆成几份再导入")
+    return reader, [(start + 1, min(start + MAX_PDF_PAGES, count)) for start in range(0, count, MAX_PDF_PAGES)]
+
+
+def _write_part(reader, first, last, target):
+    writer = PdfWriter()
+    for index in range(first - 1, last):
+        writer.add_page(reader.pages[index])
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("xb") as handle:
+        writer.write(handle)
+
+
 def import_uploads(store, course_id, uploads, options):
     if len(uploads) > 10:
         raise ValueError("一次最多导入 10 份材料")
@@ -39,19 +72,31 @@ def import_uploads(store, course_id, uploads, options):
     for upload in uploads:
         material_id = identity()
         directory = root / "materials" / material_id
+        name = Path(upload.filename).name
         try:
             original, digest = copy_upload(upload, directory)
-            parsed = parse_document(original, directory / "pages", options["parser"])
+            split = _pdf_parts(original)
+            if split is None:
+                parsed = parse_document(original, directory / "pages", options["parser"])
+                materials.append(dict(id=material_id, name=name, week=options["week"], sha256=digest,
+                                      parser=options["parser"], **parsed))
+                continue
+            # A long PDF becomes one material per page range, each with its own copy; the user's file is untouched.
+            reader, parts = split
+            for first, last in parts:
+                part_id = identity()
+                part_dir = root / "materials" / part_id
+                _write_part(reader, first, last, part_dir / "original.pdf")
+                # Written PDFs carry fresh IDs; the source digest plus range is what makes a re-import a duplicate.
+                part_digest = hashlib.sha256(f"{digest}:{first}-{last}".encode()).hexdigest()
+                materials.append(dict(id=part_id, name=f"{name}（第 {first}–{last} 页）", week=options["week"],
+                                      sha256=part_digest, parser=options["parser"], split_from=dict(name=name, first_page=first, last_page=last),
+                                      **parse_document(part_dir / "original.pdf", part_dir / "pages", options["parser"])))
+            _remove_material_dir(root, directory)
         except Exception:
             _remove_material_dir(root, directory)
             discard_materials(store, course_id, materials)
             raise
-        materials.append(
-            dict(
-                id=material_id, name=Path(upload.filename).name, week=options["week"], sha256=digest,
-                parser=options["parser"], **parsed
-            )
-        )
     return materials
 
 

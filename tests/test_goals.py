@@ -133,10 +133,29 @@ def test_concurrent_change_during_extraction_preserves_current_state(session):
             current["nodes"][0]["personal_note"] = "并发保存的笔记"
 
     model.before_reply = concurrent_edit
-    assert client.post(base + "/goal-candidates").status_code == 409
+    preview_response = client.post(base + "/goal-candidates")
+    assert preview_response.status_code == 200, preview_response.text
     current = store.course(course["id"])
     assert current["nodes"][0]["personal_note"] == "并发保存的笔记"
     assert not current.get("goals")
+    preview = preview_response.json()
+    accepted = client.post(base + "/goals/accept", json={"token": preview["token"], "indices": [0]})
+    assert accepted.status_code == 200, accepted.text
+    assert len(store.course(course["id"])["goals"]) == 1
+
+
+def test_material_change_during_goal_extraction_keeps_candidates_unapplied(session):
+    client, store, model, course, base = session
+
+    def concurrent_edit():
+        with store.edit(course["id"]) as (current, _):
+            current["materials"][0]["pages"][0]["text"] += " appended during extraction"
+
+    model.before_reply = concurrent_edit
+    response = client.post(base + "/goal-candidates")
+    assert response.status_code == 409
+    assert store.course(course["id"])["materials"][0]["pages"][0]["text"].endswith("appended during extraction")
+    assert not store.course(course["id"]).get("goals")
 
 
 def test_scoped_assessment_does_not_inflate_course_goal_progress(session):

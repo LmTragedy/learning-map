@@ -3,6 +3,7 @@ import { Button } from "./components/ui/button";
 import type { Course, Goal, GoalFields, LearningNode } from "./types";
 import { readyToFinish } from "./goalFields";
 import { materialFileUrl } from "./api";
+import { AiMark } from "./components/ui/ai-mark";
 
 function progressLabel(node: LearningNode) {
   if (node.verification === "review") return "待复查";
@@ -60,7 +61,7 @@ export function GoalDetail({ course, goal, busy, onEdit, onUpdate, onNode }: {
       {goal.node_ids.map((id) => <LinkedGoalNode key={id} course={course} id={id} busy={busy} onNode={onNode} />)}
       {!goal.node_ids.length && <p className="goal-muted">尚未关联知识点，可在编辑中添加。</p>}
     </section>
-    {!!goal.sources?.length && <details><summary>材料依据（AI 建议，需核对）</summary>{goal.sources.map((source, index) => <p className="goal-source" key={index}>
+    {!!goal.sources?.length && <details><summary>材料依据 <AiMark /></summary>{goal.sources.map((source, index) => <p className="goal-source" key={index}>
       <a target="_blank" rel="noreferrer" href={materialFileUrl(course.id, source.material_id, source.page)}>{course.materials.find((material) => material.id === source.material_id)?.name} · 第 {source.page} 页</a>
       <span className="block whitespace-pre-wrap">{source.quote}</span>
     </p>)}</details>}

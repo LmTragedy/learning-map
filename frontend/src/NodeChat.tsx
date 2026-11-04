@@ -16,13 +16,16 @@ const FOLLOW_UPS = ["举个反例", "换个说法再讲一遍", "出一道小题
  * The node's learning chat as a full-height view of the right panel: messages scroll, the
  * composer stays at the bottom, and `context` says what the workbench is showing beside it.
  */
-export function NodeChat({ node, busy, aiEnabled, message, fieldRef, context, onMessage, onSend, onSaveToNote }: {
+export function NodeChat({ node, busy, aiEnabled, message, fieldRef, context, placeholder, onMessage, onSend, onSaveToNote, onSupplement }: {
   node: LearningNode; busy: boolean; aiEnabled: boolean; message: string;
   fieldRef: RefObject<HTMLTextAreaElement>;
   context?: ReactNode;
+  placeholder?: string;
   onMessage: (text: string) => void;
   onSend: () => void;
   onSaveToNote: (text: string) => void;
+  /** Set while a lesson is open: turns an answer that still did not land into a supplementary lesson. */
+  onSupplement?: (question: string) => void;
 }) {
   const end = useRef<HTMLDivElement>(null);
   const ledger=useCourseTasks();
@@ -61,7 +64,7 @@ export function NodeChat({ node, busy, aiEnabled, message, fieldRef, context, on
   };
   return <div className="flex min-h-0 flex-1 flex-col">
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-2.5">
-      {context && <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-muted-foreground [&_b]:font-medium [&_b]:text-foreground [&_svg]:size-3.5 [&_svg]:shrink-0">{context}</div>}
+      {context && <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-muted-foreground [&_b]:font-medium [&_b]:text-foreground [&_svg]:size-3.5 [&_svg]:shrink-0">{context}</div>}
       <Button size="sm" variant="ghost" disabled={busy || blocking || resettingConversation} onClick={() => { setResetError(''); setConfirmNewConversation(true); }}>新会话</Button>
     </div>
     {confirmNewConversation && <div className="mx-5 mt-2 rounded-lg border border-border bg-card p-3 text-sm" role="group" aria-label="确认新建学习会话">
@@ -73,11 +76,15 @@ export function NodeChat({ node, busy, aiEnabled, message, fieldRef, context, on
       </div>
     </div>}
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4" aria-live="polite">
-      {node.chats.length ? node.chats.map((chat) => chat.role === "assistant"
+      {node.chats.length ? node.chats.map((chat, index) => chat.role === "assistant"
         ? <div key={chat.id} className="flex max-w-[95%] flex-col gap-1">
           <span className="text-xs text-muted-foreground">AI 导师</span>
           <ChatMarkdown text={chat.content} />
-          <button className="cursor-pointer self-start text-xs text-muted-foreground hover:text-foreground" onClick={() => onSaveToNote(chat.content)}>＋ 存入笔记</button>
+          <div className="flex gap-3">
+            <button className="cursor-pointer self-start text-xs text-muted-foreground hover:text-foreground" onClick={() => onSaveToNote(chat.content)}>＋ 存入笔记</button>
+            {onSupplement && <button className="cursor-pointer self-start text-xs text-muted-foreground hover:text-foreground" disabled={busy || !aiEnabled}
+              onClick={() => onSupplement(node.chats.slice(0, index).reverse().find((entry) => entry.role === "user")?.content || chat.content.slice(0, 300))}>＋ 按这个补一节</button>}
+          </div>
         </div>
         : <p key={chat.id} className="max-w-[88%] self-end whitespace-pre-wrap rounded-xl rounded-br-sm bg-secondary px-3 py-2 text-sm leading-[1.7] [overflow-wrap:anywhere]">{chat.content}</p>,
       ) : !thinking && <div className="m-auto flex max-w-[30ch] flex-col items-center gap-2 text-center text-sm text-muted-foreground">
@@ -103,7 +110,7 @@ export function NodeChat({ node, busy, aiEnabled, message, fieldRef, context, on
     <form className={cn("mx-3 mb-3 flex items-end gap-2 rounded-xl border border-input bg-field p-2 focus-within:border-zinc-500", !aiEnabled && "opacity-60")}
       onSubmit={(event) => { event.preventDefault(); send(); }}>
       <textarea ref={fieldRef} className="min-h-[44px] min-w-0 flex-1 resize-none !border-0 !bg-transparent !p-1 text-sm !shadow-none outline-none" aria-label="学习对话" value={message} rows={2}
-        placeholder={aiEnabled ? "说说你的想法或疑问…（Enter 发送）" : "AI 辅助已关闭，在设置中打开后可以对话"} disabled={!aiEnabled}
+        placeholder={aiEnabled ? placeholder || "说说你的想法或疑问…（Enter 发送）" : "AI 辅助已关闭，在设置中打开后可以对话"} disabled={!aiEnabled}
         onChange={(event) => onMessage(event.target.value)}
         onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} />
       <Button size="icon-sm" disabled={busy || pending.length>0 || resettingConversation || !message.trim() || !aiEnabled} aria-label="发送" aria-describedby={pending.length ? "chat-send-why" : undefined}><Send /></Button>

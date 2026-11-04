@@ -638,15 +638,16 @@ def generate_unit(store, learning, cid, request):
 
 
 def _generate_unit(store, learning, cid, request):
-    course = store.course(cid)
+    course = learning.tasks.input_course(cid)
     materials = _unit_material_context(course, request.material_ids)
     benchmark, refs = _unit_benchmark(course, request.problem_set_ids)
     label = conversation_label(course, purpose="按真题出单元题")
     options = {"conversation": label}
     if refs:
         options["images"] = image_paths(store, cid, refs)
-    reply = structured(learning.ai(), _unit_prompt(course, request, materials, benchmark), UnitDraft,
-                       options, system=BASE_SYSTEM)
+    prompt = _unit_prompt(course, request, materials, benchmark)
+    options["fresh_prompt"] = learning.tasks.replay_prompt(prompt)
+    reply = structured(learning.ai(), prompt, UnitDraft, options, system=BASE_SYSTEM)
     problems = _valid_unit_problems(course, reply.payload, request)
     with store.edit(cid, task_id=current_task_id()) as (current, connection):
         sets = problem_sets(current)
@@ -701,7 +702,7 @@ def _link_prompt(course, problem_set, image_refs):
 
 
 def _link_problems(store, learning, cid, sid):
-    course = store.course(cid)
+    course = learning.tasks.input_course(cid)
     if not course["nodes"]:
         raise LearningError("还没有知识地图：先生成地图，再把真题关联到知识点")
     problem_set = find_set(course, sid)
@@ -712,6 +713,7 @@ def _link_problems(store, learning, cid, sid):
     options = {"conversation": conversation_label(course, purpose="真题关联知识点")}
     if image_refs:
         options["images"] = image_paths(store, cid, image_refs)
+    options["fresh_prompt"] = learning.tasks.replay_prompt(prompt)
     reply = structured(learning.ai(), prompt, LinkDraft, options, system=BASE_SYSTEM)
     node_ids = {node["id"] for node in course["nodes"]}
     proposed = {}

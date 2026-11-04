@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
-import { ArrowRight, BookOpen, Check, MessageCircle, Plus, Sparkles } from "lucide-react";
+import { ArrowRight, BookOpen, Check, Plus, Sparkles } from "lucide-react";
 import { Button } from "./components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
 import { api, lessonHtmlUrl } from "./api";
 import type { Course, LearningNode } from "./types";
 import { TaskCards, useCourseTasks } from './aiTasks';
@@ -8,20 +9,19 @@ import { taskTime } from './aiTaskModel';
 import './lessonLayout.css';
 
 /**
- * The lesson mode of the study workbench: saved lessons as tabs, the selected one in full, and
- * one ask bar that either adds a lesson or sends the question to the chat beside it.
+ * The lesson mode of the study workbench: saved lessons as tabs and the selected one in full.
+ * Questions go to the chat beside it (the one place to type); "补一节" opens a small form under its tab.
  */
-export function LessonStudy({ course, node, lessonId, busy, aiEnabled, act, onSelect, onAsk, onPractice }: {
+export function LessonStudy({ course, node, lessonId, busy, aiEnabled, act, onSelect, onPractice }: {
   course: Course; node: LearningNode; lessonId: string; busy: boolean; aiEnabled: boolean;
   act: (key: string, action: () => Promise<Course>) => Promise<Course | undefined>;
   onSelect: (id: string) => void;
-  onAsk: (text: string) => void;
   onPractice: () => void;
 }) {
   const lessons = node.lessons ?? [];
   const lesson = lessons.find((entry) => entry.id === lessonId) ?? lessons.at(-1);
   const [focus, setFocus] = useState("");
-  const askField = useRef<HTMLTextAreaElement>(null);
+  const [addOpen, setAddOpen] = useState(false);
   const pendingRequest = useRef<{ key: string; id: string }>();
   const ledger = useCourseTasks();
   const pending = ledger.tasks.filter(t=>t.kind==='lesson'&&t.target===node.id&&(t.state!=='applied'||Date.parse(t.updated_at)>=ledger.openedAt&&ledger.clock-Date.parse(t.updated_at)<4000));
@@ -37,6 +37,7 @@ export function LessonStudy({ course, node, lessonId, busy, aiEnabled, act, onSe
       const generated = saved.nodes.find((entry) => entry.id === node.id)?.lessons?.at(-1);
       if (generated) onSelect(generated.id);
       setFocus("");
+      setAddOpen(false);
       pendingRequest.current = undefined;
     }
   };
@@ -59,16 +60,38 @@ export function LessonStudy({ course, node, lessonId, busy, aiEnabled, act, onSe
         <span className="lesson-tab-n">{index + 1}</span><span className="truncate">{entry.title}</span>
         {entry.read_at && <Check size={13} className="shrink-0 text-st-passed" aria-label="已读" />}
       </button>)}
-      <button className="lesson-tab lesson-tab-add" title="写下哪里不清楚，再补一节" onClick={() => askField.current?.focus()}>
-        <Plus size={13} aria-hidden />补一节
-      </button>
+      <Popover open={addOpen} onOpenChange={setAddOpen}>
+        <PopoverTrigger asChild>
+          <button className="lesson-tab lesson-tab-add" title="写下哪里不清楚，生成一节补充小课" aria-expanded={addOpen}>
+            <Plus size={13} aria-hidden />补一节
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="flex w-[360px] flex-col gap-2.5">
+          <form className="flex flex-col gap-2.5" onSubmit={(event) => { event.preventDefault(); if (ask) void generate("supplement"); }}>
+            <label htmlFor="lesson-add-focus" className="text-sm font-semibold">这一节想补什么？</label>
+            <textarea id="lesson-add-focus" rows={3} maxLength={2000} value={focus} autoFocus disabled={!aiEnabled || busy}
+              placeholder="比如：把第二步展开，或换一个更简单的例子" className="resize-none text-[13px]"
+              onChange={(event) => setFocus(event.target.value)} />
+            <div className="flex flex-wrap gap-1.5">
+              {[...gaps.map((gap) => `只讲：${gap}`), "把第二步展开", "换一个更简单的例子"].map((idea) =>
+                <button type="button" key={idea} className="cursor-pointer rounded-full border border-border px-2.5 py-0.5 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setFocus(idea)}>{idea}</button>)}
+            </div>
+            {!aiEnabled && <p className="t-meta">AI 辅助已关闭，打开设置后可以生成小课。</p>}
+            <div className="flex justify-end gap-2">
+              <Button type="button" size="sm" variant="ghost" onClick={() => setAddOpen(false)}>取消</Button>
+              <Button type="submit" size="sm" disabled={busy || !aiEnabled || !ask || pending.length > 0}><Sparkles /> 生成补充小课</Button>
+            </div>
+          </form>
+        </PopoverContent>
+      </Popover>
     </div>
     {!!pending.length && <div className="lesson-thinking"><TaskCards kind="lesson" target={node.id} /></div>}
     {gaps.length > 0 && !pending.length && <div className="lesson-gaps" role="note">
-      <span>已保存的小课还没讲到这些知识块：<b>{gaps.join("、")}</b>{lessons.length === 1 ? "（可能是小课写在知识块整理出来之前）" : ""}</span>
+      <span>{lessons.length === 1 ? "这节课写于地图更新之前，" : "已有的小课"}少讲了 {gaps.length} 个要点：<b>{gaps.join("、")}</b></span>
       <Button size="sm" variant="outline" disabled={busy || !aiEnabled}
         onClick={() => void generate("supplement", `逐个讲清楚这些还没讲到的知识块：${gaps.join("、")}。每块给出中文和英文术语、意思、条件和一个具体例子。`)}>
-        <Sparkles /> 补一节讲这些
+        <Sparkles /> {gaps.length === 1 ? "只补这一点" : `补这 ${gaps.length} 点`}
       </Button>
     </div>}
     <div className="lesson-visual-layout">
@@ -78,15 +101,8 @@ export function LessonStudy({ course, node, lessonId, busy, aiEnabled, act, onSe
         <iframe key={lesson.id} src={lessonHtmlUrl(course.id, node.id, lesson.id)} title={lesson.title} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" referrerPolicy="no-referrer" />
       </div>
     </div>
-    <form className="lesson-dock" onSubmit={(event) => { event.preventDefault(); void generate("supplement"); }}>
-      <textarea ref={askField} rows={1} maxLength={2000} value={focus} aria-label="哪里还不够清楚？"
-        placeholder="哪里不清楚？比如：把第二步展开，或换一个更简单的例子" disabled={!aiEnabled || busy}
-        onChange={(event) => setFocus(event.target.value)}
-        onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); onAsk(`关于小课「${lesson.title}」：${ask}`); setFocus(""); } }} />
-      <Button type="submit" size="sm" variant="ghost" disabled={busy || !aiEnabled || !ask || pending.length>0} title="按这个问题生成一节新的小课"><Sparkles /> 补一节</Button>
-      <Button type="button" size="sm" title="发到右侧的学习对话（Enter）"
-        onClick={() => { onAsk(`关于小课「${lesson.title}」：${ask}`); setFocus(""); }}><MessageCircle /> 问 AI</Button>
-      <span className="lesson-dock-sep" aria-hidden />
+    {/* Questions go to the chat on the right; this bar only finishes the lesson. */}
+    <div className="lesson-dock lesson-dock-end">
       <Button type="button" size="sm" variant="ghost" disabled={busy} aria-pressed={!!lesson.read_at}
         title={lesson.read_at ? "取消已读，恢复为未读" : "标记这节小课为已读"}
         onClick={() => void act("lesson-read", () => lesson.read_at
@@ -96,6 +112,6 @@ export function LessonStudy({ course, node, lessonId, busy, aiEnabled, act, onSe
       </Button>
       <Button type="button" size="sm" onClick={onPractice}
         title="阅读和小课自测不会改变掌握状态；准备好后再做节点验收。">去验收 <ArrowRight /></Button>
-    </form>
+    </div>
   </section>;
 }

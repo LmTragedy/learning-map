@@ -12,6 +12,7 @@ from .ai_tasks import client_request_id
 from .bridge_backfill import backfill, fill_batch
 from .domain import find_node, project_course
 from .goal_routes import extract_goals
+from .lesson_plan_context import request_fields
 from .lessons import LessonRequest, generate_lesson
 from .lines_ai import generate_lines, retell
 from .material_indexing import build_index
@@ -22,6 +23,7 @@ from .recall import summarize_recall
 from .review_scope import require_review_node, scope_key, strict_scope
 from .schemas import Input
 from .store import Conflict, identity
+from .teaching_plans.planner import prepare_plan
 
 
 class RegenerateRequest(Input):
@@ -54,7 +56,16 @@ def register_ai_task_routes(app, store, learning):
         if len(batch) != len(inputs["relation_ids"]):
             raise Conflict("历史请求中的联系已改变，原始结果已保留")
         return tasks.run(cid, "bridge_history", task["target"], inputs,
-                         lambda: fill_batch(store, learning, course, batch), request_id=request_id)
+                         lambda: _apply_history_bridge(store, learning, cid, inputs["relation_ids"]),
+                         request_id=request_id)
+
+    def _apply_history_bridge(store, learning, cid, relation_ids):
+        course = tasks.input_course(cid)
+        edges = {edge["id"]: edge for edge in course["edges"]}
+        batch = [edges[edge_id] for edge_id in relation_ids if edge_id in edges]
+        if len(batch) != len(relation_ids):
+            raise Conflict("历史请求中的联系已改变，原始结果已保留")
+        return fill_batch(store, learning, course, batch)
 
     def goals(cid, request_id):
         with client_request_id(request_id):
@@ -70,9 +81,10 @@ def register_ai_task_routes(app, store, learning):
             "bridge_history": lambda: historical_bridge(task, rid),
             "links": lambda: find_links(store, learning, cid, nid,
                 store.course(cid)["revision"] if request_id else inputs["revision"], rid),
+            "teaching_plan": lambda: prepare_plan(store, learning, cid, nid, rid),
             "chat": lambda: learning.chat(cid, nid, inputs["message"], request_id=rid),
             "lesson": lambda: generate_lesson(learning, cid, nid,
-                LessonRequest.model_validate(inputs | {"request_id": rid})),
+                LessonRequest.model_validate(request_fields(inputs) | {"request_id": rid})),
             "map": lambda: learning.generate(cid, request_id=rid),
             "question": lambda: learning.question(cid, nid, request_id=rid),
             "assessment": lambda: learning.submit(store.course(cid), nid,
@@ -125,7 +137,8 @@ def register_ai_task_routes(app, store, learning):
 
         task = owned(cid, tid)
         # The full original course snapshot stays private; raw output is an explicit local query.
-        return ({key: value for key, value in task.items() if key not in {"before", "context_hash"}}
+        return ({key: value for key, value in task.items()
+                 if key not in {"before", "input_context", "context_hash"}}
                 | presented_result(task, store.course(cid)) | tasks.public(task))
 
     @app.get("/api/courses/{cid}/ai-tasks/{tid}/result")

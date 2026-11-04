@@ -231,8 +231,8 @@ def test_same_relation_explanation_with_distinct_basis_or_citations_is_not_dedup
     assert {edge["sources"][0]["page"] for edge in relations} == {1, 2}
 
 
-@pytest.mark.parametrize("change", ["relation", "counterpart_status"])
-def test_ai_result_is_rejected_when_a_relationship_or_related_node_changes_mid_request(relation_session, change):
+@pytest.mark.parametrize(("change", "expected_status"), [("relation", 409), ("counterpart_status", 200)])
+def test_relationship_edit_conflicts_but_related_progress_is_merged(relation_session, change, expected_status):
     client, store, model, course = relation_session
     generated = generate_relations(client, course, model, [relation_spec("node-0", "node-1")])
     edge = relation_edges(generated)[0]
@@ -254,13 +254,16 @@ def test_ai_result_is_rejected_when_a_relationship_or_related_node_changes_mid_r
         assert response.status_code == 200, response.text
 
     model.before_reply = update_while_model_waits
-    model.replies.append("此结果必须被丢弃")
+    model.replies.append("解释联系的回复")
     response = client.post(node_path(course) + "/chat", json={"message": "解释联系"})
-    assert response.status_code == 409
+    assert response.status_code == expected_status
     current = store.course(course["id"])
-    assert current["nodes"][0]["chats"] == []
     if change == "relation":
+        assert current["nodes"][0]["chats"] == []
         assert next(item for item in current["edges"] if item["id"] == edge["id"])["explanation"] == "UPDATED_DURING_AI_SENTINEL"
+    else:
+        assert current["nodes"][0]["chats"][-1]["content"] == "解释联系的回复"
+        assert current["nodes"][1]["status"] == "studied"
 
 
 def test_structured_map_schema_requires_nested_defaults_but_old_payload_may_omit_relations(relation_session):
@@ -366,8 +369,9 @@ def test_relation_endpoints_collapsing_to_same_title_skip_only_that_relation(rel
 def test_map_drafts_fix_small_slips_instead_of_rejecting_the_whole_map():
     from backend.schemas import MapDraft
     source = {"material_id": "m", "page": 1, "quote": "q"}
-    node = lambda key, *parents: dict(key=key, title=key, summary="s", week="", sources=[source],
-                                      prerequisites=list(parents), uncertain=False)
+    def node(key, *parents):
+        return dict(key=key, title=key, summary="s", week="", sources=[source],
+                    prerequisites=list(parents), uncertain=False)
     relation = relation_spec("a", "b", sources=[], evidence_kind="material_quote", presentation="synthesis")
     draft = MapDraft.model_validate(dict(
         nodes=[node("a", "a"), node("b", "a", "a")],
@@ -610,3 +614,40 @@ def test_related_keys_repeating_the_two_ends_do_not_reject_the_map(relation_sess
     relation = relation_spec("node-0", "node-1", related_keys=["node-0", "node-1", "node-1"])
     edge = relation_edges(generate_relations(client, course, model, [relation]))[0]
     assert edge["related_node_ids"] == [node["id"] for node in course["nodes"][:2]]
+
+
+def test_incremental_map_links_to_old_nodes_without_returning_them_again(relation_session):
+    client, store, model, course = relation_session
+    old_id = course["nodes"][0]["id"]
+    with store.edit(course["id"]) as (current, _):
+        current["nodes"][0].update(status="passed", personal_note="保留旧节点的笔记")
+    draft = draft_for(course, [])
+    fresh = draft["nodes"][1]
+    fresh.update(key="new-concept", title="依赖旧概念的新知识", prerequisites=[f"existing:{old_id}"])
+    draft["nodes"] = [fresh]
+    draft["relations"] = [relation_spec(
+        "new-concept", f"existing:{course['nodes'][2]['id']}", evidence_kind="ai_inference", sources=[],
+    )]
+    model.replies.append(draft)
+    response = client.post(f"/api/courses/{course['id']}/generate")
+    assert response.status_code == 200, response.text
+    updated = response.json()
+    added = next(node for node in updated["nodes"] if node["title"] == fresh["title"])
+    assert added["prerequisites"] == [old_id]
+    assert any(edge["source"] == added["id"] and edge["target"] == course["nodes"][2]["id"]
+               for edge in updated["edges"])
+    old = next(node for node in updated["nodes"] if node["id"] == old_id)
+    assert old["status"] == "passed" and old["personal_note"] == "保留旧节点的笔记"
+    assert len(updated["nodes"]) == len(course["nodes"]) + 1
+
+
+@pytest.mark.parametrize("reference", ["existing:" + "f" * 32, "unknown-key"])
+def test_incremental_map_rejects_unknown_old_references_without_changing_course(relation_session, reference):
+    client, store, model, course = relation_session
+    before = store.course(course["id"])
+    draft = draft_for(course, [])
+    draft["nodes"] = [dict(draft["nodes"][0], title="不应写入的新节点", prerequisites=[reference])]
+    model.replies.append(draft)
+    response = client.post(f"/api/courses/{course['id']}/generate")
+    assert response.status_code == 400
+    assert store.course(course["id"]) == before

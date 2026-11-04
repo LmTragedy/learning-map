@@ -12,7 +12,7 @@ import { TaskCards, useCourseTasks } from './aiTasks';
 
 type Edge = Course["edges"][number];
 
-const evidenceLabels: Record<string, string> = { material_quote: "引用材料原文 · 关系说明为 AI 解释", material_inference: "依据材料推论", ai_inference: "AI 推断" };
+const evidenceLabels: Record<string, string> = { material_quote: "引用材料原文", material_inference: "依据材料推论", ai_inference: "AI 推断" };
 
 /** Everything about one link between two nodes: its bridges, the pieces and steps they join, and its sources. */
 export function BridgeDetail({

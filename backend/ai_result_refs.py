@@ -75,8 +75,15 @@ def _retell(task, course):
                     if retell["text"] == task["inputs"]["text"] and retell["review"] == _reply(task)])
 
 
+def _teaching_plan(task, course):
+    book = course.get("teaching_plans", {}).get(scope_key(task["before"]), {})
+    plan = book.get(task["target"])
+    return plan if plan and plan.get("task_id") == task["id"] else None
+
+
 OBJECT_READERS = {"chat": _chat, "lesson": _lesson, "assessment": _assessment, "question": _question,
-                  "map": _map, "bridge": _bridge, "bridge_history": _bridge, "links": _links, "lines": _lines, "retell": _retell}
+                  "map": _map, "bridge": _bridge, "bridge_history": _bridge, "links": _links, "lines": _lines, "retell": _retell,
+                  "teaching_plan": _teaching_plan}
 
 
 def _stable_object(kind, payload):

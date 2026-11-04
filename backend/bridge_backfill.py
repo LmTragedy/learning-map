@@ -100,7 +100,7 @@ def backfill(store, learning, cid, revision, relation_id=None, request_id=None):
 
 
 def _backfill(store, learning, cid, revision, relation_id):
-    course = store.course(cid)
+    course = learning.tasks.input_course(cid)
     if strict_scope(course):
         raise LearningError("补充整张地图的知识桥需要完整课程上下文，请先退出所选资料复习")
     if course["revision"] != revision:
@@ -108,9 +108,17 @@ def _backfill(store, learning, cid, revision, relation_id):
     nodes = {node["id"]: node for node in course["nodes"]}
     if relation_id is not None and not any(edge["id"] == relation_id for edge in course["edges"]):
         raise KeyError("知识联系不存在")
-    batch = [edge for edge in pending_relations(course)
-             if edge["source"] in nodes and edge["target"] in nodes
-             and (relation_id is None or edge["id"] == relation_id)][:BATCH]
+    task = learning.tasks.get(current_task_id())
+    relation_ids = task.get("input_context", {}).get("relation_ids")
+    if relation_ids is None:
+        batch = [edge for edge in pending_relations(course)
+                 if edge["source"] in nodes and edge["target"] in nodes
+                 and (relation_id is None or edge["id"] == relation_id)][:BATCH]
+    else:
+        edges = {edge["id"]: edge for edge in course["edges"]}
+        batch = [edges[edge_id] for edge_id in relation_ids if edge_id in edges]
+        if len(batch) != len(relation_ids):
+            raise Conflict("原始知识联系已变化，原始结果已保留")
     if not batch:
         raise LearningError("没有需要补充知识桥的联系")
     return fill_batch(store, learning, course, batch)
@@ -145,7 +153,9 @@ def fill_batch(store, learning, course, batch):
         + cited_material_context(course, backfill_sources(course, batch, endpoint_ids))
     )
     label = conversation_label(course, purpose="补充知识桥")
-    reply = structured(learning.ai(), prompt, BackfillDraft, {"conversation": label}, system=BASE_SYSTEM)
+    reply = structured(learning.ai(), prompt, BackfillDraft,
+                       {"conversation": label, "fresh_prompt": learning.tasks.replay_prompt(prompt)},
+                       system=BASE_SYSTEM)
     draft = reply.payload
     wanted = {item["id"] for item in items}
     draft["relations"] = [item for item in draft["relations"] if item["id"] in wanted]

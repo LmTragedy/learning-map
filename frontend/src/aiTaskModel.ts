@@ -27,12 +27,12 @@ export type TaskView = {
 };
 // Mirrors ACTIVE_TASK_STATES in backend/ai_tasks.py (checked by tests/test_ai_task_states.py).
 export const ACTIVE_STATES = new Set(['prepared','sending','running','processing']);
-export const DISPATCH_KINDS = new Set(['bridge','links','bridge_history','assessment','chat','lesson','map','question','recall','lines','retell','goals','note_review','material_index','problem_unit','problem_link','child']);
+export const DISPATCH_KINDS = new Set(['bridge','links','bridge_history','assessment','chat','lesson','map','question','recall','lines','retell','goals','note_review','material_index','problem_unit','problem_link','teaching_plan','child']);
 export const taskTime = (value: string) => formatTime(value);
 export function taskName(task: AiTask, course?: Course) {
   if (task.kind === 'child') return task.role === 'material_page_index' ? 'Luna 阅读材料' : task.role === 'recall_summary' ? 'Luna 整理学习记录' : 'Luna 文字子任务';
   const kind = task.kind === 'history' ? task.history_kind || 'history' : task.kind;
-  const verb = {lesson: task.inputs?.kind === 'supplement' ? '补一节小课' : '生成小课', chat:'回复',question:'生成验收题',assessment:'检查作答',bridge:'补充知识桥',links:'重新找前后联系',bridge_backfill:'补充知识桥',bridge_history:'历史知识桥',map:'更新地图',material_index:'建立材料索引',lines:'生成主线',recall:'整理学习内容',retell:'检查复述',goals:'提取目标',problem_unit:'按真题出单元题',problem_link:'把真题关联到知识点',note_review:'检查笔记',history:'历史任务'}[kind] || (task.kind === 'history' ? '历史任务' : kind);
+  const verb = {lesson: task.inputs?.kind === 'supplement' ? '补一节小课' : '生成小课', chat:'回复',question:'生成验收题',assessment:'检查作答',bridge:'补充知识桥',links:'重新找前后联系',teaching_plan:'准备教学分工',bridge_backfill:'补充知识桥',bridge_history:'历史知识桥',map:'更新地图',material_index:'建立材料索引',lines:'生成主线',recall:'整理学习内容',retell:'检查复述',goals:'提取目标',problem_unit:'按真题出单元题',problem_link:'把真题关联到知识点',note_review:'检查笔记',history:'历史任务'}[kind] || (task.kind === 'history' ? '历史任务' : kind);
   const label = course?.nodes.find(n => n.id === task.target)?.title || course?.edges.find(e => e.id === task.target)?.explanation;
   return label ? `${verb}「${label}」` : verb;
 }
@@ -72,11 +72,14 @@ export function taskView(task: AiTask, course?: Course, options: {offline?:boole
   if (task.state === 'processing') Object.assign(base,{semantic:'processing',title:'AI 已回复，正在写入课程…',description:name,group:'active',canRecover:false,canRegenerate:false,shortLabel:'正在写入'});
   if (task.state === 'received' || task.state === 'invalid') Object.assign(base,{semantic:'received',title:'AI 已回复，但尚未写入课程',description:`${name} · 回复于 ${time}`,shortLabel:'已回复未写入',error:task.error});
   if (task.state === 'conflict') Object.assign(base,{semantic:'conflict',title:'回复未写入：课程在此期间被修改',description:`已有进度没有被覆盖。${name}`,shortLabel:'未写入：课程已改变',canRecover:task.can_recover === true,error:task.error});
-  if (task.state === 'rejected' || task.state === 'failed') Object.assign(base,{semantic:'failed',title:'生成失败',description:task.error || name,canRecover:false,shortLabel:'失败'});
+  if (task.state === 'conflict' && task.kind === 'map') base.description = '地图尚未更新。可取回原回复检查是否仍能写入；材料或地图结构已改变时，请点击“更新地图”重新生成。原回复和学习进度已保留。';
+  // A failed task wrote nothing; saying so answers the first worry (did it break my course?).
+  if (task.state === 'rejected' || task.state === 'failed') Object.assign(base,{semantic:'failed',title:`${name.split('「')[0]}没有完成`,description:`${task.error || name}。课程内容和学习进度都没有改动。`,canRecover:false,shortLabel:'失败'});
   if (task.state === 'superseded') Object.assign(base,{semantic:'superseded',title:task.superseded_by ? '已另行重新生成，原始结果保留' : '课程已恢复到旧版本，这个任务不会再写入',description:name,group:'superseded',canRecover:false,shortLabel:'已被取代'});
   if (task.state === 'applied') {
     const present = resultPresent(task,course);
-    Object.assign(base,{semantic:present?'applied':'unverified',title:present?`已写入课程 · ${time}`:'结果已持久化 · 当前课程对象待核对',description:present?name:`${name}。后端未提供可核对的结果对象，或结果不在当前版本中。`,group:present?'applied':'attention',canRecover:false,canRegenerate:false,canOpen:present,shortLabel:present?'已写入':'当前版本待核对'});
+    // Written successfully; a later change to the course can hide the result object. Nothing to do, so it is not "needs attention".
+    Object.assign(base,{semantic:present?'applied':'unverified',title:present?`已写入课程 · ${time}`:`已写入课程 · ${time}（之后课程有改动）`,description:present?name:`${name}。当前版本里找不到这次的结果，可能已被后来的修改替换。`,group:'applied',canRecover:false,canRegenerate:false,canOpen:present,shortLabel:present?'已写入':'当前版本待核对'});
   }
   if (task.state === 'archived' && (task.history_only || task.kind === 'history')) {
     Object.assign(base,{semantic:'history',title:'历史原文 · '+historyLabel,description:name,group:'history',canRecover:false,canRegenerate:false,canCollect:task.can_collect===true,canOpen:false,shortLabel:historyLabel});

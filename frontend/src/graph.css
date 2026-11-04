@@ -34,7 +34,9 @@
 .gdot-label { position: absolute; left: 50%; top: calc(100% + 4px); transform: translateX(-50%) scale(var(--label-scale, 1)); transform-origin: 50% 0; white-space: nowrap;
   font-size: var(--fs-xs); line-height: 1.3; color: var(--ring); pointer-events: none; text-shadow: 0 0 4px var(--background), 0 0 2px var(--background);
   opacity: 0; transition: opacity .15s; }
-.labels-all .gdot-label, .labels-key .gdot-label { opacity: 1; }
+.labels-all .gdot-label { opacity: 1; }
+/* Mid zoom: only the next step and the selected node are named; the chain rules below add its neighbours, the rest show on hover. */
+.labels-key .gdot.is-next .gdot-label, .labels-key .gdot.is-selected .gdot-label, .gdot:hover .gdot-label { opacity: 1; }
 .labels-key .gdot-label { color: #c4c4cc; }
 .has-focus .gdot.role-dim .gdot-label { opacity: 0; }
 .gdot.role-focus .gdot-label, .gdot.role-up .gdot-label, .gdot.role-down .gdot-label, .gdot.is-selected .gdot-label { opacity: 1; color: var(--foreground); }
@@ -77,3 +79,14 @@
   .graph-canvas .react-flow__panel.bottom { margin-bottom: 56px; }
   .graph-focus-note { bottom: 56px; }
 }
+
+/* Floating map tools stay out of the way until the pointer is over the map, a tool is on, or keyboard focus is inside. */
+.graph-tools, .graph-focus-note { transition: opacity .15s; }
+.map-canvas:not(:hover):not(:focus-within) .graph-tools:not(:has([aria-pressed="true"])),
+.map-canvas:not(:hover):not(:focus-within) .graph-focus-note { opacity: 0; }
+@media (hover: none) { .map-canvas .graph-tools, .map-canvas .graph-focus-note { opacity: 1 !important; } }
+
+/* Route list: note/lesson marks only on hover, focus or the selected row. */
+.route-row .row-mark { opacity: 0; transition: opacity .15s; }
+.route-row:hover .row-mark, .route-row:focus-visible .row-mark, .route-row.is-selected .row-mark { opacity: 1; }
+@media (hover: none) { .route-row .row-mark { opacity: 1; } }

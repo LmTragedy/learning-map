@@ -3,6 +3,7 @@ import { Button } from "./components/ui/button";
 import { SelectAll } from "./SelectAll";
 import type { Course, GoalPreview } from "./types";
 import { materialFileUrl } from "./api";
+import { AiMark } from "./components/ui/ai-mark";
 
 export function GoalCandidates({ course, preview, busy, onAccept, onCancel }: {
   course: Course; preview: GoalPreview; busy: boolean;
@@ -13,7 +14,7 @@ export function GoalCandidates({ course, preview, busy, onAccept, onCancel }: {
   const [checked, setChecked] = useState<number[]>(indices);
   return <section className="goal-candidates" aria-label="待确认的 AI 目标">
     <h3>核对材料目标</h3>
-    <p className="goal-muted">AI 建议尚未加入看板。请核对语义和材料原页；文字/OCR 及 AI 解释可能有误。此操作分析整门课程材料。</p>
+    <p className="goal-muted"><AiMark /> 勾选确认后才会加入看板。这一步分析了整门课程的材料。</p>
     {preview.revision !== course.revision && <p role="alert">课程已变化，此预览已失效，请取消后重新提取。</p>}
     {!preview.goals.length && <p>没有提取到材料支持的目标，可手动添加。</p>}
     {!!preview.goals.length && <SelectAll ids={indices} selected={checked} onChange={(next) => setChecked((next as number[]).sort((a, b) => a - b))} />}

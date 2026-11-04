@@ -88,13 +88,14 @@ def new_line(course, fields, origin="user"):
 
 def node_progress(node):
     pieces = node.get("pieces", [])
+    done = node["status"] in {"mastered", "passed"}
     if pieces:
         known = sum((piece.get("state") or {}).get("result") == "known" for piece in pieces)
         total = len(pieces)
     else:
-        known = int(node["status"] in {"mastered", "passed"})
+        known = int(done)
         total = 1
-    return dict(known=known, total=total, ratio=known / total, done=known == total)
+    return dict(known=known, total=total, ratio=known / total, done=done)
 
 
 def _nodes_progress(nodes):
