@@ -1,15 +1,28 @@
-# Learning Map · 本地知识地图
+# Learning Map
+
+Learning Map is a local-first study app that turns course PDFs into an interactive concept map. It suggests prerequisite links and keeps page references so learners can check concepts against the original material.
+
+- **Plan what to study next.** Browse concepts by prerequisite level and inspect their dependencies in the graph.
+- **Check AI results against their inputs.** When an AI task resumes, the app rechecks the source material and relevant context before writing results. Unrelated note edits allow recovery to continue.
+- **Keep course records local.** The app stores PDFs, notes and progress on your computer. When AI features are enabled, the configured provider can receive selected inputs for inference.
+
+![Diagram showing prerequisite links and source pages in the synthetic database course](docs/learning-map-example.svg)
+
+*Diagram based on the built-in synthetic course. The app interface is in Chinese.*
+
+## Try the sample on Windows
+
+From the repository root, use Python 3.13 or newer and Node.js 24. In PowerShell, run `./setup.ps1` and then `./start.cmd`. Open [the local app](http://127.0.0.1:8741) and select **试用示例课程** (Try sample course). The built-in sample works with AI disabled.
+
+The app uses React Flow, FastAPI and SQLite. See the [Chinese documentation](#启动) for setup details and model configuration.
+
+## 中文说明
 
 MIT 开源的单用户本地学习应用，使用 React Flow 地图、FastAPI 和 SQLite。所有课程资料、对话、验收和评分默认保存于项目 `data/`，不进入 Git。当前为 0.1.0 开发版。
 
 ## 启动
 
-已安装依赖的这台 Windows 电脑，可以双击上一级记忆库目录中的 `启动知识地图.cmd`，它会打开独立可见的 CMD 日志窗口。也可以双击项目内的 `start.cmd`，或在 PowerShell 运行：
-
-```powershell
-cd D:\记忆库\learning-map
-.\start.cmd
-```
+在 Windows 上安装依赖后，可以双击项目内的 `start.cmd`，或在仓库根目录的 PowerShell 中运行 `./start.cmd`。
 
 打开 <http://127.0.0.1:8741>。保留终端，Ctrl+C 停止；重启使用同一入口。服务退出后窗口会保留，便于查看报错。默认端口为 8741，入口直接调用项目 Python，不受 PowerShell 的 `.ps1` 执行策略影响，也不修改执行策略。
 
