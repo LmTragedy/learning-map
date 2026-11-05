@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="254" viewBox="0 0 920 254" role="img" aria-labelledby="title desc">
+  <title id="title">Learning Map sample course</title>
+  <desc id="desc">Three database concepts in prerequisite order. Each card shows its original page in the synthetic course PDF.</desc>
+  <rect width="920" height="254" rx="20" fill="#f4f7fb"/>
+  <g font-family="Arial, sans-serif" fill="#172c42">
+    <text x="28" y="39" font-size="24" font-weight="700">Database foundations</text>
+    <text x="28" y="65" font-size="15" fill="#47627d">Example from the built-in synthetic course</text>
+    <g fill="#ffffff" stroke="#b6c9dd">
+      <rect x="28" y="96" width="252" height="105" rx="12"/>
+      <rect x="334" y="96" width="252" height="105" rx="12"/>
+      <rect x="640" y="96" width="252" height="105" rx="12"/>
+    </g>
+    <g font-size="18" font-weight="700">
+      <text x="46" y="137">Relations and keys</text>
+      <text x="352" y="137">Transactions and ACID</text>
+      <text x="658" y="137">Commit and rollback</text>
+    </g>
+    <g font-size="15" fill="#47627d">
+      <text x="46" y="170">Source PDF · page 1</text>
+      <text x="352" y="170">Source PDF · page 2</text>
+      <text x="658" y="170">Source PDF · page 3</text>
+      <text x="28" y="231">Arrows indicate prerequisite order.</text>
+    </g>
+    <path d="M287 149h36m-7-7 7 7-7 7m277-7h36m-7-7 7 7-7 7" fill="none" stroke="#426d9b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
